@@ -89,6 +89,7 @@ Depends: alembic (>= 0.6.4),
          python-stevedore (>= 0.14),
          python-swiftclient (>= 1:2.2.0),
          python-webob (>= 1.2.3),
+         sqlite3,
          ${misc:Depends},
          ${python:Depends}
 Recommends: python-ldap
