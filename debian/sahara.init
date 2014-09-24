@@ -38,7 +38,7 @@ chown ${CINDER_USER} ${LOCK_DIR} /var/run/${PROJECT_NAME}
 [ -r /etc/default/$NAME ] && . /etc/default/$NAME
 
 [ "x$USE_SYSLOG" = "xyes" ] && DAEMON_ARGS="$DAEMON_ARGS --use-syslog"
-[ "x$USE_LOGFILE" != "xno" ] && DAEMON_ARGS="$DAEMON_ARGS --log-file=/var/log/${${PROJECT_NAME}}/sahara.log"
+[ "x$USE_LOGFILE" != "xno" ] && DAEMON_ARGS="$DAEMON_ARGS --log-file=/var/log/${PROJECT_NAME}}/sahara.log"
 
 do_start(){
 	start-stop-daemon --start --quiet --background --chuid ${SYSTEM_USER}:${SYSTEM_GROUP} --make-pidfile --pidfile $PIDFILE --startas $DAEMON --test > /dev/null \
