@@ -7,7 +7,7 @@
 # Even minor modifications require translation updates and such
 # changes should be coordinated with translators and reviewers.
 
-Template: saraha/configure_db
+Template: sahara/configure_db
 Type: boolean
 Default: false
 _Description: Set up a database for Sahara?
