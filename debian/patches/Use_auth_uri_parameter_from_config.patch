@@ -1,0 +1,146 @@
+Subject: Use 'auth_uri' parameter from config
+From: Sergey Reshetnyak <sreshetniak@mirantis.com>
+Date: Thu, 18 Sep 2014 11:49:34 +0000 (+0400)
+X-Git-Url: https://review.openstack.org/gitweb?p=openstack%2Fsahara.git;a=commitdiff_plain;h=d2058585160a99b7e7908fcf1066bbb9ef4102a6
+Change-Id: I0276d30d8e142dca120915a8c91a500159a353d3
+Bug-Ubuntu:: https://bugs.launchpad.net/sahara/+bug/1371012
+Origin: upstream, https://review.openstack.org/#/c/122392/
+Last-Update: 2014-09-25
+
+diff --git a/sahara/api/acl.py b/sahara/api/acl.py
+index e404827..8891f5a 100644
+--- a/sahara/api/acl.py
++++ b/sahara/api/acl.py
+@@ -23,18 +23,9 @@ CONF = cfg.CONF
+ 
+ AUTH_OPT_GROUP_NAME = 'keystone_authtoken'
+ 
+-# Keystone auth uri that could be used in other places in Sahara
+-AUTH_URI = None
+-
+ 
+ def wrap(app, conf):
+     """Wrap wsgi application with ACL check."""
+ 
+     auth_cfg = dict(conf.get(AUTH_OPT_GROUP_NAME))
+-    auth_protocol = auth_token.AuthProtocol(app, conf=auth_cfg)
+-
+-    # store auth uri in global var to be able to use it in runtime
+-    global AUTH_URI
+-    AUTH_URI = auth_protocol._identity_server.auth_uri
+-
+-    return auth_protocol
++    return auth_token.AuthProtocol(app, conf=auth_cfg)
+diff --git a/sahara/context.py b/sahara/context.py
+index 9db3233..3f4bf3b 100644
+--- a/sahara/context.py
++++ b/sahara/context.py
+@@ -20,7 +20,6 @@ from eventlet import greenpool
+ from eventlet import semaphore
+ from oslo.config import cfg
+ 
+-from sahara.api import acl
+ from sahara import exceptions as ex
+ from sahara.i18n import _
+ from sahara.i18n import _LE
+@@ -49,6 +48,7 @@ class Context(object):
+         if kwargs:
+             LOG.warn(_LW('Arguments dropped when creating context: %s'),
+                      kwargs)
++
+         self.user_id = user_id
+         self.tenant_id = tenant_id
+         self.token = token
+@@ -59,7 +59,10 @@ class Context(object):
+         self.remote_semaphore = remote_semaphore or semaphore.Semaphore(
+             CONF.cluster_remote_threshold)
+         self.roles = roles
+-        self.auth_uri = auth_uri or acl.AUTH_URI
++        if auth_uri:
++            self.auth_uri = auth_uri
++        else:
++            self.auth_uri = _get_auth_uri()
+ 
+     def clone(self):
+         return Context(
+@@ -122,6 +125,28 @@ def set_ctx(new_ctx):
+         setattr(_CTX_STORE, _CTX_KEY, new_ctx)
+ 
+ 
++def _get_auth_uri():
++    if CONF.keystone_authtoken.auth_uri is not None:
++        auth_uri = CONF.keystone_authtoken.auth_uri
++    else:
++        if CONF.keystone_authtoken.identity_uri is not None:
++            identity_uri = CONF.keystone_authtoken.identity_uri
++        else:
++            host = CONF.keystone_authtoken.auth_host
++            port = CONF.keystone_authtoken.auth_port
++            protocol = CONF.keystone_authtoken.auth_protocol
++            identity_uri = '%s://%s:%s' % (protocol, host, port)
++
++        if CONF.use_identity_api_v3 is False:
++            auth_version = 'v2.0'
++        else:
++            auth_version = 'v3'
++
++        auth_uri = '%s/%s' % (identity_uri, auth_version)
++
++    return auth_uri
++
++
+ def _wrapper(ctx, thread_description, thread_group, func, *args, **kwargs):
+     try:
+         set_ctx(ctx)
+diff --git a/sahara/tests/unit/test_context.py b/sahara/tests/unit/test_context.py
+index decaa8f..04bcbe6 100644
+--- a/sahara/tests/unit/test_context.py
++++ b/sahara/tests/unit/test_context.py
+@@ -13,6 +13,7 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
++import functools
+ import random
+ 
+ import fixtures
+@@ -22,6 +23,7 @@ import testtools
+ 
+ from sahara import context
+ from sahara import exceptions as ex
++from sahara.tests.unit import base as test_base
+ 
+ 
+ rnd = random.Random()
+@@ -135,3 +137,31 @@ class ContextTest(testtools.TestCase):
+ 
+ class TestException(Exception):
+     pass
++
++
++class GetAuthURITest(test_base.SaharaTestCase):
++    def setUp(self):
++        super(GetAuthURITest, self).setUp()
++
++        self.override_auth_config = functools.partial(
++            self.override_config, group='keystone_authtoken')
++
++    def test_get_auth_url_from_auth_uri_param(self):
++        self.override_auth_config('auth_uri', 'http://pony:5000/v2.0')
++        self.assertEqual('http://pony:5000/v2.0', context._get_auth_uri())
++
++    def test_get_auth_uri_from_identity_uri(self):
++        self.override_auth_config('identity_uri', 'http://spam:35357')
++        self.assertEqual('http://spam:35357/v3', context._get_auth_uri())
++
++        self.override_config('use_identity_api_v3', False)
++        self.assertEqual('http://spam:35357/v2.0', context._get_auth_uri())
++
++    def test_get_auth_uri_from_auth_params(self):
++        self.override_auth_config('auth_host', 'eggs')
++        self.override_auth_config('auth_port', 12345)
++        self.override_auth_config('auth_protocol', 'http')
++        self.assertEqual('http://eggs:12345/v3', context._get_auth_uri())
++
++        self.override_config('use_identity_api_v3', False)
++        self.assertEqual('http://eggs:12345/v2.0', context._get_auth_uri())
