@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+
+include /usr/share/openstack-pkg-tools/pkgos.make
+export OSLO_PACKAGE_VERSION=$(VERSION)
+
+%:
+	dh $@ --buildsystem=python_distutils --with python2,sphinxdoc,systemd
+
+override_dh_auto_test:
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+	./run_tests.sh -N -P
+endif
+
+override_dh_sphinxdoc:
+ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
+	PYTHONPATH=. sphinx-build -b html doc/source $(CURDIR)/debian/sahara-doc/usr/share/doc/sahara-doc/html
+	dh_sphinxdoc -O--buildsystem=python_distutils
+endif
+
+override_dh_installman:
+ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
+	PYTHONPATH=. sphinx-build -b man doc/source doc/build/man
+	dh_installman -O--buildsystem=python_distutils
+endif
+
+override_dh_auto_build:
+	dh_auto_build
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-common.postinst
+
+override_dh_install:
+	dh_install -O--buildsystem=python_distutils --fail-missing
+	install -D -m 0644 $(CURDIR)/etc/sahara/sahara.conf.sample $(CURDIR)/sahara-common/usr/share/sahara-common/sahara.conf
+	sed -i 's|#connection=<None>|connection=sqlite:///var/lib/sahara/saharadb|' $(CURDIR)/sahara-common/usr/share/sahara-common/sahara.conf
+
+override_dh_clean:
+	rm -rf build debian/sahara-common.postinst
+	dh_clean -O--buildsystem=python_distutils

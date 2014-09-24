@@ -1,0 +1,17 @@
+#!/bin/sh
+
+set -e
+
+. /usr/share/debconf/confmodule
+SAHARA_CONF=/etc/sahara/sahara.conf
+
+#PKGOS-INCLUDE#
+
+pkgos_var_user_group sahara
+pkgos_dbc_read_conf -pkg sahara-common ${SAHARA_CONF} database connection sahara $@
+pkgos_rabbit_read_conf ${SAHARA_CONF} DEFAULT sahara
+pkgos_read_admin_creds ${SAHARA_CONF} keystone_authtoken sahara
+
+db_go
+
+exit 0

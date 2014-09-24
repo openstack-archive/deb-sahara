@@ -1,0 +1,8 @@
+/var/log/sahara/sahara.log {
+    daily
+    missingok
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+}
