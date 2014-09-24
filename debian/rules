@@ -1,5 +1,7 @@
 #!/usr/bin/make -f
 
+PYTHONS:=$(shell pyversions -vr)
+
 include /usr/share/openstack-pkg-tools/pkgos.make
 export OSLO_PACKAGE_VERSION=$(VERSION)
 
@@ -32,8 +34,16 @@ override_dh_auto_build:
 
 override_dh_install:
 	dh_install -O--buildsystem=python_distutils --fail-missing
+
+	# Install the config file.
 	install -D -m 0644 $(CURDIR)/etc/sahara/sahara.conf.sample $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
 	sed -i 's|#connection=<None>|connection=sqlite:///var/lib/sahara/saharadb|' $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
+
+	# Copy the alembic migration scripts which aren't copied
+	# by python setup.py
+	set -e ; for pyvers in $(PYTHONS); do \
+		cp -rfv $(CURDIR)/sahara/db/migration/alembic_migrations $(CURDIR)/debian/python-sahara/usr/lib/python$$pyvers/dist-packages/sahara/db/migration/ ; \
+	done
 
 override_dh_clean:
 	rm -rf build 	debian/sahara-common.postinst \
