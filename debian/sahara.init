@@ -1,6 +1,6 @@
 #!/bin/sh
 ### BEGIN INIT INFO
-# Provides:          sahara-all sahara-api sahara-engine
+# Provides:          sahara sahara-all
 # Required-Start:    $network $local_fs $remote_fs $syslog
 # Required-Stop:     $remote_fs
 # Should-Start:      postgresql mysql keystone rabbitmq-server ntp
