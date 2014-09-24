@@ -30,7 +30,7 @@ LOCK_DIR=/var/lock/${PROJECT_NAME}/
 [ -x $DAEMON ] || exit 0
 
 mkdir -p ${LOCK_DIR} /var/run/${PROJECT_NAME}
-chown ${CINDER_USER} ${LOCK_DIR} /var/run/${PROJECT_NAME}
+chown ${SYSTEM_USER} ${LOCK_DIR} /var/run/${PROJECT_NAME}
 
 . /lib/lsb/init-functions
 
