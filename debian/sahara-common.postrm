@@ -1,0 +1,30 @@
+#!/bin/sh
+
+set -e
+
+if [ "$1" = "purge" ] && [ -f /usr/share/debconf/confmodule ] ; then
+	if [ -f /usr/share/debconf/confmodule ] ; then
+		. /usr/share/debconf/confmodule
+
+		db_get sahara/configure_db || true
+		if [ "$RET" = "true" ]; then
+			if [ -f /usr/share/dbconfig-common/dpkg/postrm ]; then
+				. /usr/share/dbconfig-common/dpkg/postrm
+				dbc_go sahara-common $@
+			else
+				rm -f /etc/dbconfig-common/sahara-common.conf
+				if which ucf >/dev/null 2>&1; then
+					ucf --purge /etc/dbconfig-common/sahara-common.conf
+					ucfr --purge sahara-common /etc/dbconfig-common/sahara-common.conf
+				fi
+			fi
+		fi
+	fi
+	rm -f /etc/sahara/sahara.conf
+	rmdir --ignore-fail-on-non-empty /etc/sahara
+	rm -rf /var/lib/sahara /var/log/sahara
+fi
+
+#DEBHELPER#
+
+exit 0
