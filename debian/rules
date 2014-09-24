@@ -32,8 +32,8 @@ override_dh_auto_build:
 
 override_dh_install:
 	dh_install -O--buildsystem=python_distutils --fail-missing
-	install -D -m 0644 $(CURDIR)/etc/sahara/sahara.conf.sample $(CURDIR)/sahara-common/usr/share/sahara-common/sahara.conf
-	sed -i 's|#connection=<None>|connection=sqlite:///var/lib/sahara/saharadb|' $(CURDIR)/sahara-common/usr/share/sahara-common/sahara.conf
+	install -D -m 0644 $(CURDIR)/etc/sahara/sahara.conf.sample $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
+	sed -i 's|#connection=<None>|connection=sqlite:///var/lib/sahara/saharadb|' $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
 
 override_dh_clean:
 	rm -rf build 	debian/sahara-common.postinst \
