@@ -39,7 +39,6 @@ Build-Depends-Indep: alembic (>= 0.6.4),
                      python-oslosphinx (>= 2.2.0),
                      python-oslotest (>= 1.1.0.0~a1),
                      python-paramiko (>= 1.13.0),
-                     python-pbr (>= 0.6),
                      python-posix-ipc,
                      python-psycopg2,
                      python-requests (>= 1.2.1),
@@ -111,12 +110,12 @@ Depends: adduser,
          ${misc:Depends},
          ${python:Depends}
 Recommends: python-ldap
-Description: data-intensive application cluster (Hadoop or Spark) - library
+Description: data-intensive application cluster (Hadoop or Spark) - common files
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
  Savanna project, renamed due to potential trademark issues.
  .
- This package contains the Python libraries.
+ This package contains the common files.
 
 Package: sahara
 Architecture: all
