@@ -1,3 +1,9 @@
+sahara (2014.2~b3-2) UNRELEASED; urgency=medium
+
+  * Added python-mysqldb as dependency.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 03 Oct 2014 10:03:43 +0800
+
 sahara (2014.2~b3-1) experimental; urgency=medium
 
   * Initial release. (Closes: #762659)
