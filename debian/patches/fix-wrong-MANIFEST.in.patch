@@ -7,9 +7,11 @@ Author: Thomas Goirand <zigo@debian.org>
 Forwarded: not-needed
 Last-Update: 2014-09-22
 
---- sahara-2014.2~b3.orig/MANIFEST.in
-+++ sahara-2014.2~b3/MANIFEST.in
-@@ -34,6 +34,7 @@ include sahara/tests/unit/resources/*.he
+Index: sahara/MANIFEST.in
+===================================================================
+--- sahara.orig/MANIFEST.in	2014-10-05 11:23:02.000000000 +0800
++++ sahara/MANIFEST.in	2014-10-05 11:47:00.000000000 +0800
+@@ -37,6 +37,7 @@
  include sahara/tests/unit/resources/*.xml
  include sahara/tests/unit/resources/*.txt
  include sahara/topology/resources/*.xml
