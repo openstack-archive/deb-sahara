@@ -54,7 +54,7 @@ Build-Depends-Indep: alembic (>= 0.6.4),
                      python-webob (>= 1.2.3),
                      subunit (>= 0.0.18),
                      testrepository (>= 0.0.18)
-Standards-Version: 3.9.5
+Standards-Version: 3.9.6
 Homepage: https://github.com/openstack/sahara
 Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/sahara.git;a=summary
 Vcs-Git: git://anonscm.debian.org/openstack/sahara.git
