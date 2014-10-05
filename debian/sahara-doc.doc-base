@@ -1,0 +1,9 @@
+Document: sahara-doc
+Title: Sahara Documentation
+Author: OpenStack
+Abstract: Sphinx documentation for Sahara
+Section: Programming/Python
+
+Format: HTML
+Index: /usr/share/doc/sahara-doc/html/index.html
+Files: /usr/share/doc/sahara-doc/html/*

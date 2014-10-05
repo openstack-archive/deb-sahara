@@ -6,6 +6,7 @@ sahara (2014.2~rc1-1) experimental; urgency=medium
   * Now using templated init script for sysv-rc, generated systemd unit and
     upstart jobs, using openstack-pkg-tools >= 13.
   * Removed Use_auth_uri_parameter_from_config.patch applied upstream.
+  * Added doc-base registration file in sahara-doc.
 
  -- Thomas Goirand <zigo@debian.org>  Sun, 05 Oct 2014 11:16:07 +0800
 
