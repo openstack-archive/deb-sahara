@@ -2,6 +2,7 @@ sahara (2014.2~rc1-1) experimental; urgency=medium
 
   * New upstream release.
   * Added python-mysqldb as dependency.
+  * Updated (build-)depends for this release.
 
  -- Thomas Goirand <zigo@debian.org>  Sun, 05 Oct 2014 11:16:07 +0800
 
