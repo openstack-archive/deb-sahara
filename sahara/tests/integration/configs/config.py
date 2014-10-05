@@ -225,19 +225,19 @@ VANILLA_TWO_CONFIG_OPTS = [
                     'you can specify image name or tag of image instead of '
                     'image ID. If you do not specify image related parameters '
                     'then image for cluster creation will be chosen by '
-                    'tag "savanna_i_tests".'),
+                    'tag "sahara_i_tests".'),
     cfg.StrOpt('IMAGE_NAME',
                help='Name for image which is used for cluster creation. Also '
                     'you can specify image ID or tag of image instead of '
                     'image name. If you do not specify image related '
                     'parameters, then the image for cluster creation will be '
-                    'chosen by tag "savanna_i_tests".'),
+                    'chosen by tag "sahara_i_tests".'),
     cfg.StrOpt('IMAGE_TAG',
                help='Tag for image which is used for cluster creation. Also '
                     'you can specify image ID or image name instead of tag of '
                     'image. If you do not specify image related parameters, '
                     'then image for cluster creation will be chosen by '
-                    'tag "savanna_i_tests".'),
+                    'tag "sahara_i_tests".'),
     cfg.StrOpt('HADOOP_VERSION',
                default='2.3.0',
                help='Version of Hadoop.'),
@@ -341,6 +341,9 @@ CDH_CONFIG_OPTS = [
     cfg.StrOpt('CM_APT_KEY_URL',
                default='http://archive-primary.cloudera.com/cm5/ubuntu'
                        '/precise/amd64/cm/archive.key'),
+    cfg.StrOpt('MANAGERNODE_FLAVOR',
+               default='3',
+               help='Id of flavor for manager-node'),
     cfg.DictOpt('HADOOP_PROCESSES_WITH_PORTS',
                 default={
                     'RESOURCEMANAGER': 8088,

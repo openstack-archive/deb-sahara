@@ -62,32 +62,12 @@ class ProvisioningPluginBase(plugins_base.PluginInterface):
         pass
 
     @plugins_base.optional
-    def get_name_node_uri(self, cluster):
-        pass
-
-    @plugins_base.optional
-    def get_oozie_server(self, cluster):
-        pass
-
-    @plugins_base.optional
-    def get_oozie_server_uri(self, cluster):
-        pass
-
-    @plugins_base.optional
-    def validate_edp(self, cluster):
-        pass
-
-    @plugins_base.optional
     def get_edp_engine(self, cluster, job_type):
         pass
 
     @plugins_base.required_with_default
     def get_open_ports(self, node_group):
         return []
-
-    @plugins_base.optional
-    def get_resource_manager_uri(self, cluster):
-        pass
 
     @plugins_base.required_with_default
     def decommission_nodes(self, cluster, instances):

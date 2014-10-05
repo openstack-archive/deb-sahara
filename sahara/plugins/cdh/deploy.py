@@ -15,13 +15,13 @@
 
 import telnetlib
 
+from oslo.utils import timeutils
 import six
 
 from sahara import context
 from sahara.i18n import _
 from sahara.i18n import _LI
 from sahara.openstack.common import log as logging
-from sahara.openstack.common import timeutils
 from sahara.plugins.cdh import cloudera_utils as cu
 from sahara.plugins.cdh import commands as cmd
 from sahara.plugins.cdh import config_helper as c_helper
@@ -46,7 +46,7 @@ PACKAGES = [
     'cloudera-manager-agent',
     'cloudera-manager-daemons',
     'cloudera-manager-server',
-    'cloudera-manager-server-db',
+    'cloudera-manager-server-db-2',
     'hadoop-hdfs-datanode',
     'hadoop-hdfs-namenode',
     'hadoop-hdfs-secondarynamenode',
@@ -124,10 +124,10 @@ def configure_cluster(cluster):
     if not cmd.is_pre_installed_cdh(pu.get_manager(cluster).remote()):
         _configure_os(instances)
         _install_packages(instances, PACKAGES)
-        _post_install(instances)
 
     _start_cloudera_agents(instances)
     _start_cloudera_manager(cluster)
+    _await_agents(instances)
     _configure_manager(cluster)
     _create_services(cluster)
     _configure_services(cluster)
@@ -144,9 +144,9 @@ def scale_cluster(cluster, instances):
     if not cmd.is_pre_installed_cdh(instances[0].remote()):
         _configure_os(instances)
         _install_packages(instances, PACKAGES)
-        _post_install(instances)
 
     _start_cloudera_agents(instances)
+    _await_agents(instances)
     for instance in instances:
         _configure_instance(instance)
         cu.update_configs(instance)
@@ -236,25 +236,35 @@ def _install_pkgs(instance, packages):
         cmd.install_packages(r, packages)
 
 
-def _post_install(instances):
-    with context.ThreadGroup() as tg:
-        for i in instances:
-            tg.spawn('cdh-post-inst-%s' % i.instance_name,
-                     _stop_services, i)
-
-
-def _stop_services(instance):
-    with instance.remote() as r:
-        cmd.stop_resourcemanager(r)
-        cmd.stop_nodemanager(r)
-        cmd.stop_historyserver(r)
-
-
 def _start_cloudera_agents(instances):
     with context.ThreadGroup() as tg:
         for i in instances:
             tg.spawn('cdh-agent-start-%s' % i.instance_name,
                      _start_cloudera_agent, i)
+
+
+def _await_agents(instances):
+    api = cu.get_api_client(instances[0].node_group.cluster)
+    timeout = 300
+    LOG.debug("Waiting %(timeout)s seconds for agent connected to manager" % {
+        'timeout': timeout})
+    s_time = timeutils.utcnow()
+    while timeutils.delta_seconds(s_time, timeutils.utcnow()) < timeout:
+        hostnames = [i.fqdn() for i in instances]
+        hostnames_to_manager = [h.hostname for h in api.get_all_hosts('full')]
+        is_ok = True
+        for hostname in hostnames:
+            if hostname not in hostnames_to_manager:
+                is_ok = False
+                break
+
+        if not is_ok:
+            context.sleep(5)
+        else:
+            break
+    else:
+        raise ex.HadoopProvisionError(_("Cloudera agents failed to connect to"
+                                        " Cloudera Manager"))
 
 
 def _start_cloudera_agent(instance):

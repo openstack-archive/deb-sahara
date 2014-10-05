@@ -18,10 +18,12 @@ import os
 from sahara import conductor as c
 from sahara import context
 from sahara import exceptions as e
+from sahara.i18n import _
 from sahara.plugins.general import utils as plugin_utils
 from sahara.plugins.spark import config_helper as c_helper
 from sahara.service.edp import base_engine
 from sahara.service.edp import job_utils
+from sahara.service.validations.edp import job_execution as j
 from sahara.utils import edp
 from sahara.utils import files
 from sahara.utils import general
@@ -112,6 +114,8 @@ class SparkJobEngine(base_engine.JobEngine):
         ctx = context.ctx()
         job = conductor.job_get(ctx, job_execution.job_id)
 
+        proxy_configs = job_execution.job_configs.get('proxy_configs')
+
         # We'll always run the driver program on the master
         master = plugin_utils.get_instance(self.cluster, "master")
 
@@ -120,7 +124,8 @@ class SparkJobEngine(base_engine.JobEngine):
         wf_dir = job_utils.create_workflow_dir(master, '/tmp/spark-edp', job,
                                                job_execution.id)
         paths = job_utils.upload_job_files(master, wf_dir, job,
-                                           libs_subdir=False)
+                                           libs_subdir=False,
+                                           proxy_configs=proxy_configs)
 
         # We can shorten the paths in this case since we'll run out of wf_dir
         paths = [os.path.basename(p) for p in paths]
@@ -182,8 +187,12 @@ class SparkJobEngine(base_engine.JobEngine):
 
         # Hmm, no execption but something failed.
         # Since we're using backgrounding with redirect, this is unlikely.
-        raise e.EDPError("Spark job execution failed. Exit status = %s, "
-                         "stdout = %s" % (ret, stdout))
+        raise e.EDPError(_("Spark job execution failed. Exit status = "
+                           "%(status)s, stdout = %(stdout)s") %
+                         {'status': ret, 'stdout': stdout})
+
+    def validate_job_execution(self, cluster, job, data):
+        j.check_main_class_present(data, job)
 
     @staticmethod
     def get_possible_job_config(job_type):

@@ -15,6 +15,7 @@
 
 from sahara import conductor
 from sahara import context
+from sahara.i18n import _
 from sahara.plugins.cdh import config_helper as c_helper
 from sahara.plugins.cdh import deploy as dp
 from sahara.plugins.cdh import edp_engine
@@ -31,8 +32,8 @@ class CDHPluginProvider(p.ProvisioningPluginBase):
         return "Cloudera Plugin"
 
     def get_description(self):
-        return ("This plugin provides an ability to launch CDH clusters with"
-                "Cloudera Manager management console.")
+        return _("This plugin provides an ability to launch CDH clusters with "
+                 "Cloudera Manager management console.")
 
     def get_versions(self):
         return ['5']
@@ -74,21 +75,6 @@ class CDHPluginProvider(p.ProvisioningPluginBase):
     def validate_scaling(self, cluster, existing, additional):
         vl.validate_existing_ng_scaling(cluster, existing)
         vl.validate_additional_ng_scaling(cluster, additional)
-
-    def get_oozie_server(self, cluster):
-        return cu.get_oozie(cluster)
-
-    def get_oozie_server_uri(self, cluster):
-        oozie_ip = cu.get_oozie(cluster).management_ip
-        return 'http://%s:11000/oozie' % oozie_ip
-
-    def get_name_node_uri(self, cluster):
-        namenode_ip = cu.get_namenode(cluster).fqdn()
-        return 'hdfs://%s:8020' % namenode_ip
-
-    def get_resource_manager_uri(self, cluster):
-        resourcemanager_ip = cu.get_resourcemanager(cluster).fqdn()
-        return '%s:8032' % resourcemanager_ip
 
     def _set_cluster_info(self, cluster):
         mng = cu.get_manager(cluster)

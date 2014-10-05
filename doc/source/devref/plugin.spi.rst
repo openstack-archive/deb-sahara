@@ -13,7 +13,7 @@ as well as configs and whatever else that plugin needs to create the Hadoop clus
 
 *Returns*: list of strings - Hadoop versions
 
-*Example return value*: (“Apache Hadoop 1.1.1”, “CDH 3”, “HDP 1.2”)
+*Example return value*: [“1.2.1”, “2.3.0”, “2.4.1”]
 
 get_configs(hadoop_version)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -52,14 +52,6 @@ Validates a given cluster object. Raises *SaharaException* with meaningful messa
 *Returns*: None
 
 *Example exception*: <NotSingleNameNodeException {code='NOT_SINGLE_NAME_NODE', message='Hadoop cluster should contain only 1 NameNode instance. Actual NN count is 2' }>
-
-validate_edp(cluster)
-~~~~~~~~~~~~~~~~~~~~~
-
-Validates that given cluster can be used to run EDP jobs. In case of
-incompatibility raises *SaharaException* with meaningful message.
-
-*Returns*: None
 
 validate_scaling(cluster, existing, additional)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -128,34 +120,6 @@ on_terminate_cluster(cluster)
 When user terminates cluster, Sahara simply shuts down all the cluster VMs. This method is guaranteed to be invoked before that, allowing plugin to do some clean-up.
 
 *Returns*: None
-
-get_oozie_server(cluster)
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Returns the instance object for the host running the Oozie server (this service may be referenced by a vendor-dependent identifier)
-
-*Returns*: The Oozie server instance object
-
-get_name_node_uri(cluster)
-~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Returns the URI for access to the Name Node
-
-*Returns*: The Name Node URI
-
-get_oozie_server_uri(cluster)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Returns the URI for access to the Oozie server
-
-*Returns*: The Oozie server URI
-
-get_resource_manager_uri(cluster)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Returns the URI for access to the mapred resource manager (e.g Hadoop 1.x - jobtracker, Hadoop 2.x - yarn resource manager)
-
-*Returns*: The resource manager URI
 
 Object Model
 ============

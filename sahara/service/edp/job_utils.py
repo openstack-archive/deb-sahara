@@ -30,8 +30,8 @@ from sahara.utils import remote
 opts = [
     cfg.StrOpt('job_workflow_postfix',
                default='',
-               help='Postfix for storing jobs in hdfs. Will be '
-                    'added to /user/hadoop/.')
+               help="Postfix for storing jobs in hdfs. Will be "
+                    "added to '/user/<hdfs user>/' path.")
 ]
 
 CONF = cfg.CONF
@@ -44,14 +44,15 @@ def get_plugin(cluster):
     return plugin_base.PLUGINS.get_plugin(cluster.plugin_name)
 
 
-def upload_job_files(where, job_dir, job, libs_subdir=True):
+def upload_job_files(where, job_dir, job, libs_subdir=True,
+                     proxy_configs=None):
     mains = job.mains or []
     libs = job.libs or []
     uploaded_paths = []
 
     def upload(r, dir, job_file):
         dst = os.path.join(dir, job_file.name)
-        raw_data = dispatch.get_raw_binary(job_file)
+        raw_data = dispatch.get_raw_binary(job_file, proxy_configs)
         r.write_file_to(dst, raw_data)
         uploaded_paths.append(dst)
 

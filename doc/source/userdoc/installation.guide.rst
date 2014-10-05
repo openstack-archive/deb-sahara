@@ -15,7 +15,7 @@ consistent state. We suggest the following options:
 To install with Fuel
 --------------------
 
-1. Start by following the `Quickstart
+1. Start by following the `MOS Quickstart
    <http://software.mirantis.com/quick-start/>`_ to install and setup
    OpenStack.
 
@@ -26,7 +26,7 @@ To install with Fuel
 To install with RDO
 -------------------
 
-1. Start by following the `Quickstart
+1. Start by following the `RDO Quickstart
    <http://openstack.redhat.com/Quickstart>`_ to install and setup
    OpenStack.
 
@@ -34,7 +34,7 @@ To install with RDO
 
 .. sourcecode:: console
 
-    $ yum install openstack-sahara
+    # yum install openstack-sahara
 ..
 
 3. Configure Sahara as needed. The configuration file is located in
@@ -45,16 +45,25 @@ To install with RDO
 
 .. sourcecode:: console
 
-    $ sahara-db-manage --config-file /etc/sahara/sahara.conf upgrade head
+    # sahara-db-manage --config-file /etc/sahara/sahara.conf upgrade head
 ..
 
-5. Start the sahara-api service:
+5. Go through :ref:`common_installation_steps` and make the
+   necessary changes.
+
+6. Start the sahara-all service:
 
 .. sourcecode:: console
 
-    $ service openstack-sahara-api start
+    # systemctl start openstack-sahara-all
 ..
 
+7. *(Optional)* Enable Sahara to start on boot
+
+.. sourcecode:: console
+
+    # systemctl enable openstack-sahara-all
+..
 
 
 To install into a virtual environment
@@ -125,7 +134,15 @@ To install into a virtual environment
     Make the necessary changes in ``sahara-venv/etc/sahara.conf``.
     For details see :doc:`Sahara Configuration Guide <configuration.guide>`
 
-5. If you use Sahara with MySQL database, then for storing big Job Binaries
+.. _common_installation_steps:
+
+Common installation steps
+-------------------------
+
+The steps below are common for both installing Sahara as part of RDO and
+installing it in virtual environment.
+
+1. If you use Sahara with MySQL database, then for storing big Job Binaries
    in Sahara Internal Database you must configure size of max allowed packet.
    Edit ``my.cnf`` and change parameter:
 
@@ -139,20 +156,38 @@ To install into a virtual environment
 
     and restart mysql server.
 
-6. Create database schema:
+2. Create database schema:
 
 .. sourcecode:: console
 
     $ sahara-venv/bin/sahara-db-manage --config-file sahara-venv/etc/sahara.conf upgrade head
 ..
 
-7. To start Sahara call:
+3. To start Sahara call:
 
 .. sourcecode:: console
 
     $ sahara-venv/bin/sahara-all --config-file sahara-venv/etc/sahara.conf
 ..
 
+.. _register-sahara-label:
+4. In order for Sahara to be accessible in OpenStack Dashboard and for
+   python-saharaclient to work properly you need to register Sahara in
+   Keystone. For example:
+
+.. sourcecode:: console
+
+    keystone service-create --name sahara --type data_processing \
+        --description "Sahara Data Processing"
+
+    keystone endpoint-create --service sahara --region RegionOne \
+        --publicurl "http://10.0.0.2:8386/v1.1/%(tenant_id)s" \
+        --adminurl "http://10.0.0.2:8386/v1.1/%(tenant_id)s" \
+        --internalurl "http://10.0.0.2:8386/v1.1/%(tenant_id)s"
+..
+
+5. To adjust OpenStack Dashboard configuration with your Sahara installation
+   please follow the UI configuration guide :doc:`here. <dashboard.guide>`
 
 Notes:
 ------

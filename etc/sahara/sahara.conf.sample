@@ -43,6 +43,10 @@
 # Whether to disable the Nagle algorithm. (boolean value)
 #qpid_tcp_nodelay=true
 
+# The number of prefetched messages held by receiver. (integer
+# value)
+#qpid_receiver_capacity=1
+
 # The qpid topology version to use.  Version 1 is what was
 # originally used by impl_qpid.  Version 2 includes some
 # backwards-incompatible changes that allow broker federation
@@ -365,7 +369,7 @@
 
 # List of plugins to be loaded. Sahara preserves the order of
 # the list when returning it. (list value)
-#plugins=vanilla,hdp
+#plugins=vanilla,hdp,spark
 
 
 #
@@ -373,7 +377,7 @@
 #
 
 # Postfix for storing jobs in hdfs. Will be added to
-# /user/hadoop/. (string value)
+# '/user/<hdfs user>/' path. (string value)
 #job_workflow_postfix=
 
 
@@ -461,6 +465,24 @@
 # disabled, per-job clusters will not be terminated
 # automatically. (boolean value)
 #use_identity_api_v3=true
+
+
+#
+# Options defined in sahara.utils.proxy
+#
+
+# Enables Sahara to use a domain for creating temporary proxy
+# users to access Swift. If this is enabled a domain must be
+# created for Sahara to use. (boolean value)
+#use_domain_for_proxy_users=false
+
+# The domain Sahara will use to create new proxy users for
+# Swift object access. (string value)
+#proxy_user_domain_name=<None>
+
+# A list of the role names that the proxy user should assume
+# through trust for Swift object access. (list value)
+#proxy_user_role_names=Member
 
 
 #
@@ -713,6 +735,32 @@
 # defined) this string is used for key derivation. (string
 # value)
 #memcache_secret_key=<None>
+
+# (optional) number of seconds memcached server is considered
+# dead before it is tried again. (integer value)
+#memcache_pool_dead_retry=300
+
+# (optional) max total number of open connections to every
+# memcached server. (integer value)
+#memcache_pool_maxsize=10
+
+# (optional) socket timeout in seconds for communicating with
+# a memcache server. (integer value)
+#memcache_pool_socket_timeout=3
+
+# (optional) number of seconds a connection to memcached is
+# held unused in the pool before it is closed. (integer value)
+#memcache_pool_unused_timeout=60
+
+# (optional) number of seconds that an operation will wait to
+# get a memcache client connection from the pool. (integer
+# value)
+#memcache_pool_conn_get_timeout=10
+
+# (optional) use the advanced (eventlet safe) memcache client
+# pool. The advanced pool will only work under python 2.x.
+# (boolean value)
+#memcache_use_advanced_pool=false
 
 # (optional) indicate whether to set the X-Service-Catalog
 # header. If False, middleware will not ask for service

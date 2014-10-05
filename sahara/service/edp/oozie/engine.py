@@ -27,6 +27,7 @@ from sahara.service.edp import hdfs_helper as h
 from sahara.service.edp import job_utils
 from sahara.service.edp.oozie import oozie as o
 from sahara.service.edp.oozie.workflow_creator import workflow_factory
+from sahara.service.validations.edp import job_execution as j
 from sahara.utils import edp
 from sahara.utils import remote
 from sahara.utils import xmlutils as x
@@ -45,12 +46,12 @@ class OozieJobEngine(base_engine.JobEngine):
         self.plugin = job_utils.get_plugin(self.cluster)
 
     def _get_client(self):
-        return o.OozieClient(self.plugin.get_oozie_server_uri(self.cluster),
-                             self.plugin.get_oozie_server(self.cluster))
+        return o.OozieClient(self.get_oozie_server_uri(self.cluster),
+                             self.get_oozie_server(self.cluster))
 
     def _get_oozie_job_params(self, hdfs_user, path_to_workflow):
-        rm_path = self.plugin.get_resource_manager_uri(self.cluster)
-        nn_path = self.plugin.get_name_node_uri(self.cluster)
+        rm_path = self.get_resource_manager_uri(self.cluster)
+        nn_path = self.get_name_node_uri(self.cluster)
         job_parameters = {
             "jobTracker": rm_path,
             "nameNode": nn_path,
@@ -80,6 +81,7 @@ class OozieJobEngine(base_engine.JobEngine):
         job = conductor.job_get(ctx, job_execution.job_id)
         input_source, output_source = job_utils.get_data_sources(job_execution,
                                                                  job)
+        proxy_configs = job_execution.job_configs.get('proxy_configs')
 
         for data_source in [input_source, output_source]:
             if data_source and data_source.type == 'hdfs':
@@ -89,12 +91,12 @@ class OozieJobEngine(base_engine.JobEngine):
         hdfs_user = self.get_hdfs_user()
 
         # TODO(tmckay): this should probably be "get_namenode"
-        # but that call does not exist in the plugin api now.
-        # However, other engines may need it.
-        oozie_server = self.plugin.get_oozie_server(self.cluster)
+        # but that call does not exist in the oozie engine api now.
+        oozie_server = self.get_oozie_server(self.cluster)
 
         wf_dir = self._create_hdfs_workflow_dir(oozie_server, job)
-        self._upload_job_files_to_hdfs(oozie_server, wf_dir, job)
+        self._upload_job_files_to_hdfs(oozie_server, wf_dir, job,
+                                       proxy_configs)
 
         wf_xml = workflow_factory.get_workflow_xml(
             job, self.cluster, job_execution, input_source, output_source,
@@ -125,6 +127,35 @@ class OozieJobEngine(base_engine.JobEngine):
     def create_hdfs_dir(self, remote, dir_name):
         pass
 
+    @abc.abstractmethod
+    def get_oozie_server_uri(self, cluster):
+        pass
+
+    @abc.abstractmethod
+    def get_oozie_server(self, cluster):
+        pass
+
+    @abc.abstractmethod
+    def get_name_node_uri(self, cluster):
+        pass
+
+    @abc.abstractmethod
+    def get_resource_manager_uri(self, cluster):
+        pass
+
+    def validate_job_execution(self, cluster, job, data):
+        # All types except Java require input and output objects
+        # and Java require main class
+        if job.type in [edp.JOB_TYPE_JAVA]:
+            j.check_main_class_present(data, job)
+        else:
+            j.check_data_sources(data, job)
+
+            job_type, subtype = edp.split_job_type(job.type)
+            if job_type == edp.JOB_TYPE_MAPREDUCE and (
+                    subtype == edp.JOB_SUBTYPE_STREAMING):
+                j.check_streaming_present(data, job)
+
     @staticmethod
     def get_possible_job_config(job_type):
         return workflow_factory.get_possible_job_config(job_type)
@@ -137,7 +168,8 @@ class OozieJobEngine(base_engine.JobEngine):
                 edp.JOB_TYPE_MAPREDUCE_STREAMING,
                 edp.JOB_TYPE_PIG]
 
-    def _upload_job_files_to_hdfs(self, where, job_dir, job):
+    def _upload_job_files_to_hdfs(self, where, job_dir, job,
+                                  proxy_configs=None):
         mains = job.mains or []
         libs = job.libs or []
         uploaded_paths = []
@@ -145,11 +177,11 @@ class OozieJobEngine(base_engine.JobEngine):
 
         with remote.get_remote(where) as r:
             for main in mains:
-                raw_data = dispatch.get_raw_binary(main)
+                raw_data = dispatch.get_raw_binary(main, proxy_configs)
                 h.put_file_to_hdfs(r, raw_data, main.name, job_dir, hdfs_user)
                 uploaded_paths.append(job_dir + '/' + main.name)
             for lib in libs:
-                raw_data = dispatch.get_raw_binary(lib)
+                raw_data = dispatch.get_raw_binary(lib, proxy_configs)
                 # HDFS 2.2.0 fails to put file if the lib dir does not exist
                 self.create_hdfs_dir(r, job_dir + "/lib")
                 h.put_file_to_hdfs(r, raw_data, lib.name, job_dir + "/lib",

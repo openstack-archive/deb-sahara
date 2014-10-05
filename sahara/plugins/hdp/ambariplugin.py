@@ -21,7 +21,6 @@ from sahara.i18n import _
 from sahara.i18n import _LI
 from sahara.openstack.common import log as logging
 from sahara.plugins.general import exceptions as ex
-from sahara.plugins.general import utils as u
 from sahara.plugins.hdp import hadoopserver as h
 from sahara.plugins.hdp import saharautils as utils
 from sahara.plugins.hdp.versions import versionhandlerfactory as vhf
@@ -137,30 +136,10 @@ class AmbariPlugin(p.ProvisioningPluginBase):
                                         "node_groups": node_groups,
                                         "cluster_configs": cluster_configs})
 
-    def get_oozie_server(self, cluster):
-        return u.get_instance(cluster, "OOZIE_SERVER")
-
     def get_edp_engine(self, cluster, job_type):
         version_handler = (
             self.version_factory.get_version_handler(cluster.hadoop_version))
         return version_handler.get_edp_engine(cluster, job_type)
-
-    def validate_edp(self, cluster):
-        oo_count = u.get_instances_count(cluster, 'OOZIE_SERVER')
-        if oo_count != 1:
-            raise ex.InvalidComponentCountException(
-                'OOZIE_SERVER', '1', oo_count)
-
-    def get_resource_manager_uri(self, cluster):
-        version_handler = (
-            self.version_factory.get_version_handler(cluster.hadoop_version))
-        return version_handler.get_resource_manager_uri(cluster)
-
-    def get_name_node_uri(self, cluster):
-        return cluster['info']['HDFS']['NameNode']
-
-    def get_oozie_server_uri(self, cluster):
-        return cluster['info']['JobFlow']['Oozie'] + "/oozie/"
 
     def update_infra(self, cluster):
         pass

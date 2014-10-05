@@ -32,6 +32,9 @@ LOG = logging.getLogger(__name__)
 
 
 class HeatEngine(e.Engine):
+    def get_type_and_version(self):
+        return "heat.1.0"
+
     def _add_volumes(self, ctx, cluster):
         for instance in g.get_instances(cluster):
             res_names = heat.client().resources.get(
@@ -98,8 +101,8 @@ class HeatEngine(e.Engine):
             self._rollback_cluster_creation(cluster, reason)
             return False
 
-        rollback_count = rollback_info.get('rollback_count', {})
-        target_count = rollback_info.get('target_count', {})
+        rollback_count = rollback_info.get('rollback_count', {}).copy()
+        target_count = rollback_info.get('target_count', {}).copy()
         if rollback_count or target_count:
             self._rollback_cluster_scaling(
                 cluster, rollback_count, target_count, reason)

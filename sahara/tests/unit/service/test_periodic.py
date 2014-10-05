@@ -46,13 +46,13 @@ class TestPeriodicBack(base.SaharaWithDbTestCase):
         self._create_job_execution({"end_time": None,
                                     "id": 3},
                                    job, ds, ds)
-        p.SaharaPeriodicTasks().update_job_statuses(None)
+        p._make_periodic_tasks().update_job_statuses(None)
         self.assertEqual(get_job_status.call_count, 2)
         get_job_status.assert_has_calls([mock.call(u'2'),
                                          mock.call(u'3')])
 
     @mock.patch('oslo.utils.timeutils.utcnow')
-    @mock.patch('sahara.service.api.terminate_cluster')
+    @mock.patch('sahara.service.ops.terminate_cluster')
     def test_cluster_terminate(self, terminate_cluster, utcnow):
 
         utcnow.return_value = datetime.datetime(2005, 2, 1, 0, 0)
@@ -79,12 +79,12 @@ class TestPeriodicBack(base.SaharaWithDbTestCase):
 
         utcnow.return_value = datetime.datetime(2005, 2, 1, 0, 1)
 
-        p.SaharaPeriodicTasks().terminate_unneeded_clusters(None)
+        p._make_periodic_tasks().terminate_unneeded_clusters(None)
         self.assertEqual(terminate_cluster.call_count, 1)
         terminate_cluster.assert_has_calls([mock.call(u'1')])
 
     @mock.patch('oslo.utils.timeutils.utcnow')
-    @mock.patch('sahara.service.api.terminate_cluster')
+    @mock.patch('sahara.service.ops.terminate_cluster')
     def test_cluster_not_killed_too_early(self, terminate_cluster, utcnow):
 
         utcnow.return_value = datetime.datetime(2005, 2, 1, second=0)
@@ -93,11 +93,11 @@ class TestPeriodicBack(base.SaharaWithDbTestCase):
 
         utcnow.return_value = datetime.datetime(2005, 2, 1, second=20)
 
-        p.SaharaPeriodicTasks().terminate_unneeded_clusters(None)
+        p._make_periodic_tasks().terminate_unneeded_clusters(None)
         self.assertEqual(terminate_cluster.call_count, 0)
 
     @mock.patch('oslo.utils.timeutils.utcnow')
-    @mock.patch('sahara.service.api.terminate_cluster')
+    @mock.patch('sahara.service.ops.terminate_cluster')
     def test_cluster_killed_in_time(self, terminate_cluster, utcnow):
 
         utcnow.return_value = datetime.datetime(2005, 2, 1, second=0)
@@ -106,7 +106,7 @@ class TestPeriodicBack(base.SaharaWithDbTestCase):
 
         utcnow.return_value = datetime.datetime(2005, 2, 1, second=40)
 
-        p.SaharaPeriodicTasks().terminate_unneeded_clusters(None)
+        p._make_periodic_tasks().terminate_unneeded_clusters(None)
         self.assertEqual(terminate_cluster.call_count, 1)
         terminate_cluster.assert_has_calls([mock.call(u'1')])
 

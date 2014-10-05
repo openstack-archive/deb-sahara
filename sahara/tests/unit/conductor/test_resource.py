@@ -68,13 +68,13 @@ SAMPLE_JOB_BINARY_DICT = {
     "name": "bob",
     "tenant_id": "6b859fb8d1f44e8eafdfb91f21309b5f",
     "updated_at": "null",
-    "url": "swift-internal://bob.sahara/job"
+    "url": "swift://bob.sahara/job"
 }
 
 SAMPLE_JOB_BINARY_DICT2 = copy.copy(SAMPLE_JOB_BINARY_DICT)
 SAMPLE_JOB_BINARY_DICT2["name"] = "bill"
 SAMPLE_JOB_BINARY_DICT2["id"] = "c0caf119-1111-2222-a46e-0f28ebd23b5c"
-SAMPLE_JOB_BINARY_DICT2["url"] = "swift-internal://bill.sahara/job"
+SAMPLE_JOB_BINARY_DICT2["url"] = "swift://bill.sahara/job"
 
 SAMPLE_JOB_DICT = {
     "tenant_id": "test_tenant",
@@ -116,6 +116,10 @@ SAMPLE_JOB_EXECUTION = {
             swift_helper.HADOOP_SWIFT_PASSWORD: "openstack",
             swift_helper.HADOOP_SWIFT_USERNAME: "admin",
             "myfavoriteconfig": 1
+        },
+        "proxy_configs": {
+            "proxy_username": "admin",
+            "proxy_password": "openstack"
         },
         "trusts": {
             "input_id": "9c528755099149b8b7166f3d0fa3bf10",
@@ -219,6 +223,11 @@ class TestResource(testtools.TestCase):
         self.assertIn('trusts', job_exec['job_configs'])
         self.assertIn('input_id', job_exec['job_configs']['trusts'])
         self.assertIn('output_id', job_exec['job_configs']['trusts'])
+        self.assertIn('proxy_configs', job_exec['job_configs'])
+        self.assertIn('proxy_username',
+                      job_exec['job_configs']['proxy_configs'])
+        self.assertIn('proxy_password',
+                      job_exec['job_configs']['proxy_configs'])
 
         wrapped_dict = job_exec.to_wrapped_dict()['job_execution']
         self.assertNotIn('extra', wrapped_dict)
@@ -233,3 +242,4 @@ class TestResource(testtools.TestCase):
             self.assertNotIn('conf', a)
 
         self.assertNotIn('trusts', wrapped_dict['job_configs'])
+        self.assertNotIn('proxy_configs', wrapped_dict['job_configs'])

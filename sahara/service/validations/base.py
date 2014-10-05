@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import operator
+
 import novaclient.exceptions as nova_ex
 from oslo.config import cfg
 
@@ -145,9 +147,10 @@ def check_flavor_exists(flavor_id):
 
 def check_security_groups_exist(security_groups):
     security_group_list = nova.client().security_groups.list()
-    security_group_names = [sg.name for sg in security_group_list]
+    allowed_groups = set(reduce(
+        operator.add, [[sg.id, sg.name] for sg in security_group_list], []))
     for sg in security_groups:
-        if sg not in security_group_names:
+        if sg not in allowed_groups:
             raise ex.InvalidException(_("Security group '%s' not found") % sg)
 
 
@@ -215,12 +218,6 @@ def check_heat_stack_name(cluster_name):
                 raise ex.NameAlreadyExistsException(
                     _("Cluster name '%s' is already used as Heat stack name")
                     % cluster_name)
-
-
-def check_cluster_exists(id):
-    if not api.get_cluster(id):
-        raise ex.InvalidException(
-            _("Cluster with id '%s' doesn't exist") % id)
 
 
 def check_cluster_hostnames_lengths(cluster_name, node_groups):
@@ -367,11 +364,3 @@ def check_required_image_tags(plugin_name, hadoop_version, image_id):
                   " tags ['%(name)s', '%(version)s']")
                 % {'image': image_id, 'name': plugin_name,
                    'version': hadoop_version})
-
-
-# EDP
-
-
-def check_edp_job_support(cluster_id):
-    cluster = api.get_cluster(cluster_id)
-    plugin_base.PLUGINS.get_plugin(cluster.plugin_name).validate_edp(cluster)
