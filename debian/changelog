@@ -1,3 +1,9 @@
+sahara (2014.2~rc1-2) UNRELEASED; urgency=medium
+
+  * Review short description.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 07 Oct 2014 16:36:18 +0800
+
 sahara (2014.2~rc1-1) experimental; urgency=medium
 
   * New upstream release.

@@ -96,7 +96,7 @@ Depends: alembic (>= 0.6.4),
          ${misc:Depends},
          ${python:Depends}
 Recommends: python-ldap
-Description: data-intensive application cluster (Hadoop or Spark) - library
+Description: OpenStack data processing cluster as a service - library
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
  Savanna project, renamed due to potential trademark issues.
@@ -114,7 +114,7 @@ Depends: adduser,
          ${misc:Depends},
          ${python:Depends}
 Recommends: python-ldap
-Description: data-intensive application cluster (Hadoop or Spark) - common files
+Description: OpenStack data processing cluster as a service - common files
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
  Savanna project, renamed due to potential trademark issues.
@@ -131,7 +131,7 @@ Depends: adduser,
          ${misc:Depends},
          ${ostack-lsb-base},
          ${python:Depends}
-Description: data-intensive application cluster (Hadoop or Spark) - API & Engine
+Description: OpenStack data processing cluster as a service - API & Engine
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
  Savanna project, renamed due to potential trademark issues.
@@ -143,7 +143,7 @@ Architecture: all
 Section: doc
 Pre-Depends: dpkg (>= 1.15.6~)
 Depends: ${misc:Depends}, ${sphinxdoc:Depends}
-Description: data-intensive application cluster (Hadoop or Spark) - doc
+Description: OpenStack data processing cluster as a service - doc
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
  Savanna project, renamed due to potential trademark issues.
