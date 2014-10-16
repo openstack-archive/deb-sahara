@@ -1,3 +1,9 @@
+sahara (2014.2-1) experimental; urgency=medium
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Thu, 16 Oct 2014 20:10:10 +0800
+
 sahara (2014.2~rc2-1) experimental; urgency=medium
 
   * New upstream release.
