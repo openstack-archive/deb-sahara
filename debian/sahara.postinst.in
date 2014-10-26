@@ -6,7 +6,7 @@ set -e
 
 if [ "$1" = "configure" ] ; then
 	. /usr/share/debconf/confmodule
-	pkgos_register_endpoint_postinst sahara sahara cluster "Sahara Cluster Service" 8386 /v1/'%(tenant_id)s'
+	pkgos_register_endpoint_postinst sahara sahara data_processing "Sahara Cluster Service" 8386 /v1/'%(tenant_id)s'
 	db_stop
 fi
 
