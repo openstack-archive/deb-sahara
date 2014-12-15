@@ -1,3 +1,9 @@
+sahara (2014.2.1-1) experimental; urgency=medium
+
+  * New upstream release.
+
+ -- Thomas Goirand <zigo@debian.org>  Mon, 15 Dec 2014 05:17:43 +0000
+
 sahara (2014.2-2) experimental; urgency=medium
 
   * Fixed the sahara endpoint url from v1 to v1.1.
