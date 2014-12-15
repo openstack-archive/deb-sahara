@@ -97,13 +97,13 @@ class NeutronClientRemoteWrapper():
                         if adapter.host == host]
         else:
             # need to retrieve or create specific adapter
-            adapter = self.adapters.get((host, port), None, *args, **kwargs)
+            adapter = self.adapters.get((host, port), None)
             if not adapter:
                 LOG.debug('Creating neutron adapter for {0}:{1}'
                           .format(host, port))
                 qrouter = self.get_router()
                 adapter = (
-                    NeutronHttpAdapter(qrouter, host, port))
+                    NeutronHttpAdapter(qrouter, host, port, *args, **kwargs))
                 self.adapters[(host, port)] = adapter
                 adapters = [adapter]
 
@@ -131,7 +131,7 @@ class NeutronHttpAdapter(adapters.HTTPAdapter):
             if http_conn.sock is None:
                 if hasattr(http_conn, 'connect'):
                     sock = self._connect()
-                    LOG.debug('HTTP connecction {0} getting new '
+                    LOG.debug('HTTP connection {0} getting new '
                               'netcat socket {1}'.format(http_conn, sock))
                     http_conn.sock = sock
             else:
@@ -170,6 +170,7 @@ class NetcatSocket:
     def send(self, content):
         try:
             self.process.stdin.write(content)
+            self.process.stdin.flush()
         except IOError as e:
             raise ex.SystemError(e)
         return len(content)
