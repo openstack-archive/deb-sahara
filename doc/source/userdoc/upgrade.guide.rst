@@ -48,7 +48,7 @@ The Sahara UI is available in OpenStack Dashboard in
 
 Note that you have to properly register Sahara in Keystone in
 order for Sahara UI in the Dashboard to work. For details see
-``:ref:`registering Sahara in installation guide <register-sahara-label>```.
+:ref:`registering Sahara in installation guide <register-sahara-label>`.
 
 The `sahara-dashboard <https://git.openstack.org/cgit/openstack/sahara-dashboard>`_
 project is now used solely to host Sahara UI integration tests.
@@ -83,3 +83,14 @@ perspective, but there are internal changes:
 
 Note, new implementation will be applied for new clusters only. Old
 implementation will be applied if user scales cluster created in Icehouse.
+
+Juno -> Kilo
+------------
+
+Sahara requires policy configuration
+++++++++++++++++++++++++++++++++++++
+
+Starting from Kilo Sahara requires policy configuration provided. Place
+``policy.json`` file near Sahara configuration file or specify ``policy_file``
+parameter. For details see :ref:`policy section in configuration guide <policy-configuration-label>`.
+

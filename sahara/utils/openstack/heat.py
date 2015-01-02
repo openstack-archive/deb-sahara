@@ -17,6 +17,7 @@ import json
 
 from heatclient import client as heat_client
 from oslo.config import cfg
+import six
 
 from sahara import context
 from sahara import exceptions as ex
@@ -25,6 +26,7 @@ from sahara.openstack.common import log as logging
 from sahara.utils import files as f
 from sahara.utils import general as g
 from sahara.utils.openstack import base
+from sahara.utils.openstack import neutron
 
 
 CONF = cfg.CONF
@@ -36,7 +38,7 @@ SSH_PORT = 22
 def client():
     ctx = context.current()
     heat_url = base.url_for(ctx.service_catalog, 'orchestration')
-    return heat_client.Client('1', heat_url, token=ctx.token)
+    return heat_client.Client('1', heat_url, token=ctx.auth_token)
 
 
 def get_stack(stack_name):
@@ -176,13 +178,24 @@ class ClusterTemplate(object):
         yield _load_template('security_group.heat', fields)
 
     def _serialize_auto_security_group_rules(self, ng):
+        create_rule = lambda cidr, proto, from_port, to_port: {
+            "CidrIp": cidr,
+            "IpProtocol": proto,
+            "FromPort": six.text_type(from_port),
+            "ToPort": six.text_type(to_port)}
+
         rules = []
         for port in ng.open_ports:
-            rules.append({"remote_ip_prefix": "0.0.0.0/0", "protocol": "tcp",
-                          "port_range_min": port, "port_range_max": port})
+            rules.append(create_rule('0.0.0.0/0', 'tcp', port, port))
 
-        rules.append({"remote_ip_prefix": "0.0.0.0/0", "protocol": "tcp",
-                      "port_range_min": SSH_PORT, "port_range_max": SSH_PORT})
+        rules.append(create_rule('0.0.0.0/0', 'tcp', SSH_PORT, SSH_PORT))
+
+        # open all traffic for private networks
+        if CONF.use_neutron:
+            for cidr in neutron.get_private_network_cidrs(ng.cluster):
+                for protocol in ['tcp', 'udp']:
+                    rules.append(create_rule(cidr, protocol, 1, 65535))
+                rules.append(create_rule(cidr, 'icmp', -1, -1))
 
         return json.dumps(rules)
 
@@ -220,6 +233,13 @@ class ClusterTemplate(object):
         gen_userdata_func = self.node_groups_extra[ng.id]['gen_userdata_func']
         userdata = gen_userdata_func(ng, inst_name)
 
+        availability_zone = ''
+        if ng.availability_zone:
+            # Use json.dumps to escape ng.availability_zone
+            # (in case it contains quotes)
+            availability_zone = ('"availability_zone" : %s,' %
+                                 json.dumps(ng.availability_zone))
+
         fields = {'instance_name': inst_name,
                   'flavor_id': ng.flavor_id,
                   'image_id': ng.get_image_id(),
@@ -229,12 +249,15 @@ class ClusterTemplate(object):
                   'userdata': _prepare_userdata(userdata),
                   'scheduler_hints':
                   self._get_anti_affinity_scheduler_hints(ng),
-                  'security_groups': security_groups}
+                  'security_groups': security_groups,
+                  'availability_zone': availability_zone}
 
         yield _load_template('instance.heat', fields)
 
         for idx in range(0, ng.volumes_per_node):
-            yield self._serialize_volume(inst_name, idx, ng.volumes_size)
+            yield self._serialize_volume(inst_name, idx, ng.volumes_size,
+                                         ng.volumes_availability_zone,
+                                         ng.volume_type)
 
     def _serialize_port(self, port_name, fixed_net_id, security_groups):
         fields = {'port_name': port_name,
@@ -262,12 +285,29 @@ class ClusterTemplate(object):
 
         return _load_template('nova-floating.heat', fields)
 
-    def _serialize_volume(self, inst_name, volume_idx, volumes_size):
+    def _serialize_volume_type(self, volume_type):
+        property = '"volume_type" : %s'
+        if volume_type is None:
+            return property % 'null'
+        else:
+            return property % ('"%s"' % volume_type)
+
+    def _serialize_volume(self, inst_name, volume_idx, volumes_size,
+                          volumes_availability_zone, volume_type):
         fields = {'volume_name': _get_volume_name(inst_name, volume_idx),
                   'volumes_size': volumes_size,
                   'volume_attach_name': _get_volume_attach_name(inst_name,
                                                                 volume_idx),
-                  'instance_name': inst_name}
+                  'availability_zone': '',
+                  'instance_name': inst_name,
+                  'volume_type': self._serialize_volume_type(volume_type)}
+
+        if volumes_availability_zone:
+            # Use json.dumps to escape volumes_availability_zone
+            # (in case it contains quotes)
+            fields['availability_zone'] = (
+                '"availability_zone": %s,' %
+                json.dumps(volumes_availability_zone))
 
         return _load_template('volume.heat', fields)
 

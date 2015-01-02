@@ -114,11 +114,14 @@ class ClusterTest(test_base.ConductorManagerTestCase):
             ng.pop("volume_mount_prefix")
             ng.pop("volumes_size")
             ng.pop("volumes_per_node")
+            ng.pop("volumes_availability_zone")
+            ng.pop("volume_type")
             ng.pop("floating_ip_pool")
             ng.pop("image_username")
             ng.pop("open_ports")
             ng.pop("auto_security_group")
             ng.pop("tenant_id")
+            ng.pop("availability_zone")
 
         self.assertEqual(SAMPLE_CLUSTER["node_groups"],
                          cl_db_obj["node_groups"])
@@ -287,3 +290,24 @@ class ClusterTest(test_base.ConductorManagerTestCase):
 
         with testtools.ExpectedException(ex.NotFoundException):
             self.api.instance_remove(ctx, instance_id)
+
+    def test_cluster_search(self):
+        ctx = context.ctx()
+        self.api.cluster_create(ctx, SAMPLE_CLUSTER)
+
+        lst = self.api.cluster_get_all(ctx)
+        self.assertEqual(len(lst), 1)
+
+        kwargs = {'name': SAMPLE_CLUSTER['name'],
+                  'plugin_name': SAMPLE_CLUSTER['plugin_name']}
+        lst = self.api.cluster_get_all(ctx, **kwargs)
+        self.assertEqual(len(lst), 1)
+
+        # Valid field but no matching value
+        kwargs = {'name': SAMPLE_CLUSTER['name']+'foo'}
+        lst = self.api.cluster_get_all(ctx, **kwargs)
+        self.assertEqual(len(lst), 0)
+
+        # Invalid field
+        lst = self.api.cluster_get_all(ctx, **{'badfield': 'somevalue'})
+        self.assertEqual(len(lst), 0)

@@ -4,12 +4,12 @@ Features Overview
 Cluster Scaling
 ---------------
 
-The mechanism of cluster scaling is designed to enable user to change the
+The mechanism of cluster scaling is designed to enable a user to change the
 number of running instances without creating a new cluster.
-User may change number of instances in existing Node Groups or add new Node
+A user may change the number of instances in existing Node Groups or add new Node
 Groups.
 
-If cluster fails to scale properly, all changes will be rolled back.
+If a cluster fails to scale properly, all changes will be rolled back.
 
 Swift Integration
 -----------------
@@ -26,26 +26,34 @@ Cinder is a block storage service that can be used as an alternative for an
 ephemeral drive. Using Cinder volumes increases reliability of data which is
 important for HDFS service.
 
-User can set how many volumes will be attached to each node in a Node Group
+A user can set how many volumes will be attached to each node in a Node Group
 and the size of each volume.
 
 All volumes are attached during Cluster creation/scaling operations.
 
+.. _neutron-nova-network:
+
 Neutron and Nova Network support
 --------------------------------
-OpenStack Cluster may use Nova Network or Neutron as a networking service.
-Sahara supports both, but when deployed,
-a special configuration for networking should be set explicitly. By default
-Sahara will behave as if Nova Network is used.
-If OpenStack Cluster uses Neutron, then ``use_neutron`` option should be set
-to ``True`` in Sahara configuration file.  In
-addition, if the OpenStack Cluster supports network namespaces, set the
-``use_namespaces`` option to ``True``
+OpenStack clusters may use Nova or Neutron as a networking service. Sahara
+supports both, but when deployed a special configuration for networking
+should be set explicitly. By default Sahara will behave as if Nova is used.
+If an OpenStack cluster uses Neutron, then the ``use_neutron`` property should
+be set to ``True`` in the Sahara configuration file. Additionally, if the
+cluster supports network namespaces the ``use_namespaces`` property can be
+used to enable their usage.
 
 .. sourcecode:: cfg
 
+    [DEFAULT]
     use_neutron=True
     use_namespaces=True
+
+.. note::
+    If a user other than ``root`` will be running the Sahara server
+    instance and namespaces are used, some additional configuration is
+    required, please see the :doc:`advanced.configuration.guide` for more
+    information.
 
 Floating IP Management
 ----------------------
@@ -54,7 +62,7 @@ Sahara needs to access instances through ssh during a Cluster setup. To
 establish a connection Sahara may
 use both: fixed and floating IP of an Instance. By default
 ``use_floating_ips`` parameter is set to ``True``, so
-Sahara will use Floating IP of an Instance to connect. In this case, user has
+Sahara will use Floating IP of an Instance to connect. In this case, the user has
 two options for how to make all instances
 get a floating IP:
 
@@ -66,39 +74,38 @@ Note: When using floating IPs for management (``use_floating_ip=True``)
 **every** instance in the Cluster should have a floating IP,
 otherwise Sahara will not be able to work with it.
 
-If ``use_floating_ips`` parameter is set to ``False`` Sahara will use
+If the ``use_floating_ips`` parameter is set to ``False`` Sahara will use
 Instances' fixed IPs for management. In this case
 the node where Sahara is running should have access to Instances' fixed IP
 network. When OpenStack uses Neutron for
-networking, user will be able to choose fixed IP network for all instances
+networking, a user will be able to choose fixed IP network for all instances
 in a Cluster.
 
 Anti-affinity
 -------------
 One of the problems in Hadoop running on OpenStack is that there is no
-ability to control where machine is actually running.
+ability to control where the machine is actually running.
 We cannot be sure that two new virtual machines are started on different
-physical machines. As a result, any replication with cluster
+physical machines. As a result, any replication with the cluster
 is not reliable because all replicas may turn up on one physical machine.
-Anti-affinity feature provides an ability to explicitly tell Sahara to run
+The anti-affinity feature provides an ability to explicitly tell Sahara to run
 specified processes on different compute nodes. This
-is especially useful for Hadoop datanode process to make HDFS replicas
+is especially useful for the Hadoop data node process to make HDFS replicas
 reliable.
 
-Starting with Juno release Sahara creates server groups with
-``anti-affinity`` policy to enable anti affinity feature. Sahara creates one
+Starting with the Juno release, Sahara creates server groups with the
+``anti-affinity`` policy to enable the anti-affinity feature. Sahara creates one
 server group per cluster and assigns all instances with affected processes to
-this server group. Refer to Nova documentation on how server groups work.
+this server group. Refer to the Nova documentation on how server groups work.
 
 This feature is supported by all plugins out of the box.
 
 Data-locality
 -------------
-It is extremely important for data processing to do locally (on the same rack,
-openstack compute node or even VM) as much work as
-possible. Hadoop supports data-locality feature and can schedule jobs to
-tasktracker nodes that are local for input stream. In this case tasktracker
-could communicate directly with local data node.
+It is extremely important for data processing to work locally (on the same rack,
+OpenStack compute node or even VM). Hadoop supports the data-locality feature and can schedule jobs to
+task tracker nodes that are local for input stream. In this case task tracker
+could communicate directly with the local data node.
 
 Sahara supports topology configuration for HDFS and Swift data sources.
 
@@ -123,8 +130,8 @@ racks in the following format:
     compute1 /rack2
     compute1 /rack2
 
-Note that compute node name must be exactly the same as configured in
-openstack (``host`` column in admin list for instances).
+Note that the compute node name must be exactly the same as configured in
+OpenStack (``host`` column in admin list for instances).
 
 ``swift_topology_file`` should contain mapping between swift nodes and
 racks in the following format:
@@ -135,14 +142,14 @@ racks in the following format:
     node2 /rack2
     node3 /rack2
 
-Note that swift node must be exactly the same as configures in object.builder
-swift ring. Also make sure that VMs with tasktracker service has direct access
+Note that the swift node must be exactly the same as configures in object.builder
+swift ring. Also make sure that VMs with the task tracker service have direct access
 to swift nodes.
 
 Hadoop versions after 1.2.0 support four-layer topology
 (https://issues.apache.org/jira/browse/HADOOP-8468). To enable this feature
 set ``enable_hypervisor_awareness`` option to ``True`` in Sahara configuration
-file. In this case Sahara will add compute node ID as a second level of
+file. In this case Sahara will add the compute node ID as a second level of
 topology for Virtual Machines.
 
 Security group management
@@ -153,11 +160,11 @@ instances. This can be done by providing the ``security_groups`` parameter for
 the Node Group or Node Group Template. By default an empty list is used that
 will result in using the default security group.
 
-Sahara may also create a security group for instances in node group
+Sahara may also create a security group for instances in the node group
 automatically. This security group will only have open ports which are
 required by instance processes or the Sahara engine. This option is useful
 for development and secured from outside environments, but for production
-environments it is recommended to control security group policy manually.
+environments it is recommended to control the security group policy manually.
 
 Heat Integration
 ----------------
@@ -177,8 +184,32 @@ To make Sahara work with Heat the following steps are required:
 
 
 There is a feature parity between direct and heat infrastructure engines. It is
-recommended to use heat engine since direct engine will be deprecated at some
+recommended to use the heat engine since the direct engine will be deprecated at some
 point.
+
+Multi region deployment
+-----------------------
+Sahara supports multi region deployment. In this case, each instance of Sahara
+should have the ``os_region_name=<region>`` property set in the
+configuration file.
+
+Hadoop HDFS High Availability
+-----------------------------
+Hadoop HDFS High Availability (HDFS HA) uses 2 Namenodes in an active/standby
+architecture to ensure that HDFS will continue to work even when the active namenode fails.
+The High Availability is achieved by using a set of JournalNodes and Zookeeper servers along
+with ZooKeeper Failover Controllers (ZKFC) and some additional configurations and changes to
+HDFS and other services that use HDFS.
+
+Currently HDFS HA is only supported with the HDP 2.0.6 plugin. The feature is enabled through
+a cluster_configs parameter in the cluster's JSON:
+
+.. sourcecode:: cfg
+        "cluster_configs": {
+                "HDFSHA": {
+                        "hdfs.nnha": true
+                }
+        }
 
 Plugin Capabilities
 -------------------
@@ -207,15 +238,15 @@ Running Sahara in Distributed Mode
 
 .. warning::
     Currently distributed mode for Sahara is in alpha state. We do not
-    recommend using it in production environment.
+    recommend using it in a production environment.
 
-The `installation guide <installation.guide.html>`_ suggests to launch
+The :doc:`installation.guide` suggests to launch
 Sahara as a single 'sahara-all' process. It is also possible to run Sahara
 in distributed mode with 'sahara-api' and 'sahara-engine' processes running
 on several machines simultaneously.
 
-Sahara-api works as a frontend and serves users' requests. It
-offloads 'heavy' tasks to sahara-engine via RPC mechanism. While
+Sahara-api works as a front-end and serves users' requests. It
+offloads 'heavy' tasks to the sahara-engine via RPC mechanism. While the
 sahara-engine could be loaded, sahara-api by design stays free
 and hence may quickly respond on user queries.
 
@@ -265,7 +296,7 @@ The picked driver must be supplied in ``sahara.conf`` in
 ``rabbit``, ``qpid`` or ``zmq``. Next you have to supply
 driver-specific options.
 
-Unfortunately, right now there is no documentation with description of
+Unfortunately, right now there is no documentation with a description of
 drivers' configuration. The options are available only in source code.
 
  * For Rabbit MQ see

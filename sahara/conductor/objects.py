@@ -55,6 +55,7 @@ class Cluster(object):
     extra
     rollback_info - internal information required for rollback
     sahara_info - internal information about sahara settings
+    provision_progress - list of ProvisionStep objects
     node_groups - list of NodeGroup objects
     cluster_template_id
     cluster_template - ClusterTemplate object
@@ -74,12 +75,16 @@ class NodeGroup(object):
                    see the docs for details
     volumes_per_node
     volumes_size
+    volumes_availability_zone - name of Cinder availability zone
+                                where to spawn volumes
     volume_mount_prefix
+    volume_type
     floating_ip_pool - Floating IP Pool name used to assign Floating IPs to
                        instances in this Node Group
     security_groups - List of security groups for instances in this Node Group
     auto_security_group - indicates if Sahara should create additional
                           security group for the Node Group
+    availability_zone - name of Nova availability zone where to spawn instances
     open_ports - List of ports that will be opened if auto_security_group is
                  True
 
@@ -173,10 +178,13 @@ class NodeGroupTemplate(object):
                    see the docs for details
     volumes_per_node
     volumes_size
+    volumes_availability_zone
     volume_mount_prefix
+    volume_type
     floating_ip_pool
     security_groups
     auto_security_group
+    availability_zone
     """
 
 
@@ -249,4 +257,36 @@ class JobBinaryInternal(object):
     tenant_id
     name
     datasize
+    """
+
+# Events ops
+
+
+class ClusterProvisionStep(object):
+    """An object representing cluster ProvisionStep
+
+    id
+    cluster_id
+    tenant_id
+    step_name
+    step_type
+    completed
+    total
+    successful
+    started_at
+    completed_at
+    events - list of Events objects assigned to the cluster
+    """
+
+
+class ClusterEvent(object):
+    """An object representing events about cluster provision
+
+    id
+    node_group_id
+    instance_id
+    instance_name
+    event_info
+    successful
+    step_id
     """

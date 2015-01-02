@@ -52,7 +52,7 @@ Ubuntu 12.04 system.
 .. sourcecode:: console
 
     $ sudo apt-get install git-core
-    $ git clone https://github.com/openstack-dev/devstack.git
+    $ git clone https://git.openstack.org/cgit/openstack-dev/devstack.git
 
 2. Create file ``local.conf`` in devstack directory with the following content:
 
@@ -72,7 +72,7 @@ Ubuntu 12.04 system.
     SWIFT_REPLICAS=1
     SWIFT_DATA_DIR=$DEST/data
 
-    # Force checkout prerequsites
+    # Force checkout prerequisites
     # FORCE_PREREQ=1
 
     # keystone is now configured by default to use PKI as the token format which produces huge tokens.

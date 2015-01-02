@@ -16,12 +16,14 @@
 import datetime
 
 from oslo.config import cfg
+from oslo.utils import timeutils
 
 from sahara import conductor as c
 from sahara import context
 from sahara import exceptions as e
 from sahara.i18n import _
 from sahara.i18n import _LE
+from sahara.i18n import _LI
 from sahara.openstack.common import log
 from sahara.service.edp import job_utils
 from sahara.service.edp.oozie import engine as oozie_engine
@@ -70,7 +72,8 @@ def _update_job_status(engine, job_execution):
 
 
 def _update_job_execution_extra(cluster, job_execution):
-    if CONF.use_namespaces and not CONF.use_floating_ips:
+    if ((CONF.use_namespaces and not CONF.use_floating_ips) or
+            CONF.proxy_command):
         info = cluster.node_groups[0].instances[0].remote().get_neutron_info()
         extra = job_execution.extra.copy()
         extra['neutron'] = info
@@ -131,20 +134,50 @@ def run_job(job_execution_id):
 def cancel_job(job_execution_id):
     ctx = context.ctx()
     job_execution = conductor.job_execution_get(ctx, job_execution_id)
+    if job_execution.info['status'] in edp.JOB_STATUSES_TERMINATED:
+        return job_execution
     cluster = conductor.cluster_get(ctx, job_execution.cluster_id)
-    if cluster is not None:
-        engine = _get_job_engine(cluster, job_execution)
-        if engine is not None:
-            try:
-                job_info = engine.cancel_job(job_execution)
-            except Exception as e:
-                job_info = None
-                LOG.exception(
-                    _LE("Error during cancel of job execution %(job)s: "
-                        "%(error)s"), {'job': job_execution.id, 'error': e})
-            if job_info is not None:
-                job_execution = _write_job_status(job_execution, job_info)
-    return job_execution
+    if cluster is None:
+        return job_execution
+    engine = _get_job_engine(cluster, job_execution)
+    if engine is not None:
+        job_execution = conductor.job_execution_update(
+            ctx, job_execution_id,
+            {'info': {'status': edp.JOB_STATUS_TOBEKILLED}})
+
+        timeout = CONF.job_canceling_timeout
+        s_time = timeutils.utcnow()
+        while timeutils.delta_seconds(s_time, timeutils.utcnow()) < timeout:
+            if job_execution.info['status'] not in edp.JOB_STATUSES_TERMINATED:
+                try:
+                    job_info = engine.cancel_job(job_execution)
+                except Exception as ex:
+                    job_info = None
+                    LOG.exception(
+                        _LE("Error during cancel of job execution %(job)s: "
+                            "%(error)s"), {'job': job_execution.id,
+                                           'error': ex})
+                if job_info is not None:
+                    job_execution = _write_job_status(job_execution, job_info)
+                    LOG.info(_LI("Job execution %s was canceled successfully"),
+                             job_execution.id)
+                    return job_execution
+                context.sleep(3)
+                job_execution = conductor.job_execution_get(
+                    ctx, job_execution_id)
+                if not job_execution:
+                    LOG.info(_LI("Job execution %(job_exec_id)s was deleted. "
+                                 "Canceling current operation."),
+                             {'job_exec_id': job_execution_id})
+                    return job_execution
+            else:
+                LOG.info(_LI("Job execution status %(job)s: %(status)s"),
+                         {'job': job_execution.id,
+                          'status': job_execution.info['status']})
+                return job_execution
+        else:
+            raise e.CancelingFailed(_('Job execution %s was not canceled')
+                                    % job_execution.id)
 
 
 def get_job_status(job_execution_id):

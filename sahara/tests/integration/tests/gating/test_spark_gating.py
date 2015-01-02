@@ -55,6 +55,7 @@ class SparkGatingTest(swift.SwiftTest, scaling.ScalingTest,
             'description': 'test node group template for Spark plugin',
             'node_processes': self.spark_config.MASTER_NODE_PROCESSES,
             'floating_ip_pool': self.floating_ip_pool,
+            'auto_security_group': True,
             'node_configs': {}
         }
         self.ng_tmpl_m_nn_id = self.create_node_group_template(**template)
@@ -68,6 +69,7 @@ class SparkGatingTest(swift.SwiftTest, scaling.ScalingTest,
             'description': 'test node group template for Spark plugin',
             'node_processes': self.spark_config.WORKER_NODE_PROCESSES,
             'floating_ip_pool': self.floating_ip_pool,
+            'auto_security_group': True,
             'node_configs': {}
         }
         self.ng_tmpl_s_dn_id = self.create_node_group_template(**template)
@@ -108,7 +110,8 @@ class SparkGatingTest(swift.SwiftTest, scaling.ScalingTest,
             'description': 'test cluster',
             'cluster_configs': {}
         }
-        self.create_cluster(**cluster)
+        cluster_id = self.create_cluster(**cluster)
+        self.poll_cluster_state(cluster_id)
         self.cluster_info = self.get_cluster_info(self.spark_config)
         self.await_active_workers_for_namenode(self.cluster_info['node_info'],
                                                self.spark_config)
@@ -121,10 +124,12 @@ class SparkGatingTest(swift.SwiftTest, scaling.ScalingTest,
         # check spark
         spark_jar = self.edp_info.read_spark_example_jar()
         spark_configs = self.edp_info.spark_example_configs()
-        self.edp_testing(utils_edp.JOB_TYPE_SPARK,
-                         job_data_list=[{'jar': spark_jar}],
-                         lib_data_list=[],
-                         configs=spark_configs)
+        job_id = self.edp_testing(
+            utils_edp.JOB_TYPE_SPARK,
+            job_data_list=[{'jar': spark_jar}],
+            lib_data_list=[],
+            configs=spark_configs)
+        self.poll_jobs_status([job_id])
 
     @b.errormsg("Failure while cluster scaling: ")
     def _check_scaling(self):

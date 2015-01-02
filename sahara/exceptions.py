@@ -16,6 +16,7 @@
 import six
 
 from sahara.i18n import _
+from sahara.openstack.common import uuidutils
 
 
 class SaharaException(Exception):
@@ -33,6 +34,9 @@ class SaharaException(Exception):
     def __init__(self):
         super(SaharaException, self).__init__(
             '%s: %s' % (self.code, self.message))
+        self.uuid = uuidutils.generate_uuid()
+        self.message = (_('%(message)s\nError ID: %(id)s')
+                        % {'message': self.message, 'id': self.uuid})
 
 
 class NotFoundException(SaharaException):
@@ -47,6 +51,7 @@ class NotFoundException(SaharaException):
             self.message = message % value
         else:
             self.message = self.message % value
+        super(NotFoundException, self).__init__()
 
 
 class NameAlreadyExistsException(SaharaException):
@@ -56,6 +61,7 @@ class NameAlreadyExistsException(SaharaException):
         self.code = "NAME_ALREADY_EXISTS"
         if message:
             self.message = message
+        super(NameAlreadyExistsException, self).__init__()
 
 
 class InvalidCredentials(SaharaException):
@@ -65,6 +71,7 @@ class InvalidCredentials(SaharaException):
         self.code = "INVALID_CREDENTIALS"
         if message:
             self.message = message
+        super(InvalidCredentials, self).__init__()
 
 
 class InvalidException(SaharaException):
@@ -74,6 +81,7 @@ class InvalidException(SaharaException):
         self.code = "INVALID_REFERENCE"
         if message:
             self.message = message
+        super(InvalidException, self).__init__()
 
 
 class RemoteCommandException(SaharaException):
@@ -95,12 +103,14 @@ class RemoteCommandException(SaharaException):
                                                     six.text_type(ret_code))
 
         if stderr:
-            self.message = '%s\nSTDERR:\n%s' % (self.message, stderr)
+            self.message = '%s\nSTDERR:\n%s' % (
+                self.message, stderr.decode('ascii', 'ignore'))
 
         if stdout:
-            self.message = '%s\nSTDOUT:\n%s' % (self.message, stdout)
+            self.message = '%s\nSTDOUT:\n%s' % (
+                self.message, stdout.decode('ascii', 'ignore'))
 
-        self.message = self.message.decode('ascii', 'ignore')
+        super(RemoteCommandException, self).__init__()
 
 
 class InvalidDataException(SaharaException):
@@ -115,6 +125,7 @@ class InvalidDataException(SaharaException):
     def __init__(self, message=None):
         if message:
             self.message = message
+        super(InvalidDataException, self).__init__()
 
 
 class BadJobBinaryInternalException(SaharaException):
@@ -125,6 +136,7 @@ class BadJobBinaryInternalException(SaharaException):
         if message:
             self.message = message
         self.code = "BAD_JOB_BINARY"
+        super(BadJobBinaryInternalException, self).__init__()
 
 
 class BadJobBinaryException(SaharaException):
@@ -135,6 +147,7 @@ class BadJobBinaryException(SaharaException):
         if message:
             self.message = message
         self.code = "BAD_JOB_BINARY"
+        super(BadJobBinaryException, self).__init__()
 
 
 class DBDuplicateEntry(SaharaException):
@@ -144,6 +157,7 @@ class DBDuplicateEntry(SaharaException):
     def __init__(self, message=None):
         if message:
             self.message = message
+        super(DBDuplicateEntry, self).__init__()
 
 
 class CreationFailed(SaharaException):
@@ -153,6 +167,17 @@ class CreationFailed(SaharaException):
     def __init__(self, message=None):
         if message:
             self.message = message
+        super(CreationFailed, self).__init__()
+
+
+class CancelingFailed(SaharaException):
+    message = _("Operation was not canceled")
+    code = "CANCELING_FAILED"
+
+    def __init__(self, message=None):
+        if message:
+            self.message = message
+        super(CancelingFailed, self).__init__()
 
 
 class DeletionFailed(SaharaException):
@@ -162,6 +187,7 @@ class DeletionFailed(SaharaException):
     def __init__(self, message=None):
         if message:
             self.message = message
+        super(DeletionFailed, self).__init__()
 
 
 class MissingFloatingNetworkException(SaharaException):
@@ -169,6 +195,7 @@ class MissingFloatingNetworkException(SaharaException):
         self.message = _("Node Group %s is missing 'floating_ip_pool' "
                          "field") % ng_name
         self.code = "MISSING_FLOATING_NETWORK"
+        super(MissingFloatingNetworkException, self).__init__()
 
 
 class SwiftClientException(SaharaException):
@@ -181,6 +208,7 @@ class SwiftClientException(SaharaException):
     def __init__(self, message):
         self.message = message
         self.code = "SWIFT_CLIENT_EXCEPTION"
+        super(SwiftClientException, self).__init__()
 
 
 class DataTooBigException(SaharaException):
@@ -192,6 +220,7 @@ class DataTooBigException(SaharaException):
             self.message = message
         self.message = self.message % ({'size': size, 'maximum': maximum})
         self.code = "DATA_TOO_BIG"
+        super(DataTooBigException, self).__init__()
 
 
 class ThreadException(SaharaException):
@@ -200,6 +229,7 @@ class ThreadException(SaharaException):
                         % {'thread': thread_description,
                            'e': six.text_type(e)})
         self.code = "THREAD_EXCEPTION"
+        super(ThreadException, self).__init__()
 
 
 class NotImplementedException(SaharaException):
@@ -207,6 +237,7 @@ class NotImplementedException(SaharaException):
 
     def __init__(self, feature):
         self.message = _("Feature '%s' is not implemented") % feature
+        super(NotImplementedException, self).__init__()
 
 
 class HeatStackException(SaharaException):
@@ -214,6 +245,7 @@ class HeatStackException(SaharaException):
         self.code = "HEAT_STACK_EXCEPTION"
         self.message = (_("Heat stack failed with status %s") %
                         heat_stack_status)
+        super(HeatStackException, self).__init__()
 
 
 class ConfigurationError(SaharaException):
@@ -221,6 +253,7 @@ class ConfigurationError(SaharaException):
 
     def __init__(self, message):
         self.message = message
+        super(ConfigurationError, self).__init__()
 
 
 class IncorrectStateError(SaharaException):
@@ -228,6 +261,7 @@ class IncorrectStateError(SaharaException):
 
     def __init__(self, message):
         self.message = message
+        super(IncorrectStateError, self).__init__()
 
 
 class SystemError(SaharaException):
@@ -235,6 +269,7 @@ class SystemError(SaharaException):
 
     def __init__(self, message):
         self.message = message
+        super(SystemError, self).__init__()
 
 
 class EDPError(SaharaException):
@@ -242,6 +277,7 @@ class EDPError(SaharaException):
 
     def __init__(self, message):
         self.message = message
+        super(EDPError, self).__init__()
 
 
 class TimeoutException(SaharaException):
@@ -250,6 +286,7 @@ class TimeoutException(SaharaException):
 
     def __init__(self, timeout):
         self.message = self.message % timeout
+        super(TimeoutException, self).__init__()
 
 
 class DeprecatedException(SaharaException):
@@ -257,3 +294,14 @@ class DeprecatedException(SaharaException):
 
     def __init__(self, message):
         self.message = message
+        super(DeprecatedException, self).__init__()
+
+
+class Forbidden(SaharaException):
+    code = "FORBIDDEN"
+    message = _("You are not authorized to complete this action.")
+
+    def __init__(self, message=None):
+        if message:
+            self.message = message
+        super(Forbidden, self).__init__()

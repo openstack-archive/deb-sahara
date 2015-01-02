@@ -19,11 +19,11 @@ import testtools
 from sahara.utils.openstack import neutron as neutron_client
 
 
-class NeutronClientRemoteWrapperTest(testtools.TestCase):
+class NeutronClientTest(testtools.TestCase):
     @mock.patch("neutronclient.neutron.client.Client")
     def test_get_router(self, patched):
         patched.side_effect = _test_get_neutron_client
-        neutron = neutron_client.NeutronClientRemoteWrapper(
+        neutron = neutron_client.NeutronClient(
             '33b47310-b7a8-4559-bf95-45ba669a448e', None, None, None)
         self.assertEqual('6c4d4e32-3667-4cd4-84ea-4cc1e98d18be',
                          neutron.get_router())
@@ -33,7 +33,7 @@ def _test_get_neutron_client(api_version, *args, **kwargs):
     return FakeNeutronClient()
 
 
-class FakeNeutronClient():
+class FakeNeutronClient(object):
     def list_routers(self):
         return {"routers": [{"status": "ACTIVE", "external_gateway_info": {
             "network_id": "61f95d3f-495e-4409-8c29-0b806283c81e"},

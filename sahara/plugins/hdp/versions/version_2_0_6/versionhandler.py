@@ -18,6 +18,7 @@ import logging
 
 from oslo.config import cfg
 import pkg_resources as pkg
+import six
 
 from sahara import context
 from sahara import exceptions as exc
@@ -26,7 +27,7 @@ from sahara.i18n import _LC
 from sahara.i18n import _LE
 from sahara.i18n import _LI
 from sahara.i18n import _LW
-from sahara.plugins.general import exceptions as ex
+from sahara.plugins import exceptions as ex
 from sahara.plugins.hdp import clusterspec as cs
 from sahara.plugins.hdp import configprovider as cfgprov
 from sahara.plugins.hdp.versions import abstractversionhandler as avm
@@ -113,8 +114,36 @@ class VersionHandler(avm.AbstractVersionHandler):
             return edp_engine.EdpOozieEngine(cluster)
         return None
 
+    def get_open_ports(self, node_group):
+        ports = [8660]  # for Ganglia
 
-class AmbariClient():
+        ports_map = {
+            'AMBARI_SERVER': [8080, 8440, 8441],
+            'NAMENODE': [50070, 50470, 8020, 9000],
+            'DATANODE': [50075, 50475, 50010, 8010],
+            'SECONDARY_NAMENODE': [50090],
+            'HISTORYSERVER': [19888],
+            'RESOURCEMANAGER': [8025, 8041, 8050],
+            'NODEMANAGER': [45454],
+            'HIVE_SERVER': [10000],
+            'HIVE_METASTORE': [9083],
+            'HBASE_MASTER': [60000, 60010],
+            'HBASE_REGIONSERVER': [60020, 60030],
+            'WEBHCAT_SERVER': [50111],
+            'GANGLIA_SERVER': [8661, 8662, 8663, 8651],
+            'MYSQL_SERVER': [3306],
+            'OOZIE_SERVER': [11000, 11001],
+            'ZOOKEEPER_SERVER': [2181, 2888, 3888],
+            'NAGIOS_SERVER': [80]
+        }
+        for process in node_group.node_processes:
+            if process in ports_map:
+                ports.extend(ports_map[process])
+
+        return ports
+
+
+class AmbariClient(object):
 
     def __init__(self, handler):
         #  add an argument for neutron discovery
@@ -336,7 +365,8 @@ class AmbariClient():
             started = True
             for items in json_result['items']:
                 status = items['Tasks']['status']
-                if status == 'FAILED' or status == 'ABORTED':
+                if (status == 'FAILED' or status == 'ABORTED' or
+                        status == 'TIMEDOUT'):
                     return False
                 else:
                     if status != 'COMPLETED':
@@ -670,8 +700,8 @@ class AmbariClient():
                     json_result['metrics']['dfs']['namenode']['LiveNodes'])
                 # parse out the map of live hosts associated with the NameNode
                 json_result_nodes = json.loads(live_nodes)
-                for node in json_result_nodes.keys():
-                    admin_state = json_result_nodes[node]['adminState']
+                for node, val in six.iteritems(json_result_nodes):
+                    admin_state = val['adminState']
                     if admin_state == 'Decommissioned':
                         LOG.info(_LI('AmbariClient: node = %(node)s is '
                                      'now in adminState = %(admin_state)s'),
@@ -727,7 +757,370 @@ class AmbariClient():
                                           cluster_spec, ambari_info):
         started_services = self._get_services_in_state(
             cluster_name, ambari_info, 'STARTED')
+
         for service in cluster_spec.services:
             if service.deployed and service.name not in started_services:
                 service.pre_service_start(cluster_spec, ambari_info,
                                           started_services)
+
+    def setup_hdfs_ha(self, cluster_spec, servers, ambari_info, name):
+
+        # Get HA cluster map
+        hac = self._hdfs_ha_cluster_map(cluster_spec, servers,
+                                        ambari_info, name)
+
+        # start active namenode in order to format and save namesapce
+        self._hdfs_ha_update_host_component(hac, hac['nn_active'],
+                                            'NAMENODE', 'STARTED')
+
+        hac['server_active'].set_namenode_safemode(hac['java_home'])
+        hac['server_active'].save_namenode_namespace(hac['java_home'])
+
+        # shutdown active namenode
+        self._hdfs_ha_update_host_component(hac, hac['nn_active'],
+                                            'NAMENODE', 'INSTALLED')
+
+        # Install HDFS_CLIENT on namenodes, to be used later for updating
+        # HDFS configs
+        if hac['nn_active'] not in hac['hdfsc_hosts']:
+            self._hdfs_ha_add_host_component(hac, hac['nn_active'],
+                                             'HDFS_CLIENT')
+        if hac['nn_standby'] not in hac['hdfsc_hosts']:
+            self._hdfs_ha_add_host_component(hac, hac['nn_standby'],
+                                             'HDFS_CLIENT')
+
+        # start the journal_nodes
+        for jn in hac['jn_hosts']:
+            self._hdfs_ha_update_host_component(hac, jn,
+                                                'JOURNALNODE', 'STARTED')
+
+        # disable any secondary namnodes
+        for snn in hac['snn_hosts']:
+            self._hdfs_ha_update_host_component(hac, snn,
+                                                'SECONDARY_NAMENODE',
+                                                'DISABLED')
+
+        # get hdfs-site config tag
+        hdfs_site_tag = self._hdfs_ha_get_config_tag(hac, 'hdfs-site')
+
+        # get hdfs-site config
+        hdfs_site = self._hdfs_ha_get_config(hac, 'hdfs-site', hdfs_site_tag)
+
+        # update hdfs-site with HDFS HA properties
+        hdfs_site_ha = self._hdfs_ha_update_hdfs_site(hac, hdfs_site)
+
+        # put new hdfs-site config
+        self._hdfs_ha_put_config(hac, 'hdfs-site', hac['config_ver'],
+                                 hdfs_site_ha)
+
+        # get core-site tag
+        core_site_tag = self._hdfs_ha_get_config_tag(hac, 'core-site')
+
+        # get core-site config
+        core_site = self._hdfs_ha_get_config(hac, 'core-site', core_site_tag)
+
+        # update core-site with HDFS HA properties
+        core_site_ha = self._hdfs_ha_update_core_site(hac, core_site)
+
+        # put new HA core-site config
+        self._hdfs_ha_put_config(hac, 'core-site', hac['config_ver'],
+                                 core_site_ha)
+
+        # update hbase-site if Hbase is installed
+        if hac['hbase_hosts']:
+            hbase_site_tag = self._hdfs_ha_get_config_tag(hac, 'hbase-site')
+            hbase_site = self._hdfs_ha_get_config(hac, 'hbase-site',
+                                                  hbase_site_tag)
+            hbase_site_ha = self._hdfs_ha_update_hbase_site(hac, hbase_site)
+            self._hdfs_ha_put_config(hac, 'hbase_site', hac['config_ver'],
+                                     hbase_site_ha)
+
+        # force the deployment of HDFS HA configs on namenodes by re-installing
+        # hdfs-client
+        self._hdfs_ha_update_host_component(hac, hac['nn_active'],
+                                            'HDFS_CLIENT', 'INSTALLED')
+        self._hdfs_ha_update_host_component(hac, hac['nn_standby'],
+                                            'HDFS_CLIENT', 'INSTALLED')
+
+        # initialize shared edits on the active namenode
+        hac['server_active'].initialize_shared_edits(hac['java_home'])
+
+        # start zookeeper servers
+        for zk in hac['zk_hosts']:
+            self._hdfs_ha_update_host_component(hac, zk,
+                                                'ZOOKEEPER_SERVER', 'STARTED')
+
+        # start active namenode
+        self._hdfs_ha_update_host_component(hac, hac['nn_active'],
+                                            'NAMENODE', 'STARTED')
+
+        # setup active namenode automatic failover
+        hac['server_active'].format_zookeeper_fc(hac['java_home'])
+
+        # format standby namenode
+        hac['server_standby'].bootstrap_standby_namenode(hac['java_home'])
+
+        # start namenode process on standby namenode
+        self._hdfs_ha_update_host_component(hac, hac['nn_standby'],
+                                            'NAMENODE', 'STARTED')
+
+        # add, install and start ZKFC on namenodes for automatic fail-over
+        for nn in hac['nn_hosts']:
+            self._hdfs_ha_add_host_component(hac, nn, 'ZKFC')
+            self._hdfs_ha_update_host_component(hac, nn, 'ZKFC', 'INSTALLED')
+            self._hdfs_ha_update_host_component(hac, nn, 'ZKFC', 'STARTED')
+
+        # delete any secondary namenodes
+        for snn in hac['snn_hosts']:
+            self._hdfs_ha_delete_host_component(hac, snn, 'SECONDARY_NAMENODE')
+
+        # stop journalnodes and namenodes before terminating
+        # not doing so causes warnings in Ambari for stale config
+        for jn in hac['jn_hosts']:
+            self._hdfs_ha_update_host_component(hac, jn, 'JOURNALNODE',
+                                                'INSTALLED')
+        for nn in hac['nn_hosts']:
+            self._hdfs_ha_update_host_component(hac, nn, 'NAMENODE',
+                                                'INSTALLED')
+
+        # install httpfs and write temp file if HUE is installed
+        if hac['hue_host']:
+            self._hdfs_ha_setup_hue(hac)
+
+    def _hdfs_ha_cluster_map(self, cluster_spec, servers, ambari_info, name):
+
+        hacluster = {}
+
+        hacluster['name'] = name
+
+        hacluster['config_ver'] = 'v2'
+
+        # set JAVA_HOME
+        global_config = cluster_spec.configurations.get('global', None)
+        global_config_jh = (global_config.get('java64_home', None) or
+                            global_config.get('java_home', None) if
+                            global_config else None)
+        hacluster['java_home'] = global_config_jh or '/opt/jdk1.6.0_31'
+
+        # set namnode ports
+        hacluster['nn_rpc'] = '8020'
+        hacluster['nn_ui'] = '50070'
+
+        hacluster['ambari_info'] = ambari_info
+
+        # get host lists
+        hacluster['nn_hosts'] = [x.fqdn().lower() for x in
+                                 cluster_spec.determine_component_hosts(
+                                     'NAMENODE')]
+        hacluster['snn_hosts'] = [x.fqdn().lower() for x in
+                                  cluster_spec.determine_component_hosts(
+                                      'SECONDARY_NAMENODE')]
+        hacluster['jn_hosts'] = [x.fqdn().lower() for x in
+                                 cluster_spec.determine_component_hosts(
+                                     'JOURNALNODE')]
+        hacluster['zk_hosts'] = [x.fqdn().lower() for x in
+                                 cluster_spec.determine_component_hosts(
+                                     'ZOOKEEPER_SERVER')]
+        hacluster['hdfsc_hosts'] = [x.fqdn().lower() for x in
+                                    cluster_spec.determine_component_hosts(
+                                        'HDFS_CLIENT')]
+        hacluster['hbase_hosts'] = [x.fqdn().lower() for x in
+                                    cluster_spec.determine_component_hosts(
+                                        'HBASE_MASTER')]
+        hacluster['hue_host'] = [x.fqdn().lower() for x in
+                                 cluster_spec.determine_component_hosts('HUE')]
+
+        # get servers for remote command execution
+        # consider hacluster['nn_hosts'][0] as active namenode
+        hacluster['nn_active'] = hacluster['nn_hosts'][0]
+        hacluster['nn_standby'] = hacluster['nn_hosts'][1]
+        # get the 2 namenode servers and hue server
+        for server in servers:
+            if server.instance.fqdn().lower() == hacluster['nn_active']:
+                hacluster['server_active'] = server
+            if server.instance.fqdn().lower() == hacluster['nn_standby']:
+                hacluster['server_standby'] = server
+            if hacluster['hue_host']:
+                if server.instance.fqdn().lower() == hacluster['hue_host'][0]:
+                    hacluster['server_hue'] = server
+
+        return hacluster
+
+    def _hdfs_ha_delete_host_component(self, hac, host, component):
+
+        delete_service_component_url = ('http://{0}/api/v1/clusters/{1}/hosts'
+                                        '/{2}/host_components/{3}').format(
+                                            hac['ambari_info'].get_address(),
+                                            hac['name'], host, component)
+
+        result = self._delete(delete_service_component_url, hac['ambari_info'])
+        if result.status_code != 200:
+            LOG.error(_LE('Configuring HDFS HA failed. %s'), result.text)
+            raise ex.NameNodeHAConfigurationError(
+                'Configuring HDFS HA failed. %s' % result.text)
+
+    def _hdfs_ha_add_host_component(self, hac, host, component):
+        add_host_component_url = ('http://{0}/api/v1/clusters/{1}'
+                                  '/hosts/{2}/host_components/{3}').format(
+                                      hac['ambari_info'].get_address(),
+                                      hac['name'], host, component)
+
+        result = self._post(add_host_component_url, hac['ambari_info'])
+        if result.status_code != 201:
+            LOG.error(_LE('Configuring HDFS HA failed. %s'), result.text)
+            raise ex.NameNodeHAConfigurationError(
+                'Configuring HDFS HA failed. %s' % result.text)
+
+    def _hdfs_ha_update_host_component(self, hac, host, component, state):
+
+        update_host_component_url = ('http://{0}/api/v1/clusters/{1}'
+                                     '/hosts/{2}/host_components/{3}').format(
+                                         hac['ambari_info'].get_address(),
+                                         hac['name'], host, component)
+        component_state = {"HostRoles": {"state": state}}
+        body = json.dumps(component_state)
+
+        result = self._put(update_host_component_url,
+                           hac['ambari_info'], data=body)
+
+        if result.status_code == 202:
+            json_result = json.loads(result.text)
+            request_id = json_result['Requests']['id']
+            success = self._wait_for_async_request(self._get_async_request_uri(
+                hac['ambari_info'], hac['name'], request_id),
+                hac['ambari_info'])
+            if success:
+                LOG.info(_LI("HDFS-HA: Host component updated successfully: "
+                             "{0} {1}").format(host, component))
+            else:
+                LOG.critical(_LC("HDFS-HA: Host component update failed: "
+                                 "{0} {1}").format(host, component))
+                raise ex.NameNodeHAConfigurationError(
+                    'Configuring HDFS HA failed. %s' % result.text)
+        elif result.status_code != 200:
+            LOG.error(
+                _LE('Configuring HDFS HA failed. {0}').format(result.text))
+            raise ex.NameNodeHAConfigurationError(
+                'Configuring HDFS HA failed. %s' % result.text)
+
+    def _hdfs_ha_get_config_tag(self, hac, config_name):
+
+        config_url = ('http://{0}/api/v1/clusters/{1}'
+                      '/configurations?type={2}').format(
+                          hac['ambari_info'].get_address(), hac['name'],
+                          config_name)
+
+        result = self._get(config_url, hac['ambari_info'])
+        if result.status_code == 200:
+            json_result = json.loads(result.text)
+            items = json_result['items']
+            return items[0]['tag']
+        else:
+            LOG.error(
+                _LE('Configuring HDFS HA failed. {0}').format(result.text))
+            raise ex.NameNodeHAConfigurationError(
+                'Configuring HDFS HA failed. %s' % result.text)
+
+    def _hdfs_ha_get_config(self, hac, config_name, tag):
+
+        config_url = ('http://{0}/api/v1/clusters/{1}'
+                      '/configurations?type={2}&tag={3}').format(
+                          hac['ambari_info'].get_address(), hac['name'],
+                          config_name, tag)
+
+        result = self._get(config_url, hac['ambari_info'])
+        if result.status_code == 200:
+            json_result = json.loads(result.text)
+            items = json_result['items']
+            return items[0]['properties']
+        else:
+            LOG.error(
+                _LE('Configuring HDFS HA failed. {0}').format(result.text))
+            raise ex.NameNodeHAConfigurationError(
+                'Configuring HDFS HA failed. %s' % result.text)
+
+    def _hdfs_ha_put_config(self, hac, config_name, tag, properties):
+
+        config_url = ('http://{0}/api/v1/clusters/{1}').format(
+            hac['ambari_info'].get_address(), hac['name'])
+
+        body = {}
+        clusters = {}
+        body['Clusters'] = clusters
+        body['Clusters']['desired_config'] = {}
+        body['Clusters']['desired_config']['type'] = config_name
+        body['Clusters']['desired_config']['tag'] = tag
+        body['Clusters']['desired_config']['properties'] = properties
+
+        LOG.debug(("body: %s") % (body))
+
+        result = self._put(config_url, hac['ambari_info'],
+                           data=json.dumps(body))
+        if result.status_code != 200:
+            LOG.error(
+                _LE('Configuring HDFS HA failed. {0}').format(result.text))
+            raise ex.NameNodeHAConfigurationError(
+                'Configuring HDFS HA failed. %s' % result.text)
+
+    def _hdfs_ha_update_hdfs_site(self, hac, hdfs_site):
+
+        hdfs_site['dfs.nameservices'] = hac['name']
+
+        hdfs_site['dfs.ha.namenodes.{0}'.format(
+            hac['name'])] = hac['nn_active'] + ',' + hac['nn_standby']
+
+        hdfs_site['dfs.namenode.rpc-address.{0}.{1}'.format(
+            hac['name'], hac['nn_active'])] = '{0}:{1}'.format(
+                hac['nn_active'], hac['nn_rpc'])
+        hdfs_site['dfs.namenode.rpc-address.{0}.{1}'.format(
+            hac['name'], hac['nn_standby'])] = '{0}:{1}'.format(
+                hac['nn_standby'], hac['nn_rpc'])
+        hdfs_site['dfs.namenode.http-address.{0}.{1}'.format(
+            hac['name'], hac['nn_active'])] = '{0}:{1}'.format(
+                hac['nn_active'], hac['nn_ui'])
+        hdfs_site['dfs.namenode.http-address.{0}.{1}'.format(
+            hac['name'], hac['nn_standby'])] = '{0}:{1}'.format(
+                hac['nn_standby'], hac['nn_ui'])
+
+        qjournal = ';'.join([x+':8485' for x in hac['jn_hosts']])
+        hdfs_site['dfs.namenode.shared.edits.dir'] = ('qjournal://{0}/{1}'.
+                                                      format(qjournal,
+                                                             hac['name']))
+
+        hdfs_site['dfs.client.failover.proxy.provider.{0}'.format(
+            hac['name'])] = ("org.apache.hadoop.hdfs.server.namenode.ha."
+                             "ConfiguredFailoverProxyProvider")
+
+        hdfs_site['dfs.ha.fencing.methods'] = 'shell(/bin/true)'
+
+        hdfs_site['dfs.ha.automatic-failover.enabled'] = 'true'
+
+        return hdfs_site
+
+    def _hdfs_ha_update_core_site(self, hac, core_site):
+
+        core_site['fs.defaultFS'] = 'hdfs://{0}'.format(hac['name'])
+        core_site['ha.zookeeper.quorum'] = '{0}'.format(
+            ','.join([x+':2181' for x in hac['zk_hosts']]))
+
+        # if HUE is installed add some httpfs configs
+        if hac['hue_host']:
+            core_site['hadoop.proxyuser.httpfs.groups'] = '*'
+            core_site['hadoop.proxyuser.httpfs.hosts'] = '*'
+
+        return core_site
+
+    def _hdfs_ha_update_hbase_site(self, hac, hbase_site):
+
+        hbase_site['hbase.rootdir'] = 'hdfs://{0}/apps/hbase/data'.format(
+            hac['name'])
+        return hbase_site
+
+    def _hdfs_ha_setup_hue(self, hac):
+
+        hac['server_hue'].install_httpfs()
+
+        # write a temp file and
+        # use it when starting HUE with HDFS HA enabled
+        hac['server_hue'].write_hue_temp_file('/tmp/hueini-hdfsha',
+                                              hac['name'])

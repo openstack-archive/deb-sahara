@@ -23,8 +23,8 @@ from sahara import context
 from sahara.i18n import _
 from sahara.i18n import _LI
 from sahara.openstack.common import log as logging
-from sahara.plugins.general import exceptions as ex
-from sahara.plugins.general import utils
+from sahara.plugins import exceptions as ex
+from sahara.plugins import utils
 from sahara.plugins.vanilla import abstractversionhandler as avm
 from sahara.plugins.vanilla import utils as vu
 from sahara.plugins.vanilla.v1_2_1 import config_helper as c_helper
@@ -35,6 +35,7 @@ from sahara.topology import topology_helper as th
 from sahara.utils import edp
 from sahara.utils import files as f
 from sahara.utils import general as g
+from sahara.utils import proxy
 from sahara.utils import remote
 
 
@@ -162,7 +163,7 @@ class VersionHandler(avm.AbstractVersionHandler):
             while True:
                 if run.check_datanodes_count(r, datanodes_count):
                     LOG.info(
-                        _LI('Datanodes on cluster %s has been started'),
+                        _LI('Datanodes on cluster %s have been started'),
                         cluster.name)
                     return
 
@@ -267,6 +268,11 @@ class VersionHandler(avm.AbstractVersionHandler):
             run.start_processes(r, *tt_dn_procs)
 
     def _setup_instances(self, cluster, instances):
+        if (CONF.use_identity_api_v3 and vu.get_hiveserver(cluster) and
+                c_helper.is_swift_enable(cluster)):
+            cluster = proxy.create_proxy_user_for_cluster(cluster)
+            instances = utils.get_instances(cluster)
+
         extra = self._extract_configs_to_extra(cluster)
         cluster = conductor.cluster_get(context.ctx(), cluster)
         self._push_configs_to_nodes(cluster, extra, instances)
@@ -430,19 +436,12 @@ class VersionHandler(avm.AbstractVersionHandler):
     def _get_scalable_processes(self):
         return ["datanode", "tasktracker"]
 
-    def _get_by_id(self, lst, id):
-        for obj in lst:
-            if obj.id == id:
-                return obj
-
-        return None
-
     def _validate_additional_ng_scaling(self, cluster, additional):
         jt = vu.get_jobtracker(cluster)
         scalable_processes = self._get_scalable_processes()
 
         for ng_id in additional:
-            ng = self._get_by_id(cluster.node_groups, ng_id)
+            ng = g.get_by_id(cluster.node_groups, ng_id)
             if not set(ng.node_processes).issubset(scalable_processes):
                 raise ex.NodeGroupCannotBeScaled(
                     ng.name, _("Vanilla plugin cannot scale nodegroup"
@@ -522,3 +521,6 @@ class VersionHandler(avm.AbstractVersionHandler):
             ports.append(10000)
 
         return ports
+
+    def on_terminate_cluster(self, cluster):
+        proxy.delete_proxy_user_for_cluster(cluster)

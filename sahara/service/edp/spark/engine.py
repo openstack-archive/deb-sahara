@@ -19,8 +19,8 @@ from sahara import conductor as c
 from sahara import context
 from sahara import exceptions as e
 from sahara.i18n import _
-from sahara.plugins.general import utils as plugin_utils
 from sahara.plugins.spark import config_helper as c_helper
+from sahara.plugins import utils as plugin_utils
 from sahara.service.edp import base_engine
 from sahara.service.edp import job_utils
 from sahara.service.validations.edp import job_execution as j
@@ -165,6 +165,10 @@ class SparkJobEngine(base_engine.JobEngine):
             host,
             port,
             args)
+
+        job_execution = conductor.job_execution_get(ctx, job_execution.id)
+        if job_execution.info['status'] == edp.JOB_STATUS_TOBEKILLED:
+            return (None, edp.JOB_STATUS_KILLED, None)
 
         # If an exception is raised here, the job_manager will mark
         # the job failed and log the exception

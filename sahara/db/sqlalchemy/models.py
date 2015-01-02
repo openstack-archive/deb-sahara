@@ -67,6 +67,10 @@ class Cluster(mb.SaharaBase):
     extra = sa.Column(st.JsonDictType())
     rollback_info = sa.Column(st.JsonDictType())
     sahara_info = sa.Column(st.JsonDictType())
+    provision_progress = relationship('ClusterProvisionStep',
+                                      cascade="all,delete",
+                                      backref='cluster',
+                                      lazy='joined')
     node_groups = relationship('NodeGroup', cascade="all,delete",
                                backref='cluster', lazy='joined')
     cluster_template_id = sa.Column(sa.String(36),
@@ -77,6 +81,8 @@ class Cluster(mb.SaharaBase):
     def to_dict(self):
         d = super(Cluster, self).to_dict()
         d['node_groups'] = [ng.to_dict() for ng in self.node_groups]
+        d['provision_progress'] = [pp.to_dict() for pp in
+                                   self.provision_progress]
         return d
 
 
@@ -99,7 +105,9 @@ class NodeGroup(mb.SaharaBase):
     node_configs = sa.Column(st.JsonDictType())
     volumes_per_node = sa.Column(sa.Integer)
     volumes_size = sa.Column(sa.Integer)
+    volumes_availability_zone = sa.Column(sa.String(255))
     volume_mount_prefix = sa.Column(sa.String(80))
+    volume_type = sa.Column(sa.String(255))
     count = sa.Column(sa.Integer, nullable=False)
     instances = relationship('Instance', cascade="all,delete",
                              backref='node_group',
@@ -113,6 +121,7 @@ class NodeGroup(mb.SaharaBase):
     floating_ip_pool = sa.Column(sa.String(36))
     security_groups = sa.Column(st.JsonListType())
     auto_security_group = sa.Column(sa.Boolean())
+    availability_zone = sa.Column(sa.String(255))
     open_ports = sa.Column(st.JsonListType())
 
     def to_dict(self):
@@ -193,10 +202,13 @@ class NodeGroupTemplate(mb.SaharaBase):
     node_configs = sa.Column(st.JsonDictType())
     volumes_per_node = sa.Column(sa.Integer, nullable=False)
     volumes_size = sa.Column(sa.Integer)
+    volumes_availability_zone = sa.Column(sa.String(255))
     volume_mount_prefix = sa.Column(sa.String(80))
+    volume_type = sa.Column(sa.String(255))
     floating_ip_pool = sa.Column(sa.String(36))
     security_groups = sa.Column(st.JsonListType())
     auto_security_group = sa.Column(sa.Boolean())
+    availability_zone = sa.Column(sa.String(255))
 
 
 class TemplatesRelation(mb.SaharaBase):
@@ -216,7 +228,9 @@ class TemplatesRelation(mb.SaharaBase):
     node_configs = sa.Column(st.JsonDictType())
     volumes_per_node = sa.Column(sa.Integer)
     volumes_size = sa.Column(sa.Integer)
+    volumes_availability_zone = sa.Column(sa.String(255))
     volume_mount_prefix = sa.Column(sa.String(80))
+    volume_type = sa.Column(sa.String(255))
     count = sa.Column(sa.Integer, nullable=False)
     cluster_template_id = sa.Column(sa.String(36),
                                     sa.ForeignKey('cluster_templates.id'))
@@ -229,6 +243,7 @@ class TemplatesRelation(mb.SaharaBase):
     floating_ip_pool = sa.Column(sa.String(36))
     security_groups = sa.Column(st.JsonListType())
     auto_security_group = sa.Column(sa.Boolean())
+    availability_zone = sa.Column(sa.String(255))
 
 
 # EDP objects: DataSource, Job, Job Execution, JobBinary
@@ -359,3 +374,46 @@ class JobBinary(mb.SaharaBase):
     description = sa.Column(sa.Text())
     url = sa.Column(sa.String(256), nullable=False)
     extra = sa.Column(st.JsonDictType())
+
+
+class ClusterEvent(mb.SaharaBase):
+    """"Event - represent a info about current provision step."""
+
+    __tablename__ = 'cluster_events'
+
+    __table_args__ = (
+        sa.UniqueConstraint('id', 'step_id'),
+    )
+
+    id = _id_column()
+    node_group_id = sa.Column(sa.String(36))
+    instance_id = sa.Column(sa.String(36))
+    instance_name = sa.Column(sa.String(80))
+    event_info = sa.Column(sa.Text)
+    successful = sa.Column(sa.Boolean, nullable=False)
+    step_id = sa.Column(sa.String(36), sa.ForeignKey(
+        'cluster_provision_steps.id'))
+
+
+class ClusterProvisionStep(mb.SaharaBase):
+    """ProvisionStep - represent a current provision step of cluster."""
+
+    __tablename__ = 'cluster_provision_steps'
+
+    __table_args__ = (
+        sa.UniqueConstraint('id', 'cluster_id'),
+    )
+
+    id = _id_column()
+    cluster_id = sa.Column(sa.String(36), sa.ForeignKey('clusters.id'))
+    tenant_id = sa.Column(sa.String(36))
+    step_name = sa.Column(sa.String(80))
+    step_type = sa.Column(sa.String(36))
+    completed = sa.Column(sa.Integer)
+    total = sa.Column(sa.Integer)
+    successful = sa.Column(sa.Boolean, nullable=True)
+    started_at = sa.Column(sa.DateTime())
+    completed_at = sa.Column(sa.DateTime())
+    events = relationship('ClusterEvent', cascade="all,delete",
+                          backref='ClusterProvisionStep',
+                          lazy='joined')

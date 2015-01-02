@@ -25,14 +25,20 @@ except ImportError:
 
 from sahara.i18n import _
 from sahara.plugins.cdh import utils as pu
-from sahara.plugins.general import exceptions as ex
+from sahara.plugins import exceptions as ex
 
 CM_DEFAULT_USERNAME = 'admin'
 CM_DEFAULT_PASSWD = 'admin'
+CM_API_VERSION = 7
 
 HDFS_SERVICE_NAME = 'hdfs01'
 YARN_SERVICE_NAME = 'yarn01'
 OOZIE_SERVICE_NAME = 'oozie01'
+HIVE_SERVICE_NAME = 'hive01'
+HUE_SERVICE_NAME = 'hue01'
+SPARK_SERVICE_NAME = 'spark_on_yarn01'
+ZOOKEEPER_SERVICE_NAME = 'zookeeper01'
+HBASE_SERVICE_NAME = 'hbase01'
 
 
 def have_cm_api_libs():
@@ -45,7 +51,12 @@ def cloudera_cmd(f):
         for cmd in f(*args, **kwargs):
             result = cmd.wait()
             if not result.success:
-                raise ex.HadoopProvisionError(result.resultMessage)
+                if result.children is not None:
+                    for c in result.children:
+                        if not c.success:
+                            raise ex.HadoopProvisionError(c.resultMessage)
+                else:
+                    raise ex.HadoopProvisionError(result.resultMessage)
 
     return wrapper
 
@@ -53,7 +64,8 @@ def cloudera_cmd(f):
 def get_api_client(cluster):
     manager_ip = pu.get_manager(cluster).management_ip
     return api_client.ApiResource(manager_ip, username=CM_DEFAULT_USERNAME,
-                                  password=CM_DEFAULT_PASSWD)
+                                  password=CM_DEFAULT_PASSWD,
+                                  version=CM_API_VERSION)
 
 
 def get_cloudera_cluster(cluster):
@@ -93,6 +105,16 @@ def get_service(process, cluster=None, instance=None):
         return cm_cluster.get_service(YARN_SERVICE_NAME)
     elif process in ['OOZIE_SERVER']:
         return cm_cluster.get_service(OOZIE_SERVICE_NAME)
+    elif process in ['HIVESERVER2', 'HIVEMETASTORE', 'WEBHCAT']:
+        return cm_cluster.get_service(HIVE_SERVICE_NAME)
+    elif process in ['HUE_SERVER']:
+        return cm_cluster.get_service(HUE_SERVICE_NAME)
+    elif process in ['SPARK_YARN_HISTORY_SERVER']:
+        return cm_cluster.get_service(SPARK_SERVICE_NAME)
+    elif process in ['SERVER']:
+        return cm_cluster.get_service(ZOOKEEPER_SERVICE_NAME)
+    elif process in ['MASTER', 'REGIONSERVER']:
+        return cm_cluster.get_service(HBASE_SERVICE_NAME)
     else:
         raise ValueError(
             _("Process %(process)s is not supported by CDH plugin") %
@@ -130,20 +152,33 @@ def update_configs(instance):
         yield service.deploy_client_config(get_role_name(instance, process))
 
 
+@cloudera_cmd
+def first_run(cluster):
+    cm_cluster = get_cloudera_cluster(cluster)
+    yield cm_cluster.first_run()
+
+
 def get_role_name(instance, service):
     # NOTE: role name must match regexp "[_A-Za-z][-_A-Za-z0-9]{0,63}"
     shortcuts = {
-        'NAMENODE': 'NN',
+        'ALERTPUBLISHER': 'AP',
         'DATANODE': 'DN',
-        'SECONDARYNAMENODE': 'SNN',
-        'RESOURCEMANAGER': 'RM',
-        'NODEMANAGER': 'NM',
-        'JOBHISTORY': 'JS',
-        'OOZIE_SERVER': 'OS',
-        'SERVICEMONITOR': 'SM',
-        'HOSTMONITOR': 'HM',
         'EVENTSERVER': 'ES',
-        'ALERTPUBLISHER': 'AP'
+        'HIVEMETASTORE': 'HVM',
+        'HIVESERVER2': 'HVS',
+        'HOSTMONITOR': 'HM',
+        'JOBHISTORY': 'JS',
+        'NAMENODE': 'NN',
+        'NODEMANAGER': 'NM',
+        'OOZIE_SERVER': 'OS',
+        'RESOURCEMANAGER': 'RM',
+        'SECONDARYNAMENODE': 'SNN',
+        'SERVICEMONITOR': 'SM',
+        'WEBHCAT': 'WHC',
+        'SPARK_YARN_HISTORY_SERVER': 'SHS',
+        'SERVER': 'S',
+        'MASTER': 'M',
+        'REGIONSERVER': 'RS'
     }
     return '%s_%s' % (shortcuts.get(service, service),
                       instance.hostname().replace('-', '_'))
@@ -166,12 +201,6 @@ def create_mgmt_service(cluster):
 
 
 @cloudera_cmd
-def format_namenode(hdfs_service):
-    for nn in hdfs_service.get_roles_by_type('NAMENODE'):
-        yield hdfs_service.format_hdfs(nn.name)[0]
-
-
-@cloudera_cmd
 def start_service(service):
     yield service.start()
 
@@ -180,18 +209,3 @@ def start_service(service):
 def start_roles(service, *role_names):
     for role in service.start_roles(*role_names):
         yield role
-
-
-@cloudera_cmd
-def create_yarn_job_history_dir(yarn_service):
-    yield yarn_service.create_yarn_job_history_dir()
-
-
-@cloudera_cmd
-def create_oozie_db(oozie_service):
-    yield oozie_service.create_oozie_db()
-
-
-@cloudera_cmd
-def install_oozie_sharelib(oozie_service):
-    yield oozie_service.install_oozie_sharelib()

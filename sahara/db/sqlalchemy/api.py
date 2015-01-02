@@ -174,7 +174,15 @@ def cluster_get(context, cluster_id):
 
 def cluster_get_all(context, **kwargs):
     query = model_query(m.Cluster, context)
-    return query.filter_by(**kwargs).all()
+    try:
+        return query.filter_by(**kwargs).all()
+    except sa.exc.InvalidRequestError as e:
+        if kwargs:
+            # If kwargs is non-empty then we assume this
+            # is a bad field reference. User asked for something
+            # that doesn't exist, so return empty list
+            return []
+        raise e
 
 
 def cluster_create(context, values):
@@ -363,9 +371,17 @@ def cluster_template_get(context, cluster_template_id):
     return _cluster_template_get(context, get_session(), cluster_template_id)
 
 
-def cluster_template_get_all(context):
+def cluster_template_get_all(context, **kwargs):
     query = model_query(m.ClusterTemplate, context)
-    return query.all()
+    try:
+        return query.filter_by(**kwargs).all()
+    except sa.exc.InvalidRequestError as e:
+        if kwargs:
+            # If kwargs is non-empty then we assume this
+            # is a bad field reference. User asked for something
+            # that doesn't exist, so return empty list
+            return []
+        raise e
 
 
 def cluster_template_create(context, values):
@@ -421,9 +437,17 @@ def node_group_template_get(context, node_group_template_id):
                                     node_group_template_id)
 
 
-def node_group_template_get_all(context):
+def node_group_template_get_all(context, **kwargs):
     query = model_query(m.NodeGroupTemplate, context)
-    return query.all()
+    try:
+        return query.filter_by(**kwargs).all()
+    except sa.exc.InvalidRequestError as e:
+        if kwargs:
+            # If kwargs is non-empty then we assume this
+            # is a bad field reference. User asked for something
+            # that doesn't exist, so return empty list
+            return []
+        raise e
 
 
 def node_group_template_create(context, values):
@@ -465,9 +489,17 @@ def data_source_get(context, data_source_id):
     return _data_source_get(context, get_session(), data_source_id)
 
 
-def data_source_get_all(context):
+def data_source_get_all(context, **kwargs):
     query = model_query(m.DataSource, context)
-    return query.all()
+    try:
+        return query.filter_by(**kwargs).all()
+    except sa.exc.InvalidRequestError as e:
+        if kwargs:
+            # If kwargs is non-empty then we assume this
+            # is a bad field reference. User asked for something
+            # that doesn't exist, so return empty list
+            return []
+        raise e
 
 
 def data_source_create(context, values):
@@ -513,8 +545,63 @@ def job_execution_get(context, job_execution_id):
 
 
 def job_execution_get_all(context, **kwargs):
+    """Get all JobExecutions filtered by **kwargs.
+
+    kwargs key values may be the names of fields in a JobExecution
+    plus the following special values with the indicated meaning:
+
+    'cluster.name' -- name of the Cluster referenced by the JobExecution
+    'job.name' -- name of the Job referenced by the JobExecution
+    'status' -- JobExecution['info']['status']
+
+    e.g. job_execution_get_all(cluster_id=12, input_id=123)
+         job_execution_get_all(**{'cluster.name': 'test',
+                                  'job.name': 'wordcount'})
+    """
     query = model_query(m.JobExecution, context)
-    return query.filter_by(**kwargs).all()
+
+    # Remove the external fields if present, they'll
+    # be handled with a join and filter
+    externals = {k: kwargs.pop(k) for k in ['cluster.name',
+                                            'job.name',
+                                            'status'] if k in kwargs}
+
+    # Filter JobExecution by the remaining kwargs. This has to be done
+    # before application of the joins and filters because those
+    # change the class that query.filter_by will apply to
+    try:
+        query = query.filter_by(**kwargs)
+    except sa.exc.InvalidRequestError as e:
+        if kwargs:
+            # If kwargs is non-empty then we assume this
+            # is a bad field reference. User asked for something
+            # that doesn't exist, so return empty list
+            return []
+        raise e
+
+    # Now add the joins and filters for the externals
+    if 'cluster.name' in externals:
+        query = query.join(m.Cluster).filter(
+            m.Cluster.name == externals['cluster.name'])
+
+    if 'job.name' in externals:
+        query = query.join(m.Job).filter(
+            m.Job.name == externals['job.name'])
+
+    res = query.all()
+
+    # 'info' is a JsonDictType which is stored as a string.
+    # It would be possible to search for the substring containing
+    # the value of 'status' in 'info', but 'info' also contains
+    # data returned from a client and not managed by Sahara.
+    # In the case of Oozie jobs, for example, other fields (actions)
+    # also contain 'status'. Therefore we can't filter on it reliably
+    # by a substring search in the query.
+    if 'status' in externals:
+        status = externals['status'].lower()
+        res = [je for je in res if (
+            je['info'] and je['info'].get('status', '').lower() == status)]
+    return res
 
 
 def job_execution_count(context, **kwargs):
@@ -572,9 +659,17 @@ def job_get(context, job_id):
     return _job_get(context, get_session(), job_id)
 
 
-def job_get_all(context):
+def job_get_all(context, **kwargs):
     query = model_query(m.Job, context)
-    return query.all()
+    try:
+        return query.filter_by(**kwargs).all()
+    except sa.exc.InvalidRequestError as e:
+        if kwargs:
+            # If kwargs is non-empty then we assume this
+            # is a bad field reference. User asked for something
+            # that doesn't exist, so return empty list
+            return []
+        raise e
 
 
 def _append_job_binaries(context, session, from_list, to_list):
@@ -645,13 +740,21 @@ def _job_binary_get(context, session, job_binary_id):
     return query.filter_by(id=job_binary_id).first()
 
 
-def job_binary_get_all(context):
+def job_binary_get_all(context, **kwargs):
     """Returns JobBinary objects that do not contain a data field
 
     The data column uses deferred loading.
     """
     query = model_query(m.JobBinary, context)
-    return query.all()
+    try:
+        return query.filter_by(**kwargs).all()
+    except sa.exc.InvalidRequestError as e:
+        if kwargs:
+            # If kwargs is non-empty then we assume this
+            # is a bad field reference. User asked for something
+            # that doesn't exist, so return empty list
+            return []
+        raise e
 
 
 def job_binary_get(context, job_binary_id):
@@ -713,13 +816,21 @@ def _job_binary_internal_get(context, session, job_binary_internal_id):
     return query.filter_by(id=job_binary_internal_id).first()
 
 
-def job_binary_internal_get_all(context):
+def job_binary_internal_get_all(context, **kwargs):
     """Returns JobBinaryInternal objects that do not contain a data field
 
     The data column uses deferred loading.
     """
     query = model_query(m.JobBinaryInternal, context)
-    return query.all()
+    try:
+        return query.filter_by(**kwargs).all()
+    except sa.exc.InvalidRequestError as e:
+        if kwargs:
+            # If kwargs is non-empty then we assume this
+            # is a bad field reference. User asked for something
+            # that doesn't exist, so return empty list
+            return []
+        raise e
 
 
 def job_binary_internal_get(context, job_binary_internal_id):
@@ -787,3 +898,108 @@ def job_binary_internal_destroy(context, job_binary_internal_id):
                 _("JobBinaryInternal id '%s' not found!"))
 
         session.delete(job_binary_internal)
+
+# Events ops
+
+
+def _cluster_provision_step_get(context, session, provision_step_id):
+    query = model_query(m.ClusterProvisionStep, context, session)
+    return query.filter_by(id=provision_step_id).first()
+
+
+def cluster_provision_step_add(context, cluster_id, values):
+    session = get_session()
+
+    with session.begin():
+        cluster = _cluster_get(context, session, cluster_id)
+        if not cluster:
+            raise ex.NotFoundException(cluster_id,
+                                       _("Cluster id '%s' not found!"))
+
+        provision_step = m.ClusterProvisionStep()
+        values['cluster_id'] = cluster_id
+        values['tenant_id'] = context.tenant_id
+        provision_step.update(values)
+        session.add(provision_step)
+
+    return provision_step.id
+
+
+def cluster_provision_step_update(context, provision_step_id, values):
+    session = get_session()
+
+    with session.begin():
+        provision_step = _cluster_provision_step_get(
+            context, session, provision_step_id)
+
+        if not provision_step:
+            raise ex.NotFoundException(
+                provision_step_id,
+                _("Cluster Provision Step id '%s' not found!"))
+
+        provision_step.update(values)
+
+
+def cluster_provision_step_get_events(context, provision_step_id):
+    session = get_session()
+    with session.begin():
+        provision_step = _cluster_provision_step_get(
+            context, session, provision_step_id)
+
+        if not provision_step:
+            raise ex.NotFoundException(
+                provision_step_id,
+                _("Cluster Provision Step id '%s' not found!"))
+
+    return provision_step.events
+
+
+def cluster_provision_step_remove_events(context, provision_step_id):
+    session = get_session()
+
+    with session.begin():
+        provision_step = _cluster_provision_step_get(
+            context, session, provision_step_id)
+
+        if not provision_step:
+            raise ex.NotFoundException(
+                provision_step_id,
+                _("Cluster Provision Step id '%s' not found!"))
+
+        for event in provision_step.events:
+            session.delete(event)
+
+
+def cluster_provision_step_remove(context, provision_step_id):
+    session = get_session()
+    cluster_provision_step_remove_events(context, provision_step_id)
+    with session.begin():
+        provision_step = _cluster_provision_step_get(
+            context, session, provision_step_id)
+
+        if not provision_step:
+            raise ex.NotFoundException(
+                provision_step_id,
+                _("Cluster Provision Step id '%s' not found!"))
+
+        session.delete(provision_step)
+
+
+def cluster_event_add(context, step_id, values):
+    session = get_session()
+
+    with session.begin():
+        provision_step = _cluster_provision_step_get(
+            context, session, step_id)
+
+        if not provision_step:
+            raise ex.NotFoundException(
+                step_id,
+                _("Cluster Provision Step id '%s' not found!"))
+
+        event = m.ClusterEvent()
+        values['step_id'] = step_id
+        event.update(values)
+        session.add(event)
+
+    return event.id

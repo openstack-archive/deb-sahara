@@ -103,14 +103,16 @@ class NodePlacementTest(AbstractInstanceTest):
                        scheduler_hints={'group': "123"},
                        userdata=userdata,
                        key_name='user_keypair',
-                       security_groups=None),
+                       security_groups=None,
+                       availability_zone=None),
              mock.call("test_cluster-test_group-002",
                        "initial",
                        "test_flavor",
                        scheduler_hints={'group': "123"},
                        userdata=userdata,
                        key_name='user_keypair',
-                       security_groups=None)],
+                       security_groups=None,
+                       availability_zone=None)],
             any_order=False)
 
         ctx = context.ctx()
@@ -135,14 +137,16 @@ class NodePlacementTest(AbstractInstanceTest):
                        scheduler_hints=None,
                        userdata=userdata,
                        key_name='user_keypair',
-                       security_groups=None),
+                       security_groups=None,
+                       availability_zone=None),
              mock.call("test_cluster-test_group-002",
                        "initial",
                        "test_flavor",
                        scheduler_hints=None,
                        userdata=userdata,
                        key_name='user_keypair',
-                       security_groups=None)],
+                       security_groups=None,
+                       availability_zone=None)],
             any_order=False)
 
         ctx = context.ctx()
@@ -168,21 +172,24 @@ class NodePlacementTest(AbstractInstanceTest):
                        scheduler_hints={'group': "123"},
                        userdata=userdata,
                        key_name='user_keypair',
-                       security_groups=None),
+                       security_groups=None,
+                       availability_zone=None),
              mock.call('test_cluster-test_group_1-002',
                        "initial",
                        "test_flavor",
                        scheduler_hints={'group': "123"},
                        userdata=userdata,
                        key_name='user_keypair',
-                       security_groups=None),
+                       security_groups=None,
+                       availability_zone=None),
              mock.call('test_cluster-test_group_2-001',
                        "initial",
                        "test_flavor",
                        scheduler_hints={'group': "123"},
                        userdata=userdata,
                        key_name='user_keypair',
-                       security_groups=None)],
+                       security_groups=None,
+                       availability_zone=None)],
             any_order=False)
 
         ctx = context.ctx()
@@ -312,6 +319,8 @@ def _mock_ips(count):
 def _generate_user_data_script(cluster):
     script_template = """#!/bin/bash
 echo "%(public_key)s" >> %(user_home)s/.ssh/authorized_keys\n
+# ====== COMMENT OUT Defaults requiretty in /etc/sudoers ========
+sed '/^Defaults    requiretty*/ s/^/#/' -i /etc/sudoers\n
 """
     return script_template % {
         "public_key": cluster.management_public_key,

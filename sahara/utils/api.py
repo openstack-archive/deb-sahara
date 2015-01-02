@@ -23,7 +23,7 @@ from sahara import exceptions as ex
 from sahara.i18n import _
 from sahara.i18n import _LE
 from sahara.openstack.common import log as logging
-from sahara.openstack.common import wsgi
+from sahara.utils import wsgi
 
 
 LOG = logging.getLogger(__name__)
@@ -87,6 +87,8 @@ class Rest(flask.Blueprint):
 
                 try:
                     return func(**kwargs)
+                except ex.Forbidden as e:
+                    return access_denied(e)
                 except ex.SaharaException as e:
                     return bad_request(e)
                 except Exception as e:
@@ -241,6 +243,16 @@ def bad_request(error):
     error_code = 400
 
     LOG.debug("Validation Error occurred: "
+              "error_code=%s, error_message=%s, error_name=%s",
+              error_code, error.message, error.code)
+
+    return render_error_message(error_code, error.message, error.code)
+
+
+def access_denied(error):
+    error_code = 403
+
+    LOG.debug("Access Denied: "
               "error_code=%s, error_message=%s, error_name=%s",
               error_code, error.message, error.code)
 

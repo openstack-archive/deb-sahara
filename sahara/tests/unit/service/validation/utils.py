@@ -72,6 +72,10 @@ def _get_fl_ip_pool_list():
     return [FakeNetwork("d9a3bebc-f788-4b81-9a93-aa048022c1ca")]
 
 
+def _get_availability_zone_list(detailed=True):
+    return [FakeAvailabilityZone('nova')]
+
+
 def _get_heat_stack_list():
     return [FakeStack('test-heat')]
 
@@ -84,6 +88,11 @@ class FakeStack(object):
 class FakeNetwork(object):
     def __init__(self, name):
         self.name = name
+
+
+class FakeAvailabilityZone(object):
+    def __init__(self, name):
+        self.zoneName = name
 
 
 class FakeFlavor(object):
@@ -123,6 +132,7 @@ def start_patch(patch_templates=True):
     nova_p = mock.patch("sahara.utils.openstack.nova.client")
     keystone_p = mock.patch("sahara.utils.openstack.keystone._client")
     heat_p = mock.patch("sahara.utils.openstack.heat.client")
+    cinder_p = mock.patch("sahara.utils.openstack.cinder.client")
     get_image_p = mock.patch("sahara.service.api.get_image")
 
     get_image = get_image_p.start()
@@ -146,11 +156,15 @@ def start_patch(patch_templates=True):
     nova().keypairs.get.side_effect = _get_keypair
     nova().networks.find.side_effect = _get_network
     nova().floating_ip_pools.list.side_effect = _get_fl_ip_pool_list
+    nova().availability_zones.list.side_effect = _get_availability_zone_list
 
     heat = heat_p.start()
     heat().stacks.list.side_effect = _get_heat_stack_list
 
-    class Service:
+    cinder = cinder_p.start()
+    cinder().availability_zones.list.side_effect = _get_availability_zone_list
+
+    class Service(object):
         @property
         def name(self):
             return 'cinder'
@@ -160,7 +174,7 @@ def start_patch(patch_templates=True):
 
     keystone().services.list.side_effect = _services_list
 
-    class Image:
+    class Image(object):
         def __init__(self, name='test'):
             self.name = name
 
@@ -218,7 +232,7 @@ def start_patch(patch_templates=True):
         get_ng_template.side_effect = _get_ng_template
     # request data to validate
     patchers = [get_clusters_p, get_cluster_p,
-                nova_p, keystone_p, get_image_p, heat_p]
+                nova_p, keystone_p, get_image_p, heat_p, cinder_p]
     if patch_templates:
         patchers.extend([get_ng_template_p, get_ng_templates_p,
                          get_cl_template_p, get_cl_templates_p])
@@ -249,12 +263,15 @@ class ValidationTestCase(base.SaharaTestCase):
             possible_messages = ([call_info[2]] if isinstance(
                 call_info[2], six.string_types) else call_info[2])
             match = False
+            check = mock.call_args[0][0].message
+            if check.find('Error ID:') != -1:
+                check = check.split('\n')[0]
             for message in possible_messages:
-                if self._check_match(message, mock.call_args[0][0].message):
+                if self._check_match(message, check):
                     match = True
                     break
             if not match:
-                self.assertIn(mock.call_args[0][0].message, possible_messages)
+                self.assertIn(check, possible_messages)
 
     def _check_match(self, expected, actual):
         d1, r1 = self._extract_printed_dict(expected)

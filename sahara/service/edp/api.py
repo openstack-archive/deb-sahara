@@ -80,8 +80,8 @@ def get_job_execution_status(id):
     return manager.get_job_status(id)
 
 
-def job_execution_list():
-    return conductor.job_execution_get_all(context.ctx())
+def job_execution_list(**kwargs):
+    return conductor.job_execution_get_all(context.ctx(), **kwargs)
 
 
 def get_job_execution(id):
@@ -89,15 +89,18 @@ def get_job_execution(id):
 
 
 def cancel_job_execution(id):
-    return manager.cancel_job(id)
+    job_execution = conductor.job_execution_get(context.ctx(), id)
+    OPS.cancel_job_execution(id)
+
+    return job_execution
 
 
 def delete_job_execution(id):
-    conductor.job_execution_destroy(context.ctx(), id)
+    OPS.delete_job_execution(id)
 
 
-def get_data_sources():
-    return conductor.data_source_get_all(context.ctx())
+def get_data_sources(**kwargs):
+    return conductor.data_source_get_all(context.ctx(), **kwargs)
 
 
 def get_data_source(id):
@@ -112,8 +115,8 @@ def register_data_source(values):
     return conductor.data_source_create(context.ctx(), values)
 
 
-def get_jobs():
-    return conductor.job_get_all(context.ctx())
+def get_jobs(**kwargs):
+    return conductor.job_get_all(context.ctx(), **kwargs)
 
 
 def get_job(id):
@@ -132,8 +135,8 @@ def create_job_binary(values):
     return conductor.job_binary_create(context.ctx(), values)
 
 
-def get_job_binaries():
-    return conductor.job_binary_get_all(context.ctx())
+def get_job_binaries(**kwargs):
+    return conductor.job_binary_get_all(context.ctx(), **kwargs)
 
 
 def get_job_binary(id):
@@ -148,8 +151,8 @@ def create_job_binary_internal(values):
     return conductor.job_binary_internal_create(context.ctx(), values)
 
 
-def get_job_binary_internals():
-    return conductor.job_binary_internal_get_all(context.ctx())
+def get_job_binary_internals(**kwargs):
+    return conductor.job_binary_internal_get_all(context.ctx(), **kwargs)
 
 
 def get_job_binary_internal(id):

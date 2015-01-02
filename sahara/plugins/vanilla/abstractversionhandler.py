@@ -19,7 +19,7 @@ import six
 
 
 @six.add_metaclass(abc.ABCMeta)
-class AbstractVersionHandler():
+class AbstractVersionHandler(object):
 
     @abc.abstractmethod
     def get_node_processes(self):
@@ -60,3 +60,6 @@ class AbstractVersionHandler():
     @abc.abstractmethod
     def get_open_ports(self, node_group):
         return
+
+    def on_terminate_cluster(self, cluster):
+        pass

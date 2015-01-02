@@ -26,6 +26,7 @@ from sahara.i18n import _
 import sahara.plugins.base as plugin_base
 import sahara.service.api as api
 from sahara.utils import general as g
+import sahara.utils.openstack.cinder as cinder
 import sahara.utils.openstack.heat as heat
 import sahara.utils.openstack.keystone as keystone
 import sahara.utils.openstack.nova as nova
@@ -130,12 +131,21 @@ def check_node_group_basic_fields(plugin_name, hadoop_version, ng,
 
     if ng.get('volumes_per_node'):
         check_cinder_exists()
+        if ng.get('volumes_availability_zone'):
+            check_volume_availability_zone_exist(
+                ng['volumes_availability_zone'])
+
+        if ng.get('volume_type'):
+            check_volume_type_exists(ng['volume_type'])
 
     if ng.get('floating_ip_pool'):
         check_floatingip_pool_exists(ng['name'], ng['floating_ip_pool'])
 
     if ng.get('security_groups'):
         check_security_groups_exist(ng['security_groups'])
+
+    if ng.get('availability_zone'):
+        check_availability_zone_exist(ng['availability_zone'])
 
 
 def check_flavor_exists(flavor_id):
@@ -193,14 +203,28 @@ def check_duplicates_node_groups_names(node_groups):
             _("Duplicates in node group names are detected"))
 
 
-def check_auto_security_group(cluster_name, nodegroup):
-    if nodegroup.get('auto_security_group'):
-        name = g.generate_auto_security_group_name(
-            cluster_name, nodegroup['name'])
-        if name in [security_group.name for security_group in
-                    nova.client().security_groups.list()]:
-            raise ex.NameAlreadyExistsException(
-                _("Security group with name '%s' already exists") % name)
+def check_availability_zone_exist(az):
+    az_list = nova.client().availability_zones.list(False)
+    az_names = [a.zoneName for a in az_list]
+    if az not in az_names:
+        raise ex.InvalidException(_("Nova availability zone '%s' not found")
+                                  % az)
+
+
+def check_volume_availability_zone_exist(az):
+    az_list = cinder.client().availability_zones.list()
+    az_names = [a.zoneName for a in az_list]
+    if az not in az_names:
+        raise ex.InvalidException(_("Cinder availability zone '%s' not found")
+                                  % az)
+
+
+def check_volume_type_exists(volume_type):
+    volume_types = cinder.client().volume_types.list(search_opts={'name':
+                                                                  volume_type})
+    if len(volume_types) == 1 and volume_types[0] == volume_type:
+        return
+    raise ex.NotFoundException(_("Volume type '%s' not found") % volume_type)
 
 
 def check_availability_zone_exist(az):

@@ -29,6 +29,7 @@ SAMPLE_NGT = {
     "name": "ngt_test",
     "node_processes": ["p1", "p2"],
     "floating_ip_pool": None,
+    "availability_zone": None,
     "node_configs": {
         "service_1": {
             "config_1": "value_1"
@@ -60,6 +61,7 @@ SAMPLE_CLT = {
             "count": 1,
             "floating_ip_pool": None,
             "security_groups": None,
+            "availability_zone": None,
         },
         {
             "name": "ng_2",
@@ -68,6 +70,7 @@ SAMPLE_CLT = {
             "count": 3,
             "floating_ip_pool": None,
             "security_groups": ["group1", "group2"],
+            "availability_zone": None,
         }
 
     ]
@@ -125,6 +128,27 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
 
         with testtools.ExpectedException(ex.NotFoundException):
             self.api.node_group_template_destroy(ctx, _id)
+
+    def test_ngt_search(self):
+        ctx = context.ctx()
+        self.api.node_group_template_create(ctx, SAMPLE_NGT)
+
+        lst = self.api.node_group_template_get_all(ctx)
+        self.assertEqual(len(lst), 1)
+
+        kwargs = {'name': SAMPLE_NGT['name'],
+                  'plugin_name': SAMPLE_NGT['plugin_name']}
+        lst = self.api.node_group_template_get_all(ctx, **kwargs)
+        self.assertEqual(len(lst), 1)
+
+        # Valid field but no matching value
+        kwargs = {'name': SAMPLE_NGT['name']+"foo"}
+        lst = self.api.node_group_template_get_all(ctx, **kwargs)
+        self.assertEqual(len(lst), 0)
+
+        # Invalid field
+        lst = self.api.node_group_template_get_all(ctx, **{'badfield': 'junk'})
+        self.assertEqual(len(lst), 0)
 
 
 class ClusterTemplates(test_base.ConductorManagerTestCase):
@@ -186,6 +210,8 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
             ng.pop("volume_mount_prefix")
             ng.pop("volumes_size")
             ng.pop("volumes_per_node")
+            ng.pop("volumes_availability_zone")
+            ng.pop("volume_type")
             ng.pop("auto_security_group")
 
         self.assertEqual(SAMPLE_CLT["node_groups"],
@@ -200,3 +226,24 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
 
         with testtools.ExpectedException(ex.NotFoundException):
             self.api.cluster_template_destroy(ctx, _id)
+
+    def test_clt_search(self):
+        ctx = context.ctx()
+        self.api.cluster_template_create(ctx, SAMPLE_CLT)
+
+        lst = self.api.cluster_template_get_all(ctx)
+        self.assertEqual(len(lst), 1)
+
+        kwargs = {'name': SAMPLE_CLT['name'],
+                  'plugin_name': SAMPLE_CLT['plugin_name']}
+        lst = self.api.cluster_template_get_all(ctx, **kwargs)
+        self.assertEqual(len(lst), 1)
+
+        # Valid field but no matching value
+        kwargs = {'name': SAMPLE_CLT['name']+"foo"}
+        lst = self.api.cluster_template_get_all(ctx, **kwargs)
+        self.assertEqual(len(lst), 0)
+
+        # Invalid field
+        lst = self.api.cluster_template_get_all(ctx, **{'badfield': 'junk'})
+        self.assertEqual(len(lst), 0)

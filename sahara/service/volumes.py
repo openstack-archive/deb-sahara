@@ -31,13 +31,15 @@ conductor = c.API
 LOG = logging.getLogger(__name__)
 
 
-detach_timeout_opt = cfg.IntOpt(
-    'detach_volume_timeout', default=300,
-    help='Timeout for detaching volumes from instance (in seconds).')
-
+opts = [
+    cfg.IntOpt(
+        'detach_volume_timeout', default=300,
+        help='Timeout for detaching volumes from instance (in seconds).')
+]
 
 CONF = cfg.CONF
-CONF.register_opt(detach_timeout_opt)
+CONF.register_opts(opts)
+CONF.import_opt('cinder_api_version', 'sahara.utils.openstack.cinder')
 
 
 def attach_to_instances(instances):
@@ -66,23 +68,35 @@ def _await_attach_volumes(instance, devices):
 def _attach_volumes_to_node(node_group, instance):
     ctx = context.ctx()
     size = node_group.volumes_size
+    volume_type = node_group.volume_type
     devices = []
     for idx in range(1, node_group.volumes_per_node + 1):
         display_name = "volume_" + instance.instance_name + "_" + str(idx)
         device = _create_attach_volume(
-            ctx, instance, size, display_name)
+            ctx, instance, size, volume_type, display_name,
+            node_group.volumes_availability_zone)
         devices.append(device)
         LOG.debug("Attached volume %s to instance %s" %
                   (device, instance.instance_id))
 
     _await_attach_volumes(instance, devices)
 
-    _mount_volumes_to_node(instance, devices)
+    for idx in range(0, instance.node_group.volumes_per_node):
+        _mount_volume_to_node(instance, idx, devices[idx])
 
 
-def _create_attach_volume(ctx, instance, size, display_name=None):
-    volume = cinder.client().volumes.create(size=size,
-                                            display_name=display_name)
+def _create_attach_volume(ctx, instance, size, volume_type, name=None,
+                          availability_zone=None):
+    if CONF.cinder_api_version == 1:
+        kwargs = {'size': size, 'display_name': name}
+    else:
+        kwargs = {'size': size, 'name': name}
+
+    kwargs['volume_type'] = volume_type
+    if availability_zone is not None:
+        kwargs['availability_zone'] = availability_zone
+
+    volume = cinder.client().volumes.create(**kwargs)
     conductor.append_volume(ctx, instance, volume.id)
 
     while volume.status != 'available':
@@ -114,8 +128,13 @@ def _count_attached_devices(instance, devices):
 def mount_to_instances(instances):
     with context.ThreadGroup() as tg:
         for instance in instances:
-            tg.spawn('mount-volumes-to-node-%s' % instance.instance_name,
-                     _mount_volumes_to_node, instance)
+            devices = _find_instance_volume_devices(instance)
+            # Since formating can take several minutes (for large disks) and
+            # can be done in parallel, launch one thread per disk.
+            for idx in range(0, instance.node_group.volumes_per_node):
+                tg.spawn('mount-volume-%d-to-node-%s' %
+                         (idx, instance.instance_name),
+                         _mount_volume_to_node, instance, idx, devices[idx])
 
 
 def _find_instance_volume_devices(instance):
@@ -124,18 +143,12 @@ def _find_instance_volume_devices(instance):
     return devices
 
 
-def _mount_volumes_to_node(instance, devices=None):
-    if devices is None:
-        devices = _find_instance_volume_devices(instance)
-
-    ng = instance.node_group
-
-    for idx in range(0, ng.volumes_per_node):
-        LOG.debug("Mounting volume %s to instance %s" %
-                  (devices[idx], instance.instance_name))
-        mount_point = ng.storage_paths()[idx]
-        _mount_volume(instance, devices[idx], mount_point)
-        LOG.debug("Mounted volume to instance %s" % instance.instance_id)
+def _mount_volume_to_node(instance, idx, device):
+    LOG.debug("Mounting volume %s to instance %s" %
+              (device, instance.instance_name))
+    mount_point = instance.node_group.storage_paths()[idx]
+    _mount_volume(instance, device, mount_point)
+    LOG.debug("Mounted volume to instance %s" % instance.instance_id)
 
 
 def _mount_volume(instance, device_path, mount_point):

@@ -16,6 +16,7 @@
 from sahara import conductor
 from sahara import context
 from sahara.tests.unit import base
+from sahara.utils import general as gu
 
 
 SAMPLE_CLUSTER = {
@@ -72,13 +73,6 @@ class TestConductorClusterApi(base.SaharaWithDbTestCase):
         cluster = self.api.cluster_create(ctx, SAMPLE_CLUSTER)
         return ctx, cluster
 
-    def _get_by_id(self, lst, id):
-        for obj in lst:
-            if obj.id == id:
-                return obj
-
-        return None
-
     def test_update_by_id(self):
         ctx, cluster = self._make_sample()
 
@@ -102,7 +96,7 @@ class TestConductorClusterApi(base.SaharaWithDbTestCase):
         self.api.node_group_update(ctx, ng_id, {'name': 'changed_ng'})
         cluster = self.api.cluster_get(ctx, cluster.id)
 
-        ng = self._get_by_id(cluster.node_groups, ng_id)
+        ng = gu.get_by_id(cluster.node_groups, ng_id)
         self.assertEqual(ng.name, 'changed_ng')
 
     def test_add_instance_to_node_group_id(self):
@@ -119,5 +113,63 @@ class TestConductorClusterApi(base.SaharaWithDbTestCase):
         self.api.instance_update(ctx, inst_id, {'instance_name': 'tst123'})
         cluster = self.api.cluster_get(ctx, cluster.id)
 
-        ng = self._get_by_id(cluster.node_groups, ng_id)
+        ng = gu.get_by_id(cluster.node_groups, ng_id)
         self.assertEqual(ng.instances[0].instance_name, 'tst123')
+
+    def test_events_ops(self):
+        ctx, cluster = self._make_sample()
+
+        st_name = "some_name"
+        st_type = "some_type"
+        st_info = "some_info"
+
+        # test provision step creation
+
+        step_id = self.api.cluster_provision_step_add(ctx, cluster.id, {
+            'step_name': st_name,
+            'step_type': st_type,
+        })
+
+        ncluster = self.api.cluster_get(ctx, cluster.id)
+        self.assertEqual(1, len(ncluster['provision_progress']))
+        provision_step = ncluster['provision_progress'][0]
+
+        self.assertEqual(st_name, provision_step['step_name'])
+        self.assertEqual(st_type, provision_step['step_type'])
+        self.assertEqual(cluster.id, provision_step['cluster_id'])
+
+        # test provision step updating
+
+        self.api.cluster_provision_step_update(ctx, step_id, {
+            'total': 100,
+            'completed': 59,
+        })
+
+        ncluster = self.api.cluster_get(ctx, cluster.id)
+        self.assertEqual(1, len(ncluster['provision_progress']))
+        provision_step = ncluster['provision_progress'][0]
+
+        self.assertEqual(100, provision_step['total'])
+        self.assertEqual(59, provision_step['completed'])
+
+        # test adding event to step and getting events from step
+
+        self.api.cluster_event_add(ctx, step_id, {
+            'node_group_id': 'node_group_id',
+            'instance_id': 'instance_id',
+            'instance_name': st_name,
+            'event_info': st_info,
+            'successful': True
+        })
+
+        events = self.api.cluster_provision_step_get_events(ctx, step_id)
+        self.assertEqual(1, len(events))
+        self.assertEqual(st_name, events[0].instance_name)
+        self.assertEqual(True, events[0].successful)
+        self.assertEqual(st_info, events[0].event_info)
+
+        # test removing events from step
+
+        self.api.cluster_provision_step_remove_events(ctx, step_id)
+        events = self.api.cluster_provision_step_get_events(ctx, step_id)
+        self.assertEqual(0, len(events))

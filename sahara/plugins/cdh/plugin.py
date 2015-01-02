@@ -32,11 +32,12 @@ class CDHPluginProvider(p.ProvisioningPluginBase):
         return "Cloudera Plugin"
 
     def get_description(self):
-        return _("This plugin provides an ability to launch CDH clusters with "
-                 "Cloudera Manager management console.")
+        return _('The Cloudera Sahara plugin provides the ability to '
+                 'launch the Cloudera distribution of Apache Hadoop '
+                 '(CDH) with Cloudera Manager management console.')
 
     def get_versions(self):
-        return ['5']
+        return ['5', '5.2.0']
 
     def get_node_processes(self, hadoop_version):
         return {
@@ -49,7 +50,17 @@ class CDHPluginProvider(p.ProvisioningPluginBase):
             "RESOURCEMANAGER": ['RESOURCEMANAGER'],
             "NODEMANAGER": ['NODEMANAGER'],
             "JOBHISTORY": ['JOBHISTORY'],
-            "OOZIE": ['OOZIE_SERVER']
+            "OOZIE": ['OOZIE_SERVER'],
+            "HIVE": [],
+            "HIVESERVER": ['HIVESERVER2'],
+            "HIVEMETASTORE": ['HIVEMETASTORE'],
+            "WEBHCAT": ['WEBHCAT'],
+            "HUE": ['HUE_SERVER'],
+            "SPARK_ON_YARN": ['SPARK_YARN_HISTORY_SERVER'],
+            "ZOOKEEPER": ['SERVER'],
+            "HBASE": [],
+            "MASTER": ['MASTER'],
+            "REGIONSERVER": ['REGIONSERVER']
         }
 
     def get_configs(self, hadoop_version):
@@ -85,6 +96,11 @@ class CDHPluginProvider(p.ProvisioningPluginBase):
                 'Password': 'admin'
             }
         }
+        hue = cu.get_hue(cluster)
+        if hue:
+            info['Hue Dashboard'] = {
+                'Web UI': 'http://%s:8888' % hue.management_ip
+            }
 
         ctx = context.ctx()
         conductor.cluster_update(ctx, cluster, {'info': info})
@@ -93,3 +109,6 @@ class CDHPluginProvider(p.ProvisioningPluginBase):
         if job_type in edp_engine.EdpOozieEngine.get_supported_job_types():
             return edp_engine.EdpOozieEngine(cluster)
         return None
+
+    def get_open_ports(self, node_group):
+        return dp.get_open_ports(node_group)

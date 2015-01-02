@@ -19,7 +19,7 @@ import testtools
 
 from sahara.conductor import resource as r
 from sahara.plugins import base as pb
-from sahara.plugins.general import exceptions as ex
+from sahara.plugins import exceptions as ex
 from sahara.plugins.hdp import ambariplugin as ap
 from sahara.plugins.hdp import clusterspec as cs
 from sahara.tests.unit import base as sahara_base
@@ -347,7 +347,7 @@ class AmbariPluginTest(sahara_base.SaharaTestCase):
         return request
 
 
-class TestHost:
+class TestHost(object):
     def __init__(self, management_ip, role=None):
         self.management_ip = management_ip
         self.role = role

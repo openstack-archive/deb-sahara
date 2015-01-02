@@ -21,6 +21,7 @@ from oslo import messaging
 
 from sahara import conductor as c
 from sahara import context
+from sahara import exceptions
 from sahara.i18n import _LE
 from sahara.i18n import _LI
 from sahara.openstack.common import log as logging
@@ -46,10 +47,6 @@ def setup_ops(engine):
     INFRA = engine
 
 
-def get_engine_type_and_version():
-    return INFRA.get_type_and_version()
-
-
 class LocalOps(object):
     def provision_cluster(self, cluster_id):
         context.spawn("cluster-creating-%s" % cluster_id,
@@ -66,6 +63,17 @@ class LocalOps(object):
     def run_edp_job(self, job_execution_id):
         context.spawn("Starting Job Execution %s" % job_execution_id,
                       _run_edp_job, job_execution_id)
+
+    def cancel_job_execution(self, job_execution_id):
+        context.spawn("Canceling Job Execution %s" % job_execution_id,
+                      _cancel_job_execution, job_execution_id)
+
+    def delete_job_execution(self, job_execution_id):
+        context.spawn("Deleting Job Execution %s" % job_execution_id,
+                      _delete_job_execution, job_execution_id)
+
+    def get_engine_type_and_version(self):
+        return INFRA.get_type_and_version()
 
 
 class RemoteOps(rpc_utils.RPCClient):
@@ -86,6 +94,17 @@ class RemoteOps(rpc_utils.RPCClient):
     def run_edp_job(self, job_execution_id):
         self.cast('run_edp_job', job_execution_id=job_execution_id)
 
+    def cancel_job_execution(self, job_execution_id):
+        self.cast('cancel_job_execution',
+                  job_execution_id=job_execution_id)
+
+    def delete_job_execution(self, job_execution_id):
+        self.cast('delete_job_execution',
+                  job_execution_id=job_execution_id)
+
+    def get_engine_type_and_version(self):
+        return self.call('get_engine_type_and_version')
+
 
 class OpsServer(rpc_utils.RPCServer):
     def __init__(self):
@@ -105,6 +124,15 @@ class OpsServer(rpc_utils.RPCServer):
     def run_edp_job(self, job_execution_id):
         _run_edp_job(job_execution_id)
 
+    def cancel_job_execution(self, job_execution_id):
+        _cancel_job_execution(job_execution_id)
+
+    def delete_job_execution(self, job_execution_id):
+        _delete_job_execution(job_execution_id)
+
+    def get_engine_type_and_version(self):
+        return INFRA.get_type_and_version()
+
 
 def ops_error_handler(f):
     @functools.wraps(f)
@@ -116,9 +144,10 @@ def ops_error_handler(f):
             ctx = context.ctx()
             cluster = conductor.cluster_get(ctx, cluster_id)
             # check if cluster still exists (it might have been removed)
-            if cluster is None:
-                LOG.info(_LI("Cluster with %s was deleted. Canceling current "
-                             "operation."),  cluster_id)
+            if cluster is None or cluster.status == 'Deleting':
+                LOG.info(_LI("Cluster %s was deleted or marked for "
+                             "deletion. Canceling current operation."),
+                         cluster_id)
                 return
 
             LOG.exception(
@@ -173,7 +202,7 @@ def _prepare_provisioning(cluster_id):
 
 def _update_sahara_info(ctx, cluster):
     sahara_info = {
-        'infrastructure_engine': get_engine_type_and_version(),
+        'infrastructure_engine': INFRA.get_type_and_version(),
         'remote': remote.get_remote_type_and_version()}
 
     return conductor.cluster_update(
@@ -263,3 +292,19 @@ def terminate_cluster(cluster_id):
 
 def _run_edp_job(job_execution_id):
     job_manager.run_job(job_execution_id)
+
+
+def _cancel_job_execution(job_execution_id):
+    job_manager.cancel_job(job_execution_id)
+
+
+def _delete_job_execution(job_execution_id):
+    try:
+        job_execution = job_manager.cancel_job(job_execution_id)
+        if not job_execution:
+            # job_execution was deleted already, nothing to do
+            return
+    except exceptions.CancelingFailed:
+        LOG.error(_LE("Job execution %s can't be cancelled in time. "
+                      "Deleting it anyway."), job_execution_id)
+    conductor.job_execution_destroy(context.ctx(), job_execution_id)

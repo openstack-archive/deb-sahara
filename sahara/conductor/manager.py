@@ -37,10 +37,13 @@ NODE_GROUP_DEFAULTS = {
     "node_configs": {},
     "volumes_per_node": 0,
     "volumes_size": 0,
+    "volumes_availability_zone": None,
     "volume_mount_prefix": "/volumes/disk",
+    "volume_type": None,
     "floating_ip_pool": None,
     "security_groups": None,
     "auto_security_group": False,
+    "availability_zone": None,
 }
 
 INSTANCE_DEFAULTS = {
@@ -225,9 +228,13 @@ class ConductorManager(db_base.Base):
         """Return the cluster_template or None if it does not exist."""
         return self.db.cluster_template_get(context, cluster_template)
 
-    def cluster_template_get_all(self, context):
-        """Get all cluster_templates."""
-        return self.db.cluster_template_get_all(context)
+    def cluster_template_get_all(self, context, **kwargs):
+        """Get all cluster templates filtered by **kwargs.
+
+        e.g.  cluster_template_get_all(plugin_name='vanilla',
+                                       hadoop_version='1.1')
+        """
+        return self.db.cluster_template_get_all(context, **kwargs)
 
     def cluster_template_create(self, context, values):
         """Create a cluster_template from the values dictionary."""
@@ -249,9 +256,13 @@ class ConductorManager(db_base.Base):
         """Return the Node Group Template or None if it does not exist."""
         return self.db.node_group_template_get(context, node_group_template)
 
-    def node_group_template_get_all(self, context):
-        """Get all Node Group Templates."""
-        return self.db.node_group_template_get_all(context)
+    def node_group_template_get_all(self, context, **kwargs):
+        """Get all NodeGroupTemplates filtered by **kwargs.
+
+        e.g.  node_group_template_get_all(plugin_name='vanilla',
+                                          hadoop_version='1.1')
+        """
+        return self.db.node_group_template_get_all(context, **kwargs)
 
     def node_group_template_create(self, context, values):
         """Create a Node Group Template from the values dictionary."""
@@ -271,9 +282,12 @@ class ConductorManager(db_base.Base):
         """Return the Data Source or None if it does not exist."""
         return self.db.data_source_get(context, data_source)
 
-    def data_source_get_all(self, context):
-        """Get all Data Sources."""
-        return self.db.data_source_get_all(context)
+    def data_source_get_all(self, context, **kwargs):
+        """Get all Data Sources filtered by **kwargs.
+
+        e.g.  data_source_get_all(name='myfile', type='swift')
+        """
+        return self.db.data_source_get_all(context, **kwargs)
 
     def data_source_create(self, context, values):
         """Create a Data Source from the values dictionary."""
@@ -296,7 +310,16 @@ class ConductorManager(db_base.Base):
     def job_execution_get_all(self, context, **kwargs):
         """Get all JobExecutions filtered by **kwargs.
 
+        kwargs key values may be the names of fields in a JobExecution
+        plus the following special values with the indicated meaning:
+
+        'cluster.name' -- name of the Cluster referenced by the JobExecution
+        'job.name' -- name of the Job referenced by the JobExecution
+        'status' -- JobExecution['info']['status']
+
         e.g. job_execution_get_all(cluster_id=12, input_id=123)
+             job_execution_get_all(**{'cluster.name': 'test',
+                                      'job.name': 'wordcount'})
         """
         return self.db.job_execution_get_all(context, **kwargs)
 
@@ -327,9 +350,12 @@ class ConductorManager(db_base.Base):
         """Return the Job or None if it does not exist."""
         return self.db.job_get(context, job)
 
-    def job_get_all(self, context):
-        """Get all Jobs."""
-        return self.db.job_get_all(context)
+    def job_get_all(self, context, **kwargs):
+        """Get all Jobs filtered by **kwargs.
+
+        e.g.  job_get_all(name='myjob', type='MapReduce')
+        """
+        return self.db.job_get_all(context, **kwargs)
 
     def job_create(self, context, values):
         """Create a Job from the values dictionary."""
@@ -347,9 +373,12 @@ class ConductorManager(db_base.Base):
 
     # JobBinary ops
 
-    def job_binary_get_all(self, context):
-        """Get all JobBinaries."""
-        return self.db.job_binary_get_all(context)
+    def job_binary_get_all(self, context, **kwargs):
+        """Get all JobBinarys filtered by **kwargs.
+
+        e.g.  job_binary_get_all(name='wordcount.jar')
+        """
+        return self.db.job_binary_get_all(context, **kwargs)
 
     def job_binary_get(self, context, job_binary_id):
         """Return the JobBinary or None if it does not exist."""
@@ -368,12 +397,14 @@ class ConductorManager(db_base.Base):
 
     # JobBinaryInternal ops
 
-    def job_binary_internal_get_all(self, context):
-        """Get all JobBinaryInternals
+    def job_binary_internal_get_all(self, context, **kwargs):
+        """Get all JobBinaryInternals filtered by **kwargs.
+
+        e.g.  cluster_get_all(name='wordcount.jar')
 
         The JobBinaryInternals returned do not contain a data field.
         """
-        return self.db.job_binary_internal_get_all(context)
+        return self.db.job_binary_internal_get_all(context, **kwargs)
 
     def job_binary_internal_get(self, context, job_binary_internal_id):
         """Return the JobBinaryInternal or None if it does not exist
@@ -402,3 +433,29 @@ class ConductorManager(db_base.Base):
         return self.db.job_binary_internal_get_raw_data(
             context,
             job_binary_internal_id)
+
+    # Events ops
+
+    def cluster_provision_step_add(self, context, cluster_id, values):
+        """Create a cluster assigned ProvisionStep
+
+        from the values dictionary
+        """
+        return self.db.cluster_provision_step_add(context, cluster_id, values)
+
+    def cluster_provision_step_update(self, context, provision_step, values):
+        """Update the ProvisionStep from the values dictionary."""
+        self.db.cluster_provision_step_update(context, provision_step, values)
+
+    def cluster_provision_step_get_events(self, context, provision_step):
+        """Return all events from the specified ProvisionStep."""
+        return self.db.cluster_provision_step_get_events(
+            context, provision_step)
+
+    def cluster_provision_step_remove_events(self, context, provision_step):
+        """Delete all event from the specified ProvisionStep."""
+        self.db.cluster_provision_step_remove_events(context, provision_step)
+
+    def cluster_event_add(self, context, provision_step, values):
+        """Assign new event to the specified ProvisionStep."""
+        self.db.cluster_event_add(context, provision_step, values)

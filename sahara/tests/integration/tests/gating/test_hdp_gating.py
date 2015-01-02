@@ -53,10 +53,10 @@ class HDPGatingTest(cinder.CinderVolumeTest, edp.EDPTest,
 
         if not self.hdp_config.SKIP_CINDER_TEST:
             volumes_per_node = 2
-            volume_size = 2
+            volumes_size = 2
         else:
             volumes_per_node = 0
-            volume_size = 0
+            volumes_size = 0
 
         node_group_template_id_list = []
 
@@ -70,10 +70,11 @@ class HDPGatingTest(cinder.CinderVolumeTest, edp.EDPTest,
                 plugin_config=self.hdp_config,
                 description='test node group template for HDP plugin',
                 volumes_per_node=volumes_per_node,
-                volume_size=volume_size,
+                volumes_size=volumes_size,
                 node_processes=self.hdp_config.WORKER_NODE_PROCESSES,
                 node_configs={},
-                floating_ip_pool=floating_ip_pool
+                floating_ip_pool=floating_ip_pool,
+                auto_security_group=True
             )
             node_group_template_id_list.append(node_group_template_tt_dn_id)
 
@@ -98,7 +99,9 @@ class HDPGatingTest(cinder.CinderVolumeTest, edp.EDPTest,
                         node_processes=self.hdp_config.MASTER_NODE_PROCESSES,
                         node_configs={},
                         floating_ip_pool=floating_ip_pool,
-                        count=1),
+                        count=1,
+                        auto_security_group=True
+                    ),
                     dict(
                         name='worker-node-tt-dn',
                         node_group_template_id=node_group_template_tt_dn_id,
@@ -120,13 +123,14 @@ class HDPGatingTest(cinder.CinderVolumeTest, edp.EDPTest,
         cluster_name = (self.common_config.CLUSTER_NAME + '-' +
                         self.hdp_config.PLUGIN_NAME)
         try:
-            self.create_cluster(
+            cluster_id = self.create_cluster(
                 name=cluster_name,
                 plugin_config=self.hdp_config,
                 cluster_template_id=cluster_template_id,
                 description='test cluster',
                 cluster_configs={}
             )
+            self.poll_cluster_state(cluster_id)
 
             cluster_info = self.get_cluster_info(self.hdp_config)
             self.await_active_workers_for_namenode(cluster_info['node_info'],
@@ -166,27 +170,39 @@ class HDPGatingTest(cinder.CinderVolumeTest, edp.EDPTest,
         java_lib_data = self.edp_info.read_java_example_lib()
 
         try:
-            self.edp_testing(job_type=utils_edp.JOB_TYPE_PIG,
-                             job_data_list=[{'pig': pig_job_data}],
-                             lib_data_list=[{'jar': pig_lib_data}],
-                             swift_binaries=True,
-                             hdfs_local_output=True)
-            self.edp_testing(job_type=utils_edp.JOB_TYPE_MAPREDUCE,
-                             job_data_list=[],
-                             lib_data_list=[{'jar': mapreduce_jar_data}],
-                             configs=self.edp_info.mapreduce_example_configs(),
-                             swift_binaries=True,
-                             hdfs_local_output=True)
-            self.edp_testing(job_type=utils_edp.JOB_TYPE_MAPREDUCE_STREAMING,
-                             job_data_list=[],
-                             lib_data_list=[],
-                             configs=(
-                                 self.edp_info.mapreduce_streaming_configs()))
-            self.edp_testing(job_type=utils_edp.JOB_TYPE_JAVA,
-                             job_data_list=[],
-                             lib_data_list=[{'jar': java_lib_data}],
-                             configs=self.edp_info.java_example_configs(),
-                             pass_input_output_args=True)
+            job_ids = []
+            job_id = self.edp_testing(
+                job_type=utils_edp.JOB_TYPE_PIG,
+                job_data_list=[{'pig': pig_job_data}],
+                lib_data_list=[{'jar': pig_lib_data}],
+                swift_binaries=True,
+                hdfs_local_output=True)
+            job_ids.append(job_id)
+
+            job_id = self.edp_testing(
+                job_type=utils_edp.JOB_TYPE_MAPREDUCE,
+                job_data_list=[],
+                lib_data_list=[{'jar': mapreduce_jar_data}],
+                configs=self.edp_info.mapreduce_example_configs(),
+                swift_binaries=True,
+                hdfs_local_output=True)
+            job_ids.append(job_id)
+
+            job_id = self.edp_testing(
+                job_type=utils_edp.JOB_TYPE_MAPREDUCE_STREAMING,
+                job_data_list=[],
+                lib_data_list=[],
+                configs=self.edp_info.mapreduce_streaming_configs())
+            job_ids.append(job_id)
+
+            job_id = self.edp_testing(
+                job_type=utils_edp.JOB_TYPE_JAVA,
+                job_data_list=[],
+                lib_data_list=[{'jar': java_lib_data}],
+                configs=self.edp_info.java_example_configs(),
+                pass_input_output_args=True)
+            job_ids.append(job_id)
+            self.poll_jobs_status(job_ids)
 
         except Exception as e:
             with excutils.save_and_reraise_exception():

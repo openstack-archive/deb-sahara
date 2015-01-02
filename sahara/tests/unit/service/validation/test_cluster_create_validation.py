@@ -337,6 +337,91 @@ class TestClusterCreateValidation(u.ValidationTestCase):
                        "Security group 'group3' not found")
         )
 
+    def test_cluster_create_availability_zone(self):
+        self.override_config('use_neutron', True)
+        self._assert_create_object_validation(
+            data={
+                'name': 'testname',
+                'plugin_name': 'vanilla',
+                'hadoop_version': '1.2.1',
+                'user_keypair_id': 'test_keypair',
+                'default_image_id': '550e8400-e29b-41d4-a716-446655440000',
+                'neutron_management_network': 'd9a3bebc-f788-4b81-'
+                                              '9a93-aa048022c1ca',
+                'node_groups': [
+                    {
+                        'name': 'nodegroup',
+                        'node_processes': ['namenode'],
+                        'flavor_id': '42',
+                        'count': 100,
+                        'security_groups': [],
+                        'floating_ip_pool':
+                            'd9a3bebc-f788-4b81-9a93-aa048022c1ca',
+                        'availability_zone': 'nova',
+                        'volumes_per_node': 1,
+                        'volumes_availability_zone': 'nova'
+                    }
+                ]
+            }
+        )
+
+    def test_cluster_create_wrong_availability_zone(self):
+        self.override_config('use_neutron', True)
+        self._assert_create_object_validation(
+            data={
+                'name': 'testname',
+                'plugin_name': 'vanilla',
+                'hadoop_version': '1.2.1',
+                'user_keypair_id': 'test_keypair',
+                'default_image_id': '550e8400-e29b-41d4-a716-446655440000',
+                'neutron_management_network': 'd9a3bebc-f788-4b81-'
+                                              '9a93-aa048022c1ca',
+                'node_groups': [
+                    {
+                        'name': 'nodegroup',
+                        'node_processes': ['namenode'],
+                        'flavor_id': '42',
+                        'count': 100,
+                        'security_groups': [],
+                        'floating_ip_pool':
+                            'd9a3bebc-f788-4b81-9a93-aa048022c1ca',
+                        'availability_zone': 'nonexistent'
+                    }
+                ]
+            },
+            bad_req_i=(1, 'INVALID_REFERENCE',
+                       "Nova availability zone 'nonexistent' not found")
+        )
+
+    def test_cluster_create_wrong_volumes_availability_zone(self):
+        self.override_config('use_neutron', True)
+        self._assert_create_object_validation(
+            data={
+                'name': 'testname',
+                'plugin_name': 'vanilla',
+                'hadoop_version': '1.2.1',
+                'user_keypair_id': 'test_keypair',
+                'default_image_id': '550e8400-e29b-41d4-a716-446655440000',
+                'neutron_management_network': 'd9a3bebc-f788-4b81-'
+                                              '9a93-aa048022c1ca',
+                'node_groups': [
+                    {
+                        'name': 'nodegroup',
+                        'node_processes': ['namenode'],
+                        'flavor_id': '42',
+                        'count': 100,
+                        'security_groups': [],
+                        'floating_ip_pool':
+                            'd9a3bebc-f788-4b81-9a93-aa048022c1ca',
+                        'volumes_per_node': 1,
+                        'volumes_availability_zone': 'nonexistent'
+                    }
+                ]
+            },
+            bad_req_i=(1, 'INVALID_REFERENCE',
+                       "Cinder availability zone 'nonexistent' not found")
+        )
+
 
 class TestClusterCreateFlavorValidation(base.SaharaWithDbTestCase):
     """Tests for valid flavor on cluster create.
@@ -471,8 +556,9 @@ class TestClusterCreateFlavorValidation(base.SaharaWithDbTestCase):
                 try:
                     c.check_cluster_create(values)
                 except exceptions.InvalidException as e:
+                    message = six.text_type(e).split('\n')[0]
                     self.assertEqual("Requested flavor '10' not found",
-                                     six.text_type(e))
+                                     message)
                     raise e
                 finally:
                     u.stop_patch(patchers)
@@ -533,6 +619,7 @@ class TestClusterCreateFlavorValidation(base.SaharaWithDbTestCase):
                 c.check_cluster_create(data)
                 u.stop_patch(patchers)
             except exceptions.InvalidException as e:
+                message = six.text_type(e).split('\n')[0]
                 self.assertEqual("Requested flavor '23' not found",
-                                 six.text_type(e))
+                                 message)
                 raise e

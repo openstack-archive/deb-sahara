@@ -20,7 +20,7 @@ from sahara import conductor as cond
 from sahara import context
 from sahara import exceptions as e
 from sahara.plugins import base as pb
-from sahara.plugins.general import exceptions as ex
+from sahara.plugins import exceptions as ex
 from sahara.plugins.vanilla import plugin as p
 from sahara.plugins.vanilla.v1_2_1 import config_helper as c_h
 from sahara.plugins.vanilla.v1_2_1 import mysql_helper as m_h
@@ -79,7 +79,10 @@ class VanillaPluginTest(base.SaharaWithDbTestCase):
             if cfg.config_type is "bool":
                 self.assertIsInstance(cfg.default_value, bool)
             elif cfg.config_type is "int":
-                self.assertIsInstance(cfg.default_value, int)
+                try:
+                    self.assertIsInstance(cfg.default_value, int)
+                except AssertionError:
+                    self.assertIsInstance(cfg.default_value, long)
             else:
                 self.assertIsInstance(cfg.default_value, str)
             self.assertNotIn(cfg.name, c_h.HIDDEN_CONFS)

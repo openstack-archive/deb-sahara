@@ -44,10 +44,12 @@ from oslo.db.sqlalchemy import utils as db_utils
 
 from sahara.tests.unit.db.migration import test_migrations_base as base
 
+import sqlalchemy
+
 CONF = cfg.CONF
 
 
-class TestMigrations(base.BaseWalkMigrationTestCase, base.CommonTestsMixIn):
+class TestMigrations(base.BaseWalkMigrationTestCase):
     """Test sqlalchemy-migrate migrations."""
     USER = "openstack_citest"
     PASSWD = "openstack_citest"
@@ -400,3 +402,68 @@ class TestMigrations(base.BaseWalkMigrationTestCase, base.CommonTestsMixIn):
 
     def _check_011(self, engine, date):
         self.assertColumnExists(engine, 'clusters', 'sahara_info')
+
+    def _check_012(self, engine, date):
+        self.assertColumnExists(engine, 'node_group_templates',
+                                'availability_zone')
+        self.assertColumnExists(engine, 'node_groups', 'availability_zone')
+        self.assertColumnExists(engine, 'templates_relations',
+                                'availability_zone')
+
+    def _check_014(self, engine, data):
+        self.assertColumnExists(engine, 'node_group_templates', 'volume_type')
+        self.assertColumnExists(engine, 'node_groups', 'volume_type')
+        self.assertColumnExists(engine, 'templates_relations', 'volume_type')
+
+    def _check_015(self, engine, data):
+        provision_steps_columns = [
+            'created_at',
+            'updated_at',
+            'id',
+            'cluster_id',
+            'tenant_id',
+            'step_name',
+            'step_type',
+            'completed',
+            'total',
+            'successful',
+            'started_at',
+            'completed_at',
+        ]
+        events_columns = [
+            'created_at',
+            'updated_at',
+            'id',
+            'node_group_id',
+            'instance_id',
+            'instance_name',
+            'event_info',
+            'successful',
+            'step_id',
+        ]
+
+        self.assertColumnCount(engine, 'cluster_provision_steps',
+                               provision_steps_columns)
+        self.assertColumnsExists(engine, 'cluster_provision_steps',
+                                 provision_steps_columns)
+
+        self.assertColumnCount(engine, 'cluster_events', events_columns)
+        self.assertColumnsExists(engine, 'cluster_events', events_columns)
+
+
+class TestMigrationsMySQL(TestMigrations, base.MySQLTestsMixIn,
+                          base.TestModelsMigrationsSync):
+    def get_engine(self):
+        conn_string = ("mysql+mysqldb://%s:%s@localhost/%s"
+                       % (self.USER, self.PASSWD, self.DATABASE))
+        engine = sqlalchemy.create_engine(conn_string)
+        return engine
+
+
+class TestMigrationsPostgresql(TestMigrations, base.PostgresqlTestsMixIn,
+                               base.TestModelsMigrationsSync):
+    def get_engine(self):
+        conn_string = ("postgresql+psycopg2://%s:%s@localhost/%s"
+                       % (self.USER, self.PASSWD, self.DATABASE))
+        engine = sqlalchemy.create_engine(conn_string)
+        return engine

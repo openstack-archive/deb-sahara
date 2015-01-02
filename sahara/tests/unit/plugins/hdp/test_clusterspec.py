@@ -16,7 +16,7 @@
 import mock
 import pkg_resources as pkg
 
-from sahara.plugins.general import exceptions as ex
+from sahara.plugins import exceptions as ex
 from sahara.plugins.hdp import clusterspec as cs
 from sahara.plugins.hdp import hadoopserver
 from sahara.plugins.hdp.versions.version_1_3_2 import services as s
@@ -1534,7 +1534,7 @@ class ClusterSpecTest(sahara_base.SaharaTestCase):
         self.assertIn('hbase-site', configurations)
 
 
-class TestNodeGroup:
+class TestNodeGroup(object):
     def __init__(self, name, instances, node_processes, count=1):
         self.name = name
         self.instances = instances
@@ -1548,7 +1548,7 @@ class TestNodeGroup:
         return ['']
 
 
-class TestUserInputConfig:
+class TestUserInputConfig(object):
     def __init__(self, tag, target, name):
         self.tag = tag
         self.applicable_target = target

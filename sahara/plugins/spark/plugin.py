@@ -22,13 +22,13 @@ from sahara import context
 from sahara.i18n import _
 from sahara.i18n import _LI
 from sahara.openstack.common import log as logging
-from sahara.plugins.general import exceptions as ex
-from sahara.plugins.general import utils
+from sahara.plugins import exceptions as ex
 from sahara.plugins import provisioning as p
 from sahara.plugins.spark import config_helper as c_helper
 from sahara.plugins.spark import edp_engine
 from sahara.plugins.spark import run_scripts as run
 from sahara.plugins.spark import scaling as sc
+from sahara.plugins import utils
 from sahara.topology import topology_helper as th
 from sahara.utils import files as f
 from sahara.utils import general as ug
@@ -423,3 +423,27 @@ class SparkProvider(p.ProvisioningPluginBase):
             return edp_engine.EdpEngine(cluster)
 
         return None
+
+    def get_open_ports(self, node_group):
+        cluster = node_group.cluster
+        ports_map = {
+            'namenode': [8020, 50070, 50470],
+            'datanode': [50010, 1004, 50075, 1006, 50020],
+            'master': [
+                int(c_helper.get_config_value("Spark", "Master port",
+                                              cluster)),
+                int(c_helper.get_config_value("Spark", "Master webui port",
+                                              cluster)),
+            ],
+            'slave': [
+                int(c_helper.get_config_value("Spark", "Worker webui port",
+                                              cluster))
+            ]
+        }
+
+        ports = []
+        for process in node_group.node_processes:
+            if process in ports_map:
+                ports.extend(ports_map[process])
+
+        return ports

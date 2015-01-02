@@ -14,8 +14,8 @@
 # limitations under the License.
 
 from sahara.i18n import _
-from sahara.plugins.general import exceptions as ex
-from sahara.plugins.general import utils as u
+from sahara.plugins import exceptions as ex
+from sahara.plugins import utils as u
 from sahara.plugins.vanilla.hadoop2 import config_helper as cu
 from sahara.plugins.vanilla import utils as vu
 from sahara.utils import general as gu
@@ -28,17 +28,17 @@ def validate_cluster_creating(pctx, cluster):
 
     snn_count = _get_inst_count(cluster, 'secondarynamenode')
     if snn_count not in [0, 1]:
-        raise ex.InvalidComponentCountException('secondarynamenode', '0 or 1',
-                                                snn_count)
+        raise ex.InvalidComponentCountException('secondarynamenode',
+                                                _('0 or 1'), snn_count)
 
     rm_count = _get_inst_count(cluster, 'resourcemanager')
     if rm_count not in [0, 1]:
-        raise ex.InvalidComponentCountException('resourcemanager', '0 or 1',
+        raise ex.InvalidComponentCountException('resourcemanager', _('0 or 1'),
                                                 rm_count)
 
     hs_count = _get_inst_count(cluster, 'historyserver')
     if hs_count not in [0, 1]:
-        raise ex.InvalidComponentCountException('historyserver', '0 or 1',
+        raise ex.InvalidComponentCountException('historyserver', _('0 or 1'),
                                                 hs_count)
 
     nm_count = _get_inst_count(cluster, 'nodemanager')
@@ -50,7 +50,7 @@ def validate_cluster_creating(pctx, cluster):
     oo_count = _get_inst_count(cluster, 'oozie')
     dn_count = _get_inst_count(cluster, 'datanode')
     if oo_count not in [0, 1]:
-        raise ex.InvalidComponentCountException('oozie', '0 or 1', oo_count)
+        raise ex.InvalidComponentCountException('oozie', _('0 or 1'), oo_count)
 
     if oo_count == 1:
         if dn_count < 1:
@@ -71,6 +71,11 @@ def validate_cluster_creating(pctx, cluster):
             'datanode', rep_factor, dn_count, _('Number of datanodes must be '
                                                 'not less than '
                                                 'dfs.replication.'))
+
+    hive_count = _get_inst_count(cluster, 'hiveserver')
+    if hive_count not in [0, 1]:
+        raise ex.InvalidComponentCountException('hive', _('0 or 1'),
+                                                hive_count)
 
 
 def validate_additional_ng_scaling(cluster, additional):

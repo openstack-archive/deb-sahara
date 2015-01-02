@@ -37,6 +37,7 @@ from sahara.service.edp import api as edp_api
 from sahara.service import ops as service_ops
 from sahara.service import periodic
 from sahara.utils import api as api_utils
+from sahara.utils.openstack import cinder
 from sahara.utils import remote
 from sahara.utils import rpc as messaging
 
@@ -75,6 +76,9 @@ def setup_common(possible_topdir, service_name):
 
     LOG.info(_LI('Starting Sahara %s'), service_name)
 
+    # Validate other configurations (that may produce logs) here
+    cinder.validate_config()
+
     messaging.setup()
 
     if service_name != 'all-in-one':
@@ -100,6 +104,10 @@ def setup_sahara_engine():
 
     remote_driver = _get_remote_driver()
     remote.setup_remote(remote_driver, engine)
+
+
+def setup_auth_policy():
+    acl.setup_policy()
 
 
 def make_app():
@@ -148,7 +156,7 @@ def make_app():
         app.wsgi_app = log_exchange.LogExchange.factory(CONF)(app.wsgi_app)
 
     app.wsgi_app = auth_valid.wrap(app.wsgi_app)
-    app.wsgi_app = acl.wrap(app.wsgi_app, CONF)
+    app.wsgi_app = acl.wrap(app.wsgi_app)
 
     return app
 

@@ -307,6 +307,7 @@ class TestSpark(base.SaharaTestCase):
         # check that we have nothing new to report ...
         self.assertEqual(status, None)
 
+    @mock.patch('sahara.conductor.API.job_execution_get')
     @mock.patch('sahara.utils.remote.get_remote')
     @mock.patch('sahara.plugins.spark.config_helper.get_config_value')
     @mock.patch('sahara.service.edp.job_utils.upload_job_files',
@@ -315,11 +316,12 @@ class TestSpark(base.SaharaTestCase):
                               "/wfdir/jar2.jar"])
     @mock.patch('sahara.service.edp.job_utils.create_workflow_dir',
                 return_value="/wfdir")
-    @mock.patch('sahara.plugins.general.utils.get_instance')
+    @mock.patch('sahara.plugins.utils.get_instance')
     @mock.patch('sahara.conductor.API.job_get')
     @mock.patch('sahara.context.ctx', return_value="ctx")
     def test_run_job(self, ctx, job_get, get_instance, create_workflow_dir,
-                     upload_job_files, get_config_value, get_remote):
+                     upload_job_files, get_config_value, get_remote,
+                     job_exec_get):
 
         def fix_get(field, default=None):
             if field == "args":

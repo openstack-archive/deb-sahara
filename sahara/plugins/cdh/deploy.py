@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import telnetlib
 
 from oslo.utils import timeutils
@@ -25,19 +26,24 @@ from sahara.openstack.common import log as logging
 from sahara.plugins.cdh import cloudera_utils as cu
 from sahara.plugins.cdh import commands as cmd
 from sahara.plugins.cdh import config_helper as c_helper
+from sahara.plugins.cdh import db_helper
 from sahara.plugins.cdh import utils as pu
-from sahara.plugins.general import exceptions as ex
-from sahara.plugins.general import utils as gu
+from sahara.plugins import exceptions as ex
+from sahara.plugins import utils as gu
 from sahara.swift import swift_helper
+from sahara.utils import edp as edp_u
 from sahara.utils import xmlutils
 
 CM_API_PORT = 7180
 
-CDH_VERSION = 'CDH5'
-
 HDFS_SERVICE_TYPE = 'HDFS'
 YARN_SERVICE_TYPE = 'YARN'
 OOZIE_SERVICE_TYPE = 'OOZIE'
+HIVE_SERVICE_TYPE = 'HIVE'
+HUE_SERVICE_TYPE = 'HUE'
+SPARK_SERVICE_TYPE = 'SPARK_ON_YARN'
+ZOOKEEPER_SERVICE_TYPE = 'ZOOKEEPER'
+HBASE_SERVICE_TYPE = 'HBASE'
 
 PATH_TO_CORE_SITE_XML = '/etc/hadoop/conf/core-site.xml'
 HADOOP_LIB_DIR = '/usr/lib/hadoop-mapreduce'
@@ -54,8 +60,16 @@ PACKAGES = [
     'hadoop-mapreduce-historyserver',
     'hadoop-yarn-nodemanager',
     'hadoop-yarn-resourcemanager',
+    'hive-metastore',
+    'hive-server2',
+    'hue',
+    'ntp',
     'oozie',
     'oracle-j2sdk1.7',
+    'spark-history-server',
+    'unzip',
+    'zookeeper',
+    'hbase'
 ]
 
 LOG = logging.getLogger(__name__)
@@ -86,6 +100,17 @@ def _get_configs(service, cluster=None, node_group=None):
         },
         'YARN': {
             'hdfs_service': cu.HDFS_SERVICE_NAME
+        },
+        'HUE': {
+            'hive_service': cu.HIVE_SERVICE_NAME,
+            'oozie_service': cu.OOZIE_SERVICE_NAME
+        },
+        'SPARK_ON_YARN': {
+            'yarn_service': cu.YARN_SERVICE_NAME
+        },
+        'HBASE': {
+            'hdfs_service': cu.HDFS_SERVICE_NAME,
+            'zookeeper_service': cu.ZOOKEEPER_SERVICE_NAME
         }
     }
 
@@ -108,11 +133,31 @@ def _get_configs(service, cluster=None, node_group=None):
             }
         }
 
-        ng_user_confs = node_group.node_configs
+        ng_user_confs = pu.convert_process_configs(node_group.node_configs)
         all_confs = _merge_dicts(all_confs, ng_user_confs)
         all_confs = _merge_dicts(all_confs, ng_default_confs)
 
     if cluster:
+        hive_confs = {
+            'HIVE': {
+                'hive_metastore_database_type': 'postgresql',
+                'hive_metastore_database_host':
+                pu.get_manager(cluster).internal_ip,
+                'hive_metastore_database_port': '7432',
+                'hive_metastore_database_password':
+                db_helper.get_hive_db_password(cluster),
+                'mapreduce_yarn_service': cu.YARN_SERVICE_NAME
+            }
+        }
+        hue_confs = {
+            'HUE': {
+                'hue_webhdfs': cu.get_role_name(pu.get_namenode(cluster),
+                                                'NAMENODE')
+            }
+        }
+
+        all_confs = _merge_dicts(all_confs, hue_confs)
+        all_confs = _merge_dicts(all_confs, hive_confs)
         all_confs = _merge_dicts(all_confs, cluster.cluster_configs)
 
     return all_confs.get(service, {})
@@ -270,6 +315,7 @@ def _await_agents(instances):
 def _start_cloudera_agent(instance):
     mng_hostname = pu.get_manager(instance.node_group.cluster).hostname()
     with instance.remote() as r:
+        cmd.start_ntp(r)
         cmd.configure_agent(r, mng_hostname)
         cmd.start_agent(r)
 
@@ -305,15 +351,34 @@ def _start_cloudera_manager(cluster):
 def _create_services(cluster):
     api = cu.get_api_client(cluster)
 
-    cm_cluster = api.create_cluster(cluster.name, CDH_VERSION)
+    fullversion = ('5.0.0' if cluster.hadoop_version == '5'
+                   else cluster.hadoop_version)
+    cm_cluster = api.create_cluster(cluster.name,
+                                    fullVersion=fullversion)
 
+    if len(pu.get_zookeepers(cluster)) > 0:
+        cm_cluster.create_service(cu.ZOOKEEPER_SERVICE_NAME,
+                                  ZOOKEEPER_SERVICE_TYPE)
     cm_cluster.create_service(cu.HDFS_SERVICE_NAME, HDFS_SERVICE_TYPE)
     cm_cluster.create_service(cu.YARN_SERVICE_NAME, YARN_SERVICE_TYPE)
     cm_cluster.create_service(cu.OOZIE_SERVICE_NAME, OOZIE_SERVICE_TYPE)
+    if pu.get_hive_metastore(cluster):
+        cm_cluster.create_service(cu.HIVE_SERVICE_NAME, HIVE_SERVICE_TYPE)
+    if pu.get_hue(cluster):
+        cm_cluster.create_service(cu.HUE_SERVICE_NAME, HUE_SERVICE_TYPE)
+    if pu.get_spark_historyserver(cluster):
+        cm_cluster.create_service(cu.SPARK_SERVICE_NAME, SPARK_SERVICE_TYPE)
+    if pu.get_hbase_master(cluster):
+        cm_cluster.create_service(cu.HBASE_SERVICE_NAME, HBASE_SERVICE_TYPE)
 
 
 def _configure_services(cluster):
     cm_cluster = cu.get_cloudera_cluster(cluster)
+
+    if len(pu.get_zookeepers(cluster)) > 0:
+        zookeeper = cm_cluster.get_service(cu.ZOOKEEPER_SERVICE_NAME)
+        zookeeper.update_config(_get_configs(ZOOKEEPER_SERVICE_TYPE,
+                                cluster=cluster))
 
     hdfs = cm_cluster.get_service(cu.HDFS_SERVICE_NAME)
     hdfs.update_config(_get_configs(HDFS_SERVICE_TYPE, cluster=cluster))
@@ -323,6 +388,21 @@ def _configure_services(cluster):
 
     oozie = cm_cluster.get_service(cu.OOZIE_SERVICE_NAME)
     oozie.update_config(_get_configs(OOZIE_SERVICE_TYPE, cluster=cluster))
+
+    if pu.get_hive_metastore(cluster):
+        hive = cm_cluster.get_service(cu.HIVE_SERVICE_NAME)
+        hive.update_config(_get_configs(HIVE_SERVICE_TYPE, cluster=cluster))
+
+    if pu.get_hue(cluster):
+        hue = cm_cluster.get_service(cu.HUE_SERVICE_NAME)
+        hue.update_config(_get_configs(HUE_SERVICE_TYPE, cluster=cluster))
+
+    if pu.get_spark_historyserver(cluster):
+        spark = cm_cluster.get_service(cu.SPARK_SERVICE_NAME)
+        spark.update_config(_get_configs(SPARK_SERVICE_TYPE, cluster=cluster))
+    if pu.get_hbase_master(cluster):
+        hbase = cm_cluster.get_service(cu.HBASE_SERVICE_NAME)
+        hbase.update_config(_get_configs(HBASE_SERVICE_TYPE, cluster=cluster))
 
 
 def _configure_instances(instances):
@@ -369,18 +449,101 @@ def _configure_swift_to_inst(instance):
         r.write_file_to(PATH_TO_CORE_SITE_XML, new_core_site, run_as_root=True)
 
 
+def _put_hive_hdfs_xml(cluster):
+    servers = pu.get_hive_servers(cluster)
+    with servers[0].remote() as r:
+        conf_path = edp_u.get_hive_shared_conf_path('hdfs')
+        r.execute_command(
+            'sudo su - -c "hadoop fs -mkdir -p %s" hdfs'
+            % os.path.dirname(conf_path))
+        r.execute_command(
+            'sudo su - -c "hadoop fs -put /etc/hive/conf/hive-site.xml '
+            '%s" hdfs' % conf_path)
+
+
+def _configure_hive(cluster):
+    manager = pu.get_manager(cluster)
+    with manager.remote() as r:
+        db_helper.create_hive_database(cluster, r)
+
+
+def _install_extjs(cluster):
+    extjs_remote_location = c_helper.get_extjs_lib_url(cluster)
+    extjs_vm_location_dir = '/var/lib/oozie'
+    extjs_vm_location_path = extjs_vm_location_dir + '/extjs.zip'
+    with pu.get_oozie(cluster).remote() as r:
+        if r.execute_command('ls %s/ext-2.2' % extjs_vm_location_dir,
+                             raise_when_error=False)[0] != 0:
+            r.execute_command('curl -L -o \'%s\' %s' % (
+                extjs_vm_location_path,  extjs_remote_location),
+                run_as_root=True)
+            r.execute_command('unzip %s -d %s' % (
+                extjs_vm_location_path, extjs_vm_location_dir),
+                run_as_root=True)
+
+
+def _clean_deploy_cc(cluster):
+    # We need to disable Deploy Client Configuration in first_run.
+    instances = gu.get_instances(cluster)
+    for instance in instances:
+        with instance.remote() as r:
+            r.execute_command(
+                'cp `find /usr/ -name deploy-cc.sh` cc.sh')
+            r.execute_command('echo "#!/bin/bash\necho \$1" > cc1.sh')
+            r.execute_command(
+                'sudo cp cc1.sh `find /usr/ -name deploy-cc.sh`')
+
+
+def _restore_deploy_cc(cluster):
+    # Restore back the script after first_run.
+    instances = gu.get_instances(cluster)
+    for instance in instances:
+        with instance.remote() as r:
+            r.execute_command(
+                'sudo cp cc.sh `find /usr/ -name deploy-cc.sh`')
+
+
 def start_cluster(cluster):
-    cm_cluster = cu.get_cloudera_cluster(cluster)
+    _clean_deploy_cc(cluster)
 
-    hdfs = cm_cluster.get_service(cu.HDFS_SERVICE_NAME)
-    cu.format_namenode(hdfs)
-    cu.start_service(hdfs)
+    if pu.get_oozie(cluster):
+        _install_extjs(cluster)
 
-    yarn = cm_cluster.get_service(cu.YARN_SERVICE_NAME)
-    cu.create_yarn_job_history_dir(yarn)
-    cu.start_service(yarn)
+    if pu.get_hive_metastore(cluster):
+        _configure_hive(cluster)
 
-    oozie = cm_cluster.get_service(cu.OOZIE_SERVICE_NAME)
-    cu.create_oozie_db(oozie)
-    cu.install_oozie_sharelib(oozie)
-    cu.start_service(oozie)
+    cu.first_run(cluster)
+
+    if pu.get_hive_metastore(cluster):
+        _put_hive_hdfs_xml(cluster)
+
+    _restore_deploy_cc(cluster)
+
+
+def get_open_ports(node_group):
+    ports = [9000]  # for CM agent
+
+    ports_map = {
+        'MANAGER': [7180, 7182, 7183, 7432, 7184, 8084, 8086, 10101,
+                    9997, 9996, 8087, 9998, 9999, 8085, 9995, 9994],
+        'NAMENODE': [8020, 8022, 50070, 50470],
+        'SECONDARYNAMENODE': [50090, 50495],
+        'DATANODE': [50010, 1004, 50075, 1006, 50020],
+        'RESOURCEMANAGER': [8030, 8031, 8032, 8033, 8088],
+        'NODEMANAGER': [8040, 8041, 8042],
+        'JOBHISTORY': [10020, 19888],
+        'HIVEMETASTORE': [9083],
+        'HIVESERVER2': [10000],
+        'HUE_SERVER': [8888],
+        'OOZIE_SERVER': [11000, 11001],
+        'SPARK_YARN_HISTORY_SERVER': [18088],
+        'SERVER': [2181, 3181, 4181, 9010],
+        'MASTER': [60000],
+        'REGIONSERVER': [60020]
+    }
+
+    for process in node_group.node_processes:
+        if process in ports_map:
+            ports.extend(ports_map[process])
+
+    return ports

@@ -20,12 +20,13 @@ from sahara import context
 from sahara.i18n import _
 from sahara.i18n import _LI
 from sahara.openstack.common import log as logging
-from sahara.plugins.general import exceptions as ex
+from sahara.plugins import exceptions as ex
 from sahara.plugins.hdp import hadoopserver as h
 from sahara.plugins.hdp import saharautils as utils
 from sahara.plugins.hdp.versions import versionhandlerfactory as vhf
 from sahara.plugins import provisioning as p
 from sahara.topology import topology_helper as th
+from sahara.utils import general as g
 
 
 conductor = conductor.API
@@ -68,6 +69,34 @@ class AmbariPlugin(p.ProvisioningPluginBase):
         LOG.info(_LI("Install of Hadoop stack successful."))
         # add service urls
         self._set_cluster_info(cluster, cluster_spec)
+
+        # check if HDFS HA is enabled; set it up if so
+        if cluster_spec.is_hdfs_ha_enabled(cluster):
+            cluster = g.change_cluster_status(cluster, "Configuring HA")
+            self.configure_hdfs_ha(cluster)
+
+    def configure_hdfs_ha(self, cluster):
+        version = cluster.hadoop_version
+        handler = self.version_factory.get_version_handler(version)
+
+        cluster_spec = handler.get_cluster_spec(
+            cluster, self._map_to_user_inputs(
+                version, cluster.cluster_configs))
+        hosts = self._get_servers(cluster)
+        ambari_info = self.get_ambari_info(cluster_spec)
+        self.cluster_ambari_mapping[cluster.name] = ambari_info
+        rpm = self._get_rpm_uri(cluster_spec)
+
+        servers = []
+        for host in hosts:
+            host_role = utils.get_host_role(host)
+            servers.append(
+                h.HadoopServer(host, cluster_spec.node_groups[host_role],
+                               ambari_rpm=rpm))
+
+        ambari_client = handler.get_ambari_client()
+        ambari_client.setup_hdfs_ha(cluster_spec, servers, ambari_info,
+                                    cluster.name)
 
     def _get_servers(self, cluster):
         servers = []
@@ -259,9 +288,8 @@ class AmbariPlugin(p.ProvisioningPluginBase):
         return 'Hortonworks Data Platform'
 
     def get_description(self):
-        return _('The Hortonworks OpenStack plugin works with project '
-                 'Sahara to automate the deployment of the Hortonworks data'
-                 ' platform on OpenStack based public & private clouds')
+        return _('The Hortonworks Sahara plugin automates the deployment '
+                 'of the Hortonworks Data Platform (HDP) on OpenStack.')
 
     def validate(self, cluster):
         # creating operational config results in validation
@@ -362,8 +390,13 @@ class AmbariPlugin(p.ProvisioningPluginBase):
             for server in servers:
                 server.configure_topology(topology_str)
 
+    def get_open_ports(self, node_group):
+        handler = self.version_factory.get_version_handler(
+            node_group.cluster.hadoop_version)
+        return handler.get_open_ports(node_group)
 
-class AmbariInfo():
+
+class AmbariInfo(object):
     def __init__(self, host, port, user, password):
         self.host = host
         self.port = port

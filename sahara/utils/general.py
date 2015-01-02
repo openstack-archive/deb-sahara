@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+
 import six
 
 from sahara import conductor as c
@@ -23,6 +25,8 @@ from sahara.utils.notification import sender
 
 conductor = c.API
 LOG = logging.getLogger(__name__)
+
+NATURAL_SORT_RE = re.compile('([0-9]+)')
 
 
 def find_dict(iterable, **rules):
@@ -61,20 +65,34 @@ def get_by_id(lst, id):
     return None
 
 
+# Taken from http://stackoverflow.com/questions/4836710/does-
+# python-have-a-built-in-function-for-string-natural-sort
+def natural_sort_key(s):
+    return [int(text) if text.isdigit() else text.lower()
+            for text in re.split(NATURAL_SORT_RE, s)]
+
+
 def change_cluster_status(cluster, status, status_description=None):
-    if cluster is None:
-        return None
+    ctx = context.ctx()
+
+    # Update cluster status. Race conditions with deletion are still possible,
+    # but this reduces probability at least.
+    cluster = conductor.cluster_get(ctx, cluster) if cluster else None
+
+    # 'Deleting' is final and can't be changed
+    if cluster is None or cluster.status == 'Deleting':
+        return cluster
 
     update_dict = {"status": status}
     if status_description:
         update_dict["status_description"] = status_description
 
-    cluster = conductor.cluster_update(context.ctx(), cluster, update_dict)
+    cluster = conductor.cluster_update(ctx, cluster, update_dict)
 
     LOG.info(_LI("Cluster status has been changed: id=%(id)s, New status="
                  "%(status)s"), {'id': cluster.id, 'status': cluster.status})
 
-    sender.notify(context.ctx(), cluster.id, cluster.name, cluster.status,
+    sender.notify(ctx, cluster.id, cluster.name, cluster.status,
                   "update")
 
     return cluster
