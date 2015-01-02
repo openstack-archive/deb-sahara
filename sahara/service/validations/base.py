@@ -227,13 +227,6 @@ def check_volume_type_exists(volume_type):
     raise ex.NotFoundException(_("Volume type '%s' not found") % volume_type)
 
 
-def check_availability_zone_exist(az):
-    az_list = nova.client().availability_zones.list(False)
-    az_names = [a.zoneName for a in az_list]
-    if az not in az_names:
-        raise ex.InvalidException(_("Availability zone '%s' not found") % az)
-
-
 # Cluster creation related checks
 
 def check_cluster_unique_name(name):
