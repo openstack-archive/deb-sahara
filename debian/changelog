@@ -1,6 +1,7 @@
 sahara (2014.2.1-2) experimental; urgency=medium
 
   * Only do pkgos_dbc_postinst if sahara/configure_db is true.
+  * Build-depends on dh-python and openstack-pkg-tools >= 22~.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 15 Jan 2015 00:56:06 +0100
 
