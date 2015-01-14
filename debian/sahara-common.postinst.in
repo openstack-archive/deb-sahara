@@ -16,9 +16,9 @@ if [ "$1" = "configure" ] || [ "$1" = "reconfigure" ] ; then
 	pkgos_write_new_conf sahara sahara.conf
 	pkgos_rabbit_write_conf ${SAHARA_CONF} DEFAULT sahara
 	pkgos_write_admin_creds ${SAHARA_CONF} keystone_authtoken sahara
-	pkgos_dbc_postinst ${SAHARA_CONF} database connection sahara $@
         db_get sahara/configure_db
 	if [ "$RET" = "true" ]; then
+		pkgos_dbc_postinst ${SAHARA_CONF} database connection sahara $@
 		su -s /bin/sh -c 'sahara-db-manage --config-file /etc/sahara/sahara.conf upgrade head' sahara
 	fi
 fi
