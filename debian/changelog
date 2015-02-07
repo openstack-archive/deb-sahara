@@ -1,3 +1,9 @@
+sahara (2014.2.2-1) experimental; urgency=medium
+
+  * New upstream point release.
+
+ -- Thomas Goirand <zigo@debian.org>  Sat, 07 Feb 2015 12:56:12 +0100
+
 sahara (2014.2.1-2) experimental; urgency=medium
 
   * Only do pkgos_dbc_postinst if sahara/configure_db is true.
