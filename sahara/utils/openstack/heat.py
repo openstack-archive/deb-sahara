@@ -17,19 +17,33 @@ import json
 
 from heatclient import client as heat_client
 from oslo.config import cfg
+from oslo_log import log as logging
 import six
 
 from sahara import context
 from sahara import exceptions as ex
 from sahara.i18n import _
-from sahara.openstack.common import log as logging
 from sahara.utils import files as f
 from sahara.utils import general as g
 from sahara.utils.openstack import base
 from sahara.utils.openstack import neutron
 
+opts = [
+    cfg.BoolOpt('api_insecure',
+                default=False,
+                help='Allow to perform insecure SSL requests to heat.'),
+    cfg.StrOpt('ca_file',
+               help='Location of ca certificates file to use for heat '
+                    'client requests.')
+]
+
+heat_group = cfg.OptGroup(name='heat',
+                          title='Heat client options')
 
 CONF = cfg.CONF
+CONF.register_group(heat_group)
+CONF.register_opts(opts, group=heat_group)
+
 LOG = logging.getLogger(__name__)
 
 SSH_PORT = 22
@@ -38,13 +52,16 @@ SSH_PORT = 22
 def client():
     ctx = context.current()
     heat_url = base.url_for(ctx.service_catalog, 'orchestration')
-    return heat_client.Client('1', heat_url, token=ctx.auth_token)
+    return heat_client.Client('1', heat_url, token=ctx.auth_token,
+                              cert_file=CONF.heat.ca_file,
+                              insecure=CONF.heat.api_insecure)
 
 
 def get_stack(stack_name):
     heat = client()
-    for stack in heat.stacks.list(filters={'stack_name': stack_name}):
-        return stack
+    for stack in heat.stacks.list():
+        if stack.stack_name == stack_name:
+            return stack
 
     raise ex.NotFoundException(_('Failed to find stack %(stack)s')
                                % {'stack': stack_name})

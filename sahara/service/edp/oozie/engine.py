@@ -81,9 +81,21 @@ class OozieJobEngine(base_engine.JobEngine):
         job = conductor.job_get(ctx, job_execution.job_id)
         input_source, output_source = job_utils.get_data_sources(job_execution,
                                                                  job)
-        proxy_configs = job_execution.job_configs.get('proxy_configs')
 
-        for data_source in [input_source, output_source]:
+        # Updated_job_configs will be a copy of job_execution.job_configs with
+        # any name or uuid references to data_sources resolved to paths
+        # assuming substitution is enabled.
+        # If substitution is not enabled then updated_job_configs will
+        # just be a reference to job_execution.job_configs to avoid a copy.
+        # Additional_sources will be a list of any data_sources found.
+        additional_sources, updated_job_configs = (
+            job_utils.resolve_data_source_references(job_execution.job_configs)
+        )
+
+        proxy_configs = updated_job_configs.get('proxy_configs')
+        configs = updated_job_configs.get('configs', {})
+
+        for data_source in [input_source, output_source] + additional_sources:
             if data_source and data_source.type == 'hdfs':
                 h.configure_cluster_for_hdfs(self.cluster, data_source)
                 break
@@ -95,11 +107,12 @@ class OozieJobEngine(base_engine.JobEngine):
         oozie_server = self.get_oozie_server(self.cluster)
 
         wf_dir = self._create_hdfs_workflow_dir(oozie_server, job)
-        self._upload_job_files_to_hdfs(oozie_server, wf_dir, job,
+        self._upload_job_files_to_hdfs(oozie_server, wf_dir, job, configs,
                                        proxy_configs)
 
         wf_xml = workflow_factory.get_workflow_xml(
-            job, self.cluster, job_execution, input_source, output_source,
+            job, self.cluster, updated_job_configs,
+            input_source, output_source,
             hdfs_user)
 
         path_to_workflow = self._upload_workflow_file(oozie_server, wf_dir,
@@ -171,25 +184,31 @@ class OozieJobEngine(base_engine.JobEngine):
                 edp.JOB_TYPE_MAPREDUCE_STREAMING,
                 edp.JOB_TYPE_PIG]
 
-    def _upload_job_files_to_hdfs(self, where, job_dir, job,
+    def _upload_job_files_to_hdfs(self, where, job_dir, job, configs,
                                   proxy_configs=None):
         mains = job.mains or []
         libs = job.libs or []
+        builtin_libs = edp.get_builtin_binaries(job, configs)
         uploaded_paths = []
         hdfs_user = self.get_hdfs_user()
+        lib_dir = job_dir + '/lib'
 
         with remote.get_remote(where) as r:
             for main in mains:
                 raw_data = dispatch.get_raw_binary(main, proxy_configs)
                 h.put_file_to_hdfs(r, raw_data, main.name, job_dir, hdfs_user)
                 uploaded_paths.append(job_dir + '/' + main.name)
+            if len(libs) > 0:
+                # HDFS 2.2.0 fails to put file if the lib dir does not exist
+                self.create_hdfs_dir(r, lib_dir)
             for lib in libs:
                 raw_data = dispatch.get_raw_binary(lib, proxy_configs)
-                # HDFS 2.2.0 fails to put file if the lib dir does not exist
-                self.create_hdfs_dir(r, job_dir + "/lib")
-                h.put_file_to_hdfs(r, raw_data, lib.name, job_dir + "/lib",
+                h.put_file_to_hdfs(r, raw_data, lib.name, lib_dir, hdfs_user)
+                uploaded_paths.append(lib_dir + '/' + lib.name)
+            for lib in builtin_libs:
+                h.put_file_to_hdfs(r, lib['raw'], lib['name'], lib_dir,
                                    hdfs_user)
-                uploaded_paths.append(job_dir + '/lib/' + lib.name)
+                uploaded_paths.append(lib_dir + '/' + lib['name'])
         return uploaded_paths
 
     def _create_hdfs_workflow_dir(self, where, job):

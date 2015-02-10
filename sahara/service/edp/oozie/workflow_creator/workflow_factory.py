@@ -15,7 +15,6 @@
 
 from oslo.config import cfg
 import six
-import six.moves.urllib.parse as urlparse
 
 from sahara import conductor as c
 from sahara import context
@@ -70,14 +69,6 @@ class BaseFactory(object):
                     new_vals = src.get(key, {})
                     value.update(new_vals)
 
-    def inject_swift_url_suffix(self, url):
-        if isinstance(url, six.string_types) and url.startswith("swift://"):
-            u = urlparse.urlparse(url)
-            if not u.netloc.endswith(su.SWIFT_URL_SUFFIX):
-                return url.replace(u.netloc,
-                                   u.netloc + "%s" % su.SWIFT_URL_SUFFIX, 1)
-        return url
-
     def update_job_dict(self, job_dict, exec_dict):
         pruned_exec_dict, edp_configs = self._prune_edp_configs(exec_dict)
         self._update_dict(job_dict, pruned_exec_dict)
@@ -94,14 +85,13 @@ class BaseFactory(object):
         job_dict['args'] = [
             # TODO(tmckay) args for Pig can actually be -param name=value
             # and value could conceivably contain swift paths
-            self.inject_swift_url_suffix(arg) for arg in job_dict['args']]
+            su.inject_swift_url_suffix(arg) for arg in job_dict['args']]
 
         for k, v in six.iteritems(job_dict.get('configs', {})):
-            if k != 'proxy_configs':
-                job_dict['configs'][k] = self.inject_swift_url_suffix(v)
+            job_dict['configs'][k] = su.inject_swift_url_suffix(v)
 
         for k, v in six.iteritems(job_dict.get('params', {})):
-            job_dict['params'][k] = self.inject_swift_url_suffix(v)
+            job_dict['params'][k] = su.inject_swift_url_suffix(v)
 
     def get_configs(self, input_data, output_data, proxy_configs=None):
         configs = {}
@@ -140,14 +130,14 @@ class PigFactory(BaseFactory):
     def get_script_name(self, job):
         return conductor.job_main_name(context.ctx(), job)
 
-    def get_workflow_xml(self, cluster, execution, input_data, output_data,
+    def get_workflow_xml(self, cluster, job_configs, input_data, output_data,
                          hdfs_user):
-        proxy_configs = execution.job_configs.get('proxy_configs')
+        proxy_configs = job_configs.get('proxy_configs')
         job_dict = {'configs': self.get_configs(input_data, output_data,
                                                 proxy_configs),
                     'params': self.get_params(input_data, output_data),
                     'args': []}
-        self.update_job_dict(job_dict, execution.job_configs)
+        self.update_job_dict(job_dict, job_configs)
         creator = pig_workflow.PigWorkflowCreator()
         creator.build_workflow_xml(self.name,
                                    configuration=job_dict['configs'],
@@ -165,13 +155,13 @@ class HiveFactory(BaseFactory):
     def get_script_name(self, job):
         return conductor.job_main_name(context.ctx(), job)
 
-    def get_workflow_xml(self, cluster, execution, input_data, output_data,
+    def get_workflow_xml(self, cluster, job_configs, input_data, output_data,
                          hdfs_user):
-        proxy_configs = execution.job_configs.get('proxy_configs')
+        proxy_configs = job_configs.get('proxy_configs')
         job_dict = {'configs': self.get_configs(input_data, output_data,
                                                 proxy_configs),
                     'params': self.get_params(input_data, output_data)}
-        self.update_job_dict(job_dict, execution.job_configs)
+        self.update_job_dict(job_dict, job_configs)
 
         creator = hive_workflow.HiveWorkflowCreator()
         creator.build_workflow_xml(self.name,
@@ -196,12 +186,12 @@ class MapReduceFactory(BaseFactory):
         return dict((k[len(prefix):], v) for (k, v) in six.iteritems(
             job_dict['edp_configs']) if k.startswith(prefix))
 
-    def get_workflow_xml(self, cluster, execution, input_data, output_data,
+    def get_workflow_xml(self, cluster, job_configs, input_data, output_data,
                          hdfs_user):
-        proxy_configs = execution.job_configs.get('proxy_configs')
+        proxy_configs = job_configs.get('proxy_configs')
         job_dict = {'configs': self.get_configs(input_data, output_data,
                                                 proxy_configs)}
-        self.update_job_dict(job_dict, execution.job_configs)
+        self.update_job_dict(job_dict, job_configs)
         creator = mapreduce_workflow.MapReduceWorkFlowCreator()
         creator.build_workflow_xml(configuration=job_dict['configs'],
                                    streaming=self._get_streaming(job_dict))
@@ -213,7 +203,14 @@ class JavaFactory(BaseFactory):
     def _get_java_configs(self, job_dict):
         main_class = job_dict['edp_configs']['edp.java.main_class']
         java_opts = job_dict['edp_configs'].get('edp.java.java_opts', None)
-        return main_class, java_opts
+        args = job_dict['args']
+        if edp.is_adapt_for_oozie_enabled(job_dict['edp_configs']):
+            if args:
+                args = [main_class] + args
+            else:
+                args = [main_class]
+            main_class = 'org.openstack.sahara.edp.MainWrapper'
+        return main_class, java_opts, args
 
     def get_configs(self, proxy_configs=None):
         configs = {}
@@ -230,18 +227,18 @@ class JavaFactory(BaseFactory):
 
         return configs
 
-    def get_workflow_xml(self, cluster, execution, *args, **kwargs):
-        proxy_configs = execution.job_configs.get('proxy_configs')
+    def get_workflow_xml(self, cluster, job_configs, *args, **kwargs):
+        proxy_configs = job_configs.get('proxy_configs')
         job_dict = {'configs': self.get_configs(proxy_configs=proxy_configs),
                     'args': []}
-        self.update_job_dict(job_dict, execution.job_configs)
+        self.update_job_dict(job_dict, job_configs)
 
-        main_class, java_opts = self._get_java_configs(job_dict)
+        main_class, java_opts, args = self._get_java_configs(job_dict)
         creator = java_workflow.JavaWorkflowCreator()
         creator.build_workflow_xml(main_class,
                                    configuration=job_dict['configs'],
                                    java_opts=java_opts,
-                                   arguments=job_dict['args'])
+                                   arguments=args)
         return creator.get_built_workflow_xml()
 
 
@@ -264,9 +261,9 @@ def _get_creator(job):
     return type_map[job.type]()
 
 
-def get_workflow_xml(job, cluster, execution, *args, **kwargs):
+def get_workflow_xml(job, cluster, job_configs, *args, **kwargs):
     return _get_creator(job).get_workflow_xml(
-        cluster, execution, *args, **kwargs)
+        cluster, job_configs, *args, **kwargs)
 
 
 def get_possible_job_config(job_type):

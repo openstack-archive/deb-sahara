@@ -15,8 +15,12 @@
 
 import os
 
+import eventlet
+from eventlet import wsgi
 import flask
 from oslo.config import cfg
+from oslo_log import log
+from oslo_log import loggers
 import six
 import stevedore
 from werkzeug import exceptions as werkzeug_exceptions
@@ -30,7 +34,7 @@ from sahara import config
 from sahara import context
 from sahara.i18n import _LI
 from sahara.i18n import _LW
-from sahara.openstack.common import log
+from sahara.openstack.common import sslutils
 from sahara.plugins import base as plugins_base
 from sahara.service import api as service_api
 from sahara.service.edp import api as edp_api
@@ -72,7 +76,7 @@ def setup_common(possible_topdir, service_name):
         config_files = [dev_conf]
 
     config.parse_configs(config_files)
-    log.setup("sahara")
+    log.setup(CONF, "sahara")
 
     LOG.info(_LI('Starting Sahara %s'), service_name)
 
@@ -191,3 +195,12 @@ def _get_ops_driver(driver_name):
     LOG.info(_LI("Loading '%s' ops"), driver_name)
 
     return _load_driver('sahara.run.mode', driver_name)
+
+
+def start_server(app):
+    sock = eventlet.listen((cfg.CONF.host, cfg.CONF.port), backlog=500)
+    if sslutils.is_enabled():
+        LOG.info(_LI("Using HTTPS for port %s"), cfg.CONF.port)
+        sock = sslutils.wrap(sock)
+
+    wsgi.server(sock, app, log=loggers.WritableLogger(LOG), debug=False)

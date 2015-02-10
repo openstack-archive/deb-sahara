@@ -15,10 +15,11 @@
 
 import os
 
+from oslo_log import log as logging
+
 from sahara import context
 from sahara.i18n import _
 from sahara.i18n import _LI
-from sahara.openstack.common import log as logging
 from sahara.plugins import exceptions as ex
 from sahara.plugins.vanilla.hadoop2 import config_helper as c_helper
 from sahara.plugins.vanilla import utils as vu
@@ -170,9 +171,9 @@ def _check_datanodes_count(remote, count):
 
     LOG.debug("Checking datanode count")
     exit_code, stdout = remote.execute_command(
-        'sudo su -lc "hadoop dfsadmin -report" hadoop | '
-        'grep \'Datanodes available:\' | '
-        'awk \'{print $3}\'')
+        'sudo su -lc "hdfs dfsadmin -report" hadoop | '
+        'grep \'Live datanodes\|Datanodes available:\' | '
+        'grep -o \'[0-9]\+\' | head -n 1')
     LOG.debug("Datanode count='%s'" % stdout.rstrip())
 
     return exit_code == 0 and stdout and int(stdout) == count

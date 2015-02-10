@@ -21,9 +21,8 @@ patches.patch_all()
 import os
 import sys
 
-import eventlet
-from eventlet import wsgi
 from oslo import i18n
+from oslo_log import log as logging
 
 
 # If ../sahara/__init__.py exists, add ../ to Python search path, so that
@@ -44,7 +43,6 @@ i18n.enable_lazy()
 
 
 import sahara.main as server
-from sahara.openstack.common import log as logging
 
 
 LOG = logging.getLogger(__name__)
@@ -59,6 +57,4 @@ def main():
     server.setup_sahara_engine()
     server.setup_auth_policy()
 
-    from oslo.config import cfg
-    wsgi.server(eventlet.listen((cfg.CONF.host, cfg.CONF.port), backlog=500),
-                app, log=logging.WritableLogger(LOG), debug=False)
+    server.start_server(app)

@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from oslo_log import log as logging
+
 from sahara.api import acl
 import sahara.api.base as b
-from sahara.openstack.common import log as logging
 from sahara.service import api
 from sahara.service import validation as v
 from sahara.service.validations import cluster_templates as v_ct
@@ -194,14 +195,15 @@ def plugins_convert_to_cluster_template(plugin_name, version, name, data):
 @acl.enforce("images:get_all")
 def images_list():
     tags = u.get_request_args().getlist('tags')
-    return u.render(images=[i.dict for i in api.get_images(tags)])
+    name = u.get_request_args().get('name', None)
+    return u.render(images=[i.dict for i in api.get_images(name, tags)])
 
 
 @rest.get('/images/<image_id>')
 @acl.enforce("images:get")
 @v.check_exists(api.get_image, id='image_id')
 def images_get(image_id):
-    return u.render(api.get_image(id=image_id).wrapped_dict)
+    return u.render(api.get_registered_image(id=image_id).wrapped_dict)
 
 
 @rest.post('/images/<image_id>')

@@ -14,10 +14,10 @@
 # limitations under the License.
 
 from oslo.config import cfg
+from oslo_log import log as logging
 import six
 
 from sahara.i18n import _LI
-from sahara.openstack.common import log as logging
 from sahara.plugins.vanilla.hadoop2 import config_helper as c_helper
 from sahara.plugins.vanilla.hadoop2 import oozie_helper as o_helper
 from sahara.plugins.vanilla import utils as vu
@@ -39,7 +39,8 @@ HADOOP_GROUP = 'hadoop'
 
 def configure_cluster(pctx, cluster):
     LOG.debug("Configuring cluster \"%s\"", cluster.name)
-    if (CONF.use_identity_api_v3 and vu.get_hiveserver(cluster) and
+    if (CONF.use_identity_api_v3 and CONF.use_domain_for_proxy_users and
+            vu.get_hiveserver(cluster) and
             c_helper.is_swift_enabled(pctx, cluster)):
         cluster = proxy.create_proxy_user_for_cluster(cluster)
 

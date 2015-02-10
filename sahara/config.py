@@ -16,13 +16,10 @@
 import itertools
 
 from oslo.config import cfg
+from oslo_log import log
 
 from sahara import exceptions as ex
 from sahara.i18n import _
-from sahara.openstack.common import lockutils
-from sahara.openstack.common import log
-from sahara.openstack.common import periodic_task
-from sahara.openstack.common import policy
 from sahara.plugins import base as plugins_base
 from sahara.topology import topology_helper
 from sahara.utils.notification import sender
@@ -95,7 +92,15 @@ networking_opts = [
 ]
 
 
-cfg.set_defaults(log.log_opts, default_log_levels=[
+CONF = cfg.CONF
+CONF.register_cli_opts(cli_opts)
+CONF.register_opts(networking_opts)
+CONF.register_opts(edp_opts)
+CONF.register_opts(db_opts)
+
+log.register_options(CONF)
+
+log.set_defaults(default_log_levels=[
     'amqplib=WARN',
     'qpid.messaging=INFO',
     'stevedore=INFO',
@@ -107,41 +112,11 @@ cfg.set_defaults(log.log_opts, default_log_levels=[
     'paramiko=WARN',
     'requests=WARN',
     'iso8601=WARN',
+    'oslo.messaging=INFO',
 ])
 
 
-CONF = cfg.CONF
-CONF.register_cli_opts(cli_opts)
-CONF.register_opts(networking_opts)
-CONF.register_opts(edp_opts)
-CONF.register_opts(db_opts)
-
-
 def list_opts():
-    return [
-        ('DEFAULT',
-         itertools.chain(cli_opts,
-                         edp_opts,
-                         networking_opts,
-                         db_opts,
-                         lockutils.util_opts,
-                         policy.policy_opts,
-                         log.common_cli_opts,
-                         log.generic_log_opts,
-                         log.log_opts,
-                         log.logging_cli_opts,
-                         periodic_task.periodic_opts,
-                         plugins_base.opts,
-                         topology_helper.opts,
-                         sender.notifier_opts,
-                         cinder.opts,
-                         keystone.opts,
-                         remote.ssh_opts,
-                         )),
-    ]
-
-
-def main_opts():
     # NOTE (vgridnev): we make these import here to avoid problems
     #                  with importing unregistered options in sahara code.
     #                  As example, importing 'node_domain' in
@@ -152,17 +127,42 @@ def main_opts():
     from sahara.service.edp import job_utils
     from sahara.service import periodic
     from sahara.service import volumes
+    from sahara.utils.openstack import heat
+    from sahara.utils.openstack import neutron
+    from sahara.utils.openstack import nova
+    from sahara.utils.openstack import swift
     from sahara.utils import proxy
 
     return [
-        ('DEFAULT',
-         itertools.chain(sahara_main.opts,
+        (None,
+         itertools.chain(cli_opts,
+                         edp_opts,
+                         networking_opts,
+                         db_opts,
+                         plugins_base.opts,
+                         topology_helper.opts,
+                         sender.notifier_opts,
+                         keystone.opts,
+                         remote.ssh_opts,
+                         sahara_main.opts,
                          job_utils.opts,
                          periodic.periodic_opts,
                          volumes.opts,
                          proxy.opts)),
-        ('conductor',
+        (api.conductor_group.name,
          itertools.chain(api.conductor_opts)),
+        (cinder.cinder_group.name,
+         itertools.chain(cinder.opts)),
+        (heat.heat_group.name,
+         itertools.chain(heat.opts)),
+        (neutron.neutron_group.name,
+         itertools.chain(neutron.opts)),
+        (nova.nova_group.name,
+         itertools.chain(nova.opts)),
+        (swift.swift_group.name,
+         itertools.chain(swift.opts)),
+        (keystone.keystone_group.name,
+         itertools.chain(keystone.ssl_opts))
     ]
 
 

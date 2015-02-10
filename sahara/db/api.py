@@ -34,9 +34,7 @@ interface.
 from oslo.config import cfg
 from oslo.db import api as db_api
 from oslo.db import options
-
-from sahara.openstack.common import log as logging
-
+from oslo_log import log as logging
 
 CONF = cfg.CONF
 
@@ -119,7 +117,7 @@ def cluster_get(context, cluster):
 def cluster_get_all(context, **kwargs):
     """Get all clusters filtered by **kwargs.
 
-    e.g. cluster_get_all(plugin_name='vanilla', hadoop_version='1.1')
+    e.g. cluster_get_all(ctx, plugin_name='vanilla', hadoop_version='1.1')
     """
     return IMPL.cluster_get_all(context, **kwargs)
 
@@ -262,6 +260,15 @@ def data_source_get_all(context, **kwargs):
     return IMPL.data_source_get_all(context, **kwargs)
 
 
+def data_source_count(context, **kwargs):
+    """Count Data Sources filtered by **kwargs.
+
+    Uses sqlalchemy "in_" clause for any tuple values
+    Uses sqlalchemy "like" clause for any string values containing %
+    """
+    return IMPL.data_source_count(context, **kwargs)
+
+
 @to_dict
 def data_source_create(context, values):
     """Create a Data Source from the values dictionary."""
@@ -388,7 +395,7 @@ def job_binary_destroy(context, job_binary):
 def job_binary_internal_get_all(context, **kwargs):
     """Get all JobBinaryInternals filtered by **kwargs.
 
-    e.g.  cluster_get_all(name='wordcount.jar')
+    e.g.  job_binary_internal_get_all(ctx, name='wordcount.jar')
 
     The JobBinaryInternals returned do not contain a data field.
     """

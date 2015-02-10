@@ -44,24 +44,8 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
         self.cluster_template_id = None
         self.ng_template_ids = []
 
-    def _prepare_test(self):
-        self.vanilla_two_config = cfg.ITConfig().vanilla_two_config
-        self.floating_ip_pool = self.common_config.FLOATING_IP_POOL
-        self.internal_neutron_net = None
-        if self.common_config.NEUTRON_ENABLED:
-            self.internal_neutron_net = self.get_internal_neutron_net_id()
-            self.floating_ip_pool = (
-                self.get_floating_ip_pool_id_for_neutron_net())
-
-        (self.vanilla_two_config.IMAGE_ID,
-         self.vanilla_two_config.SSH_USERNAME) = (
-            self.get_image_id_and_ssh_username(self.vanilla_two_config))
-
-        self.volumes_per_node = 0
-        self.volumes_size = 0
-        if not self.SKIP_CINDER_TEST:
-            self.volumes_per_node = 2
-            self.volumes_size = 2
+    def get_plugin_config(self):
+        return cfg.ITConfig().vanilla_two_config
 
     ng_params = {
         'MapReduce': {
@@ -79,50 +63,59 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
     def _create_nm_dn_ng_template(self):
         template = {
             'name': 'test-node-group-template-vanilla-nm-dn',
-            'plugin_config': self.vanilla_two_config,
+            'plugin_config': self.plugin_config,
             'description': 'test node group template for Vanilla plugin',
             'node_processes': ['nodemanager', 'datanode'],
             'floating_ip_pool': self.floating_ip_pool,
+            'auto_security_group': True,
             'node_configs': self.ng_params
         }
         self.ng_tmpl_nm_dn_id = self.create_node_group_template(**template)
         self.ng_template_ids.append(self.ng_tmpl_nm_dn_id)
+        self.addCleanup(self.delete_objects,
+                        node_group_template_id_list=[self.ng_tmpl_nm_dn_id])
 
     @b.errormsg("Failure while 'nm' node group template creation: ")
     def _create_nm_ng_template(self):
         template = {
             'name': 'test-node-group-template-vanilla-nm',
-            'plugin_config': self.vanilla_two_config,
+            'plugin_config': self.plugin_config,
             'description': 'test node group template for Vanilla plugin',
             'volumes_per_node': self.volumes_per_node,
             'volumes_size': self.volumes_size,
             'node_processes': ['nodemanager'],
             'floating_ip_pool': self.floating_ip_pool,
+            'auto_security_group': True,
             'node_configs': self.ng_params
         }
         self.ng_tmpl_nm_id = self.create_node_group_template(**template)
         self.ng_template_ids.append(self.ng_tmpl_nm_id)
+        self.addCleanup(self.delete_objects,
+                        node_group_template_id_list=[self.ng_tmpl_nm_id])
 
     @b.errormsg("Failure while 'dn' node group template creation: ")
     def _create_dn_ng_template(self):
         template = {
             'name': 'test-node-group-template-vanilla-dn',
-            'plugin_config': self.vanilla_two_config,
+            'plugin_config': self.plugin_config,
             'description': 'test node group template for Vanilla plugin',
             'volumes_per_node': self.volumes_per_node,
             'volumes_size': self.volumes_size,
             'node_processes': ['datanode'],
             'floating_ip_pool': self.floating_ip_pool,
+            'auto_security_group': True,
             'node_configs': self.ng_params
         }
         self.ng_tmpl_dn_id = self.create_node_group_template(**template)
         self.ng_template_ids.append(self.ng_tmpl_dn_id)
+        self.addCleanup(self.delete_objects,
+                        node_group_template_id_list=[self.ng_tmpl_dn_id])
 
     @b.errormsg("Failure while cluster template creation: ")
     def _create_cluster_template(self):
         template = {
             'name': 'test-cluster-template-vanilla',
-            'plugin_config': self.vanilla_two_config,
+            'plugin_config': self.plugin_config,
             'description': 'test cluster template for Vanilla plugin',
             'cluster_configs': {
                 'HDFS': {
@@ -133,8 +126,10 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
                 {
                     'name': 'master-node-rm-nn',
                     'flavor_id': self.flavor_id,
-                    'node_processes': ['namenode', 'resourcemanager'],
+                    'node_processes': ['namenode', 'resourcemanager',
+                                       'hiveserver'],
                     'floating_ip_pool': self.floating_ip_pool,
+                    'auto_security_group': True,
                     'count': 1,
                     'node_configs': self.ng_params
                 },
@@ -144,6 +139,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
                     'node_processes': ['oozie', 'historyserver',
                                        'secondarynamenode'],
                     'floating_ip_pool': self.floating_ip_pool,
+                    'auto_security_group': True,
                     'count': 1,
                     'node_configs': self.ng_params
                 },
@@ -166,23 +162,26 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             'net_id': self.internal_neutron_net
         }
         self.cluster_template_id = self.create_cluster_template(**template)
+        self.addCleanup(self.delete_objects,
+                        cluster_template_id=self.cluster_template_id)
 
     @b.errormsg("Failure while cluster creation: ")
     def _create_cluster(self):
         cluster_name = '%s-%s-v2' % (self.common_config.CLUSTER_NAME,
-                                     self.vanilla_two_config.PLUGIN_NAME)
+                                     self.plugin_config.PLUGIN_NAME)
         cluster = {
             'name': cluster_name,
-            'plugin_config': self.vanilla_two_config,
+            'plugin_config': self.plugin_config,
             'cluster_template_id': self.cluster_template_id,
             'description': 'test cluster',
             'cluster_configs': {}
         }
         cluster_id = self.create_cluster(**cluster)
+        self.addCleanup(self.delete_objects, cluster_id=cluster_id)
         self.poll_cluster_state(cluster_id)
-        self.cluster_info = self.get_cluster_info(self.vanilla_two_config)
+        self.cluster_info = self.get_cluster_info(self.plugin_config)
         self.await_active_workers_for_namenode(self.cluster_info['node_info'],
-                                               self.vanilla_two_config)
+                                               self.plugin_config)
 
     @b.errormsg("Failure while Cinder testing: ")
     def _check_cinder(self):
@@ -201,7 +200,22 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
         self.poll_jobs_status(list(self._run_edp_tests()))
 
     def _run_edp_tests(self):
-        skipped_edp_job_types = self.vanilla_two_config.SKIP_EDP_JOB_TYPES
+        skipped_edp_job_types = self.plugin_config.SKIP_EDP_JOB_TYPES
+
+        if utils_edp.JOB_TYPE_PIG not in skipped_edp_job_types:
+            yield self._edp_pig_test()
+        if utils_edp.JOB_TYPE_MAPREDUCE not in skipped_edp_job_types:
+            yield self._edp_mapreduce_test()
+        if utils_edp.JOB_TYPE_MAPREDUCE_STREAMING not in skipped_edp_job_types:
+            yield self._edp_mapreduce_streaming_test()
+        if utils_edp.JOB_TYPE_JAVA not in skipped_edp_job_types:
+            yield self._edp_java_test()
+        if utils_edp.JOB_TYPE_HIVE not in skipped_edp_job_types:
+            yield self._check_edp_hive()
+
+    # TODO(esikachev): Until fix bug 1413602
+    def _run_edp_tests_after_scaling(self):
+        skipped_edp_job_types = self.plugin_config.SKIP_EDP_JOB_TYPES
 
         if utils_edp.JOB_TYPE_PIG not in skipped_edp_job_types:
             yield self._edp_pig_test()
@@ -250,6 +264,9 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             lib_data_list=[{'jar': java_jar}],
             configs=java_configs)
 
+    def _check_edp_hive(self):
+        return self.check_edp_hive()
+
     @b.errormsg("Failure while cluster scaling: ")
     def _check_scaling(self):
         change_list = [
@@ -282,7 +299,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
         self.cluster_info = self.cluster_scaling(self.cluster_info,
                                                  change_list)
         self.await_active_workers_for_namenode(self.cluster_info['node_info'],
-                                               self.vanilla_two_config)
+                                               self.plugin_config)
 
     @b.errormsg("Failure while Cinder testing after cluster scaling: ")
     def _check_cinder_after_scaling(self):
@@ -299,14 +316,13 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
 
     @b.errormsg("Failure while EDP testing after cluster scaling: ")
     def _check_edp_after_scaling(self):
-        self._check_edp()
+        self.poll_jobs_status(list(self._run_edp_tests_after_scaling()))
 
     @testcase.skipIf(
         cfg.ITConfig().vanilla_two_config.SKIP_ALL_TESTS_FOR_PLUGIN,
         "All tests for Vanilla plugin were skipped")
     @testcase.attr('vanilla2')
     def test_vanilla_two_plugin_gating(self):
-        self._prepare_test()
         self._create_nm_dn_ng_template()
         self._create_nm_ng_template()
         self._create_dn_ng_template()
@@ -318,7 +334,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
         self._check_swift()
         self._check_edp()
 
-        if not self.vanilla_two_config.SKIP_SCALING_TEST:
+        if not self.plugin_config.SKIP_SCALING_TEST:
             self._check_scaling()
             self._check_cinder_after_scaling()
             self._check_mapreduce_after_scaling()
@@ -326,6 +342,4 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             self._check_edp_after_scaling()
 
     def tearDown(self):
-        self.delete_objects(self.cluster_id, self.cluster_template_id,
-                            self.ng_template_ids)
         super(VanillaTwoGatingTest, self).tearDown()

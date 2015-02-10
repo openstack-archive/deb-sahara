@@ -38,23 +38,8 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
     SKIP_SWIFT_TEST = config.SKIP_SWIFT_TEST
     SKIP_SCALING_TEST = config.SKIP_SCALING_TEST
 
-    def _prepare_test(self):
-        self.plugin_config = cfg.ITConfig().vanilla_config
-        self.floating_ip_pool = self.common_config.FLOATING_IP_POOL
-        self.internal_neutron_net = None
-        if self.common_config.NEUTRON_ENABLED:
-            self.internal_neutron_net = self.get_internal_neutron_net_id()
-            self.floating_ip_pool = (
-                self.get_floating_ip_pool_id_for_neutron_net())
-
-        self.plugin_config.IMAGE_ID, self.plugin_config.SSH_USERNAME = (
-            self.get_image_id_and_ssh_username(self.plugin_config))
-
-        self.volumes_per_node = 0
-        self.volumes_size = 0
-        if not self.SKIP_CINDER_TEST:
-            self.volumes_per_node = 2
-            self.volumes_size = 2
+    def get_plugin_config(self):
+        return cfg.ITConfig().vanilla_config
 
     @b.errormsg("Failure while 'tt-dn' node group template creation: ")
     def _create_tt_dn_ng_template(self):
@@ -64,6 +49,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             'description': 'test node group template for Vanilla 1 plugin',
             'node_processes': ['tasktracker', 'datanode'],
             'floating_ip_pool': self.floating_ip_pool,
+            'auto_security_group': True,
             'node_configs': {
                 'HDFS': cluster_configs.DN_CONFIG,
                 'MapReduce': cluster_configs.TT_CONFIG
@@ -83,6 +69,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             'volumes_size': self.volumes_size,
             'node_processes': ['tasktracker'],
             'floating_ip_pool': self.floating_ip_pool,
+            'auto_security_group': True,
             'node_configs': {
                 'MapReduce': cluster_configs.TT_CONFIG
             }
@@ -101,6 +88,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             'volumes_size': self.volumes_size,
             'node_processes': ['datanode'],
             'floating_ip_pool': self.floating_ip_pool,
+            'auto_security_group': True,
             'node_configs': {
                 'HDFS': cluster_configs.DN_CONFIG
             }
@@ -129,6 +117,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
                     'flavor_id': self.flavor_id,
                     'node_processes': ['namenode', 'jobtracker'],
                     'floating_ip_pool': self.floating_ip_pool,
+                    'auto_security_group': True,
                     'node_configs': {
                         'HDFS': cluster_configs.NN_CONFIG,
                         'MapReduce': cluster_configs.JT_CONFIG
@@ -140,6 +129,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
                     'flavor_id': self.flavor_id,
                     'node_processes': ['secondarynamenode', 'oozie'],
                     'floating_ip_pool': self.floating_ip_pool,
+                    'auto_security_group': True,
                     'node_configs': {
                         'HDFS': cluster_configs.SNN_CONFIG,
                         'JobFlow': cluster_configs.OOZIE_CONFIG
@@ -298,7 +288,6 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
                      'All tests for Vanilla plugin were skipped')
     @testcase.attr('vanilla1')
     def test_vanilla_plugin_gating(self):
-        self._prepare_test()
         self._create_tt_dn_ng_template()
         self._create_tt_ng_template()
         self._create_dn_ng_template()

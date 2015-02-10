@@ -13,10 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from oslo_utils import uuidutils
 import six
 
 from sahara.i18n import _
-from sahara.openstack.common import uuidutils
 
 
 class SaharaException(Exception):
@@ -74,14 +74,14 @@ class InvalidCredentials(SaharaException):
         super(InvalidCredentials, self).__init__()
 
 
-class InvalidException(SaharaException):
+class InvalidReferenceException(SaharaException):
     message = _("Invalid object reference")
 
     def __init__(self, message=None):
         self.code = "INVALID_REFERENCE"
         if message:
             self.message = message
-        super(InvalidException, self).__init__()
+        super(InvalidReferenceException, self).__init__()
 
 
 class RemoteCommandException(SaharaException):
@@ -282,10 +282,16 @@ class EDPError(SaharaException):
 
 class TimeoutException(SaharaException):
     code = "TIMEOUT"
-    message = _("Operation timed out after %i second(s)")
+    message = _("'%(operation)s' timed out after %(timeout)i second(s)")
 
-    def __init__(self, timeout):
-        self.message = self.message % timeout
+    def __init__(self, timeout, op_name=None):
+        if op_name:
+            op_name = _("Operation '%s'") % op_name
+        else:
+            op_name = _("Operation")
+        self.message = self.message % {
+            'operation': op_name, 'timeout': timeout}
+
         super(TimeoutException, self).__init__()
 
 
@@ -305,3 +311,12 @@ class Forbidden(SaharaException):
         if message:
             self.message = message
         super(Forbidden, self).__init__()
+
+
+class ImageNotRegistered(SaharaException):
+    code = "IMAGE_NOT_REGISTERED"
+    message = _("Image %s is not registered in Sahara")
+
+    def __init__(self, image):
+        self.message = self.message % image
+        super(ImageNotRegistered, self).__init__()

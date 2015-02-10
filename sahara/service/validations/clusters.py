@@ -35,7 +35,7 @@ def _build_cluster_schema():
         },
         "user_keypair_id": {
             "type": "string",
-            "format": "valid_name",
+            "format": "valid_keypair_name",
         },
         "cluster_template_id": {
             "type": "string",
@@ -81,13 +81,15 @@ def check_cluster_create(data, **kwargs):
                                data['anti_affinity'])
 
     if data.get('node_groups'):
-        b.check_network_config(data['node_groups'])
+        proxy_gateway_used = len([ng for ng in data['node_groups'] if
+                                  ng.get('is_proxy_gateway', False)]) > 0
+        b.check_network_config(data['node_groups'], proxy_gateway_used)
         b.check_cluster_hostnames_lengths(data['name'], data['node_groups'])
 
     neutron_net_id = _get_cluster_field(data, 'neutron_management_network')
     if neutron_net_id:
         if not CONF.use_neutron:
-            raise ex.InvalidException(
+            raise ex.InvalidReferenceException(
                 _("'neutron_management_network' field can't be used "
                   "with 'use_neutron=False'"))
         b.check_network_exists(neutron_net_id)

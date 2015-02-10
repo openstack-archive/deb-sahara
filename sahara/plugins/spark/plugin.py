@@ -16,12 +16,12 @@
 import os
 
 from oslo.config import cfg
+from oslo_log import log as logging
 
 from sahara import conductor
 from sahara import context
 from sahara.i18n import _
 from sahara.i18n import _LI
-from sahara.openstack.common import log as logging
 from sahara.plugins import exceptions as ex
 from sahara.plugins import provisioning as p
 from sahara.plugins.spark import config_helper as c_helper
@@ -150,12 +150,17 @@ class SparkProvider(p.ProvisioningPluginBase):
         else:
             config_slaves = "\n"
 
+        # Any node that might be used to run spark-submit will need
+        # these libs for swift integration
+        config_defaults = c_helper.generate_spark_executor_classpath(cluster)
+
+        extra['job_cleanup'] = c_helper.generate_job_cleanup_config(cluster)
         for ng in cluster.node_groups:
             extra[ng.id] = {
                 'xml': c_helper.generate_xml_configs(
                     ng.configuration(),
                     ng.storage_paths(),
-                    nn.hostname(), None,
+                    nn.hostname(), None
                 ),
                 'setup_script': c_helper.generate_hadoop_setup_script(
                     ng.storage_paths(),
@@ -163,7 +168,8 @@ class SparkProvider(p.ProvisioningPluginBase):
                         ng.configuration())
                 ),
                 'sp_master': config_master,
-                'sp_slaves': config_slaves
+                'sp_slaves': config_slaves,
+                'sp_defaults': config_defaults
             }
 
         if c_helper.is_data_locality_enabled(cluster):
@@ -209,14 +215,18 @@ class SparkProvider(p.ProvisioningPluginBase):
         ng_extra = extra[instance.node_group.id]
 
         files_hadoop = {
-            '/etc/hadoop/conf/core-site.xml': ng_extra['xml']['core-site'],
-            '/etc/hadoop/conf/hdfs-site.xml': ng_extra['xml']['hdfs-site'],
+            os.path.join(c_helper.HADOOP_CONF_DIR,
+                         "core-site.xml"): ng_extra['xml']['core-site'],
+            os.path.join(c_helper.HADOOP_CONF_DIR,
+                         "hdfs-site.xml"): ng_extra['xml']['hdfs-site'],
         }
 
         sp_home = self._spark_home(cluster)
         files_spark = {
             os.path.join(sp_home, 'conf/spark-env.sh'): ng_extra['sp_master'],
-            os.path.join(sp_home, 'conf/slaves'): ng_extra['sp_slaves']
+            os.path.join(sp_home, 'conf/slaves'): ng_extra['sp_slaves'],
+            os.path.join(sp_home,
+                         'conf/spark-defaults.conf'): ng_extra['sp_defaults']
         }
 
         files_init = {
@@ -273,6 +283,7 @@ class SparkProvider(p.ProvisioningPluginBase):
 
             self._write_topology_data(r, cluster, extra)
             self._push_master_configs(r, cluster, extra, instance)
+            self._push_cleanup_job(r, cluster, extra, instance)
 
     def _push_configs_to_existing_node(self, cluster, extra, instance):
         node_processes = instance.node_group.node_processes
@@ -288,9 +299,13 @@ class SparkProvider(p.ProvisioningPluginBase):
                 os.path.join(sp_home,
                              'conf/spark-env.sh'): ng_extra['sp_master'],
                 os.path.join(sp_home, 'conf/slaves'): ng_extra['sp_slaves'],
+                os.path.join(
+                    sp_home,
+                    'conf/spark-defaults.conf'): ng_extra['sp_defaults']
             }
             r = remote.get_remote(instance)
             r.write_files_to(files)
+            self._push_cleanup_job(r, cluster, extra, instance)
         if need_update_hadoop:
             with remote.get_remote(instance) as r:
                 self._write_topology_data(r, cluster, extra)
@@ -303,9 +318,21 @@ class SparkProvider(p.ProvisioningPluginBase):
 
     def _push_master_configs(self, r, cluster, extra, instance):
         node_processes = instance.node_group.node_processes
-
         if 'namenode' in node_processes:
             self._push_namenode_configs(cluster, r)
+
+    def _push_cleanup_job(self, r, cluster, extra, instance):
+        node_processes = instance.node_group.node_processes
+        if 'master' in node_processes:
+            if extra['job_cleanup']['valid']:
+                r.write_file_to('/etc/hadoop/tmp-cleanup.sh',
+                                extra['job_cleanup']['script'])
+                r.execute_command("chmod 755 /etc/hadoop/tmp-cleanup.sh")
+                cmd = 'sudo sh -c \'echo "%s" > /etc/cron.d/spark-cleanup\''
+                r.execute_command(cmd % extra['job_cleanup']['cron'])
+            else:
+                r.execute_command("sudo rm -f /etc/hadoop/tmp-cleanup.sh")
+                r.execute_command("sudo rm -f /etc/crond.d/spark-cleanup")
 
     def _push_namenode_configs(self, cluster, r):
         r.write_file_to('/etc/hadoop/dn.incl',

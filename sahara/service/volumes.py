@@ -15,6 +15,7 @@
 
 from oslo.config import cfg
 from oslo.utils import timeutils as tu
+from oslo_log import log as logging
 
 from sahara import conductor as c
 from sahara import context
@@ -22,7 +23,7 @@ from sahara import exceptions as ex
 from sahara.i18n import _
 from sahara.i18n import _LE
 from sahara.i18n import _LW
-from sahara.openstack.common import log as logging
+from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils.openstack import cinder
 from sahara.utils.openstack import nova
 
@@ -39,10 +40,35 @@ opts = [
 
 CONF = cfg.CONF
 CONF.register_opts(opts)
-CONF.import_opt('cinder_api_version', 'sahara.utils.openstack.cinder')
+CONF.import_opt('api_version', 'sahara.utils.openstack.cinder',
+                group='cinder')
+
+
+def _count_instances_to_attach(instances):
+    result = 0
+    for instance in instances:
+        if instance.node_group.volumes_per_node > 0:
+            result += 1
+    return result
+
+
+def _count_volumes_to_attach(instances):
+    return sum([inst.node_group.volumes_per_node for inst in instances])
+
+
+def _get_cluster_id(instance):
+    return instance.node_group.cluster_id
 
 
 def attach_to_instances(instances):
+    instances_to_attach = _count_instances_to_attach(instances)
+    if instances_to_attach == 0:
+        return
+
+    cpo.add_provisioning_step(
+        _get_cluster_id(instances[0]), _("Attach volumes to instances"),
+        instances_to_attach)
+
     with context.ThreadGroup() as tg:
         for instance in instances:
             if instance.node_group.volumes_per_node > 0:
@@ -65,6 +91,7 @@ def _await_attach_volumes(instance, devices):
                          instance.instance_name)
 
 
+@cpo.event_wrapper(mark_successful_on_exit=True)
 def _attach_volumes_to_node(node_group, instance):
     ctx = context.ctx()
     size = node_group.volumes_size
@@ -87,7 +114,7 @@ def _attach_volumes_to_node(node_group, instance):
 
 def _create_attach_volume(ctx, instance, size, volume_type, name=None,
                           availability_zone=None):
-    if CONF.cinder_api_version == 1:
+    if CONF.cinder.api_version == 1:
         kwargs = {'size': size, 'display_name': name}
     else:
         kwargs = {'size': size, 'name': name}
@@ -126,10 +153,18 @@ def _count_attached_devices(instance, devices):
 
 
 def mount_to_instances(instances):
+    if len(instances) == 0:
+        return
+
+    cpo.add_provisioning_step(
+        _get_cluster_id(instances[0]),
+        _("Mount volumes to instances"), _count_volumes_to_attach(instances))
+
     with context.ThreadGroup() as tg:
         for instance in instances:
             devices = _find_instance_volume_devices(instance)
-            # Since formating can take several minutes (for large disks) and
+
+            # Since formatting can take several minutes (for large disks) and
             # can be done in parallel, launch one thread per disk.
             for idx in range(0, instance.node_group.volumes_per_node):
                 tg.spawn('mount-volume-%d-to-node-%s' %
@@ -143,6 +178,7 @@ def _find_instance_volume_devices(instance):
     return devices
 
 
+@cpo.event_wrapper(mark_successful_on_exit=True)
 def _mount_volume_to_node(instance, idx, device):
     LOG.debug("Mounting volume %s to instance %s" %
               (device, instance.instance_name))
@@ -154,9 +190,20 @@ def _mount_volume_to_node(instance, idx, device):
 def _mount_volume(instance, device_path, mount_point):
     with instance.remote() as r:
         try:
+            # Mount volumes with better performance options:
+            # - reduce number of blocks reserved for root to 1%
+            # - use 'dir_index' for faster directory listings
+            # - use 'extents' to work faster with large files
+            # - disable journaling
+            # - enable write-back
+            # - do not store access time
+            fs_opts = '-m 1 -O dir_index,extents,^has_journal'
+            mount_opts = '-o data=writeback,noatime,nodiratime'
+
             r.execute_command('sudo mkdir -p %s' % mount_point)
-            r.execute_command('sudo mkfs.ext4 %s' % device_path)
-            r.execute_command('sudo mount %s %s' % (device_path, mount_point))
+            r.execute_command('sudo mkfs.ext4 %s %s' % (fs_opts, device_path))
+            r.execute_command('sudo mount %s %s %s' %
+                              (mount_opts, device_path, mount_point))
         except Exception:
             LOG.error(_LE("Error mounting volume to instance %s"),
                       instance.instance_id)

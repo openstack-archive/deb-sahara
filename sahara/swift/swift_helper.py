@@ -13,9 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
-
 from oslo.config import cfg
+from oslo_log import log as logging
 
 from sahara import context
 from sahara.i18n import _LI
@@ -52,3 +51,7 @@ def get_swift_configs():
     LOG.info(_LI("Swift would be integrated with the following "
              "params: %s"), result)
     return result
+
+
+def read_default_swift_configs():
+    return x.load_hadoop_xml_defaults('swift/resources/conf-template.xml')

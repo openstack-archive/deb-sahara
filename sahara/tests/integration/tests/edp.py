@@ -21,13 +21,13 @@ import uuid
 import fixtures
 import six
 
-from sahara.swift import swift_helper as sw
+from sahara.service.edp import job_utils
 from sahara.tests.integration.tests import base
 from sahara.utils import edp
 
 
 class EDPJobInfo(object):
-    PIG_PATH = 'etc/edp-examples/pig-job/'
+    PIG_PATH = 'etc/edp-examples/edp-pig/trim-spaces/'
     JAVA_PATH = 'etc/edp-examples/edp-java/'
     MAPREDUCE_PATH = 'etc/edp-examples/edp-mapreduce/'
     SPARK_PATH = 'etc/edp-examples/edp-spark/'
@@ -204,17 +204,13 @@ class EDPTest(base.ITestCase):
                     )
                 )
 
-    def _add_swift_configs(self, configs):
+    def _enable_substitution(self, configs):
 
         if "configs" not in configs:
             configs["configs"] = {}
 
-        if sw.HADOOP_SWIFT_USERNAME not in configs["configs"]:
-            configs["configs"][
-                sw.HADOOP_SWIFT_USERNAME] = self.common_config.OS_USERNAME
-        if sw.HADOOP_SWIFT_PASSWORD not in configs["configs"]:
-            configs["configs"][
-                sw.HADOOP_SWIFT_PASSWORD] = self.common_config.OS_PASSWORD
+        configs['configs'][job_utils.DATA_SOURCE_SUBST_NAME] = True
+        configs['configs'][job_utils.DATA_SOURCE_SUBST_UUID] = True
 
     @base.skip_test('SKIP_EDP_TEST', 'Test for EDP was skipped.')
     def check_edp_hive(self):
@@ -224,15 +220,18 @@ class EDPTest(base.ITestCase):
             self.cluster_info['node_info']['namenode_ip'],
             hdfs_input_path, self.edp_info.read_hive_example_input())
 
-        input_id = self._create_data_source('hive-input', 'hdfs',
-                                            hdfs_input_path)
-        output_id = self._create_data_source('hive-output', 'hdfs',
+        input_id = self._create_data_source(self.rand_name('hive-input'),
+                                            'hdfs', hdfs_input_path)
+        output_id = self._create_data_source(self.rand_name('hive-output'),
+                                             'hdfs',
                                              '/user/hive/warehouse/output')
         script_id = self._create_job_binary_internals(
-            'hive-script', self.edp_info.read_hive_example_script())
-        job_binary_id = self._create_job_binary('hive-edp',
+            self.rand_name('hive-script'),
+            self.edp_info.read_hive_example_script())
+        job_binary_id = self._create_job_binary(self.rand_name('hive-edp'),
                                                 'internal-db://%s' % script_id)
-        job_id = self._create_job('edp-test-hive', edp.JOB_TYPE_HIVE,
+        job_id = self._create_job(self.rand_name('edp-test-hive'),
+                                  edp.JOB_TYPE_HIVE,
                                   [job_binary_id], [])
         job_execution_id = self.sahara.job_executions.create(
             job_id, self.cluster_id, input_id, output_id, {}).id
@@ -279,17 +278,14 @@ class EDPTest(base.ITestCase):
             output_type = "swift"
             output_url = 'swift://%s.sahara/output' % container_name
 
-        # Java jobs don't use data sources.  Input/output paths must
-        # be passed as args with corresponding username/password configs
-        if not edp.compare_job_type(job_type,
-                                    edp.JOB_TYPE_JAVA,
-                                    edp.JOB_TYPE_SPARK):
-            input_id = self._create_data_source(
-                'input-%s' % str(uuid.uuid4())[:8], 'swift',
-                swift_input_url)
-            output_id = self._create_data_source(
-                'output-%s' % str(uuid.uuid4())[:8], output_type,
-                output_url)
+        input_name = 'input-%s' % str(uuid.uuid4())[:8]
+        input_id = self._create_data_source(input_name,
+                                            'swift', swift_input_url)
+
+        output_name = 'output-%s' % str(uuid.uuid4())[:8]
+        output_id = self._create_data_source(output_name,
+                                             output_type,
+                                             output_url)
 
         if job_data_list:
             if swift_binaries:
@@ -329,11 +325,13 @@ class EDPTest(base.ITestCase):
         # if the caller has requested it...
         if edp.compare_job_type(
                 job_type, edp.JOB_TYPE_JAVA) and pass_input_output_args:
-            self._add_swift_configs(configs)
+            self._enable_substitution(configs)
+            input_arg = job_utils.DATA_SOURCE_PREFIX + input_name
+            output_arg = output_id
             if "args" in configs:
-                configs["args"].extend([swift_input_url, output_url])
+                configs["args"].extend([input_arg, output_arg])
             else:
-                configs["args"] = [swift_input_url, output_url]
+                configs["args"] = [input_arg, output_arg]
 
         job_execution = self.sahara.job_executions.create(
             job_id, self.cluster_id, input_id, output_id,

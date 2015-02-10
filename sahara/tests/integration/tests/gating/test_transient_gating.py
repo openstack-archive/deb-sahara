@@ -26,19 +26,11 @@ from sahara.utils import edp as utils_edp
 
 
 class TransientGatingTest(edp.EDPTest):
-    def _prepare_test(self):
-        self.plugin_config = cfg.ITConfig().vanilla_two_config
-        self.SKIP_EDP_TEST = self.plugin_config.SKIP_EDP_TEST
-        self.floating_ip_pool = self.common_config.FLOATING_IP_POOL
-        self.internal_neutron_net = None
-        if self.common_config.NEUTRON_ENABLED:
-            self.internal_neutron_net = self.get_internal_neutron_net_id()
-            self.floating_ip_pool = (
-                self.get_floating_ip_pool_id_for_neutron_net())
+    def get_plugin_config(self):
+        return cfg.ITConfig().vanilla_two_config
 
-        (self.vanilla_two_config.IMAGE_ID,
-         self.vanilla_two_config.SSH_USERNAME) = (
-            self.get_image_id_and_ssh_username(self.vanilla_two_config))
+    def _prepare_test(self):
+        self.SKIP_EDP_TEST = self.plugin_config.SKIP_EDP_TEST
 
     @b.errormsg("Failure while cluster template creation: ")
     def _create_cluster_template(self):
@@ -85,27 +77,39 @@ class TransientGatingTest(edp.EDPTest):
 
     @b.errormsg("Failure while cluster creation: ")
     def _create_cluster(self):
-        cluster_name = '%s-transient' % self.common_config.CLUSTER_NAME
-        cluster = {
-            'name': cluster_name,
-            'plugin_config': self.plugin_config,
-            'cluster_template_id': self.cluster_template_id,
-            'description': 'transient cluster',
-            'cluster_configs': {},
-            'is_transient': True
-        }
-        cluster_id = self.create_cluster(**cluster)
-        self.addCleanup(self.delete_objects, cluster_id=cluster_id)
-        self.poll_cluster_state(cluster_id)
+        self.cluster_ids = []
+        for number_of_cluster in range(3):
+            cluster_name = '%s-%d-transient' % (
+                self.common_config.CLUSTER_NAME,
+                number_of_cluster+1)
+            cluster = {
+                'name': cluster_name,
+                'plugin_config': self.plugin_config,
+                'cluster_template_id': self.cluster_template_id,
+                'description': 'transient cluster',
+                'cluster_configs': {},
+                'is_transient': True
+            }
+
+            self.cluster_ids.append(self.create_cluster(**cluster))
+            self.addCleanup(self.delete_objects,
+                            self.cluster_ids[number_of_cluster])
+
+        for number_of_cluster in range(3):
+            self.poll_cluster_state(self.cluster_ids[number_of_cluster])
 
     @b.errormsg("Failure while transient cluster testing: ")
     def _check_transient(self):
         pig_job_data = self.edp_info.read_pig_example_script()
         pig_lib_data = self.edp_info.read_pig_example_jar()
-        job_id = self.edp_testing(job_type=utils_edp.JOB_TYPE_PIG,
-                                  job_data_list=[{'pig': pig_job_data}],
-                                  lib_data_list=[{'jar': pig_lib_data}])
-        self.poll_jobs_status([job_id])
+        job_ids = []
+        for cluster_id in self.cluster_ids:
+            self.cluster_id = cluster_id
+            job_ids.append(self.edp_testing(
+                job_type=utils_edp.JOB_TYPE_PIG,
+                job_data_list=[{'pig': pig_job_data}],
+                lib_data_list=[{'jar': pig_lib_data}]))
+        self.poll_jobs_status(job_ids)
 
         # set timeout in seconds
         timeout = self.common_config.TRANSIENT_CLUSTER_TIMEOUT * 60

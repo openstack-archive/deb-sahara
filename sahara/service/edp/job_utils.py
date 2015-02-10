@@ -13,16 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import uuid
 
 from oslo.config import cfg
+from oslo_utils import uuidutils
 import six
 
 from sahara import conductor as c
 from sahara import context
 from sahara.plugins import base as plugin_base
-from sahara.service.edp.binary_retrievers import dispatch
+from sahara.swift import swift_helper as sw
 from sahara.utils import edp
 from sahara.utils import remote
 
@@ -39,36 +39,18 @@ CONF.register_opts(opts)
 
 conductor = c.API
 
+# Prefix used to mark data_source name references in arg lists
+DATA_SOURCE_PREFIX = "datasource://"
+
+DATA_SOURCE_SUBST_NAME = "edp.substitute_data_source_for_name"
+DATA_SOURCE_SUBST_UUID = "edp.substitute_data_source_for_uuid"
+
 
 def get_plugin(cluster):
     return plugin_base.PLUGINS.get_plugin(cluster.plugin_name)
 
 
-def upload_job_files(where, job_dir, job, libs_subdir=True,
-                     proxy_configs=None):
-    mains = job.mains or []
-    libs = job.libs or []
-    uploaded_paths = []
-
-    def upload(r, dir, job_file):
-        dst = os.path.join(dir, job_file.name)
-        raw_data = dispatch.get_raw_binary(job_file, proxy_configs)
-        r.write_file_to(dst, raw_data)
-        uploaded_paths.append(dst)
-
-    with remote.get_remote(where) as r:
-        libs_dir = job_dir
-        if libs_subdir and libs:
-            libs_dir = os.path.join(libs_dir, "libs")
-            r.execute_command("mkdir -p %s" % libs_dir)
-        for job_file in mains:
-            upload(r, job_dir, job_file)
-        for job_file in libs:
-            upload(r, libs_dir, job_file)
-    return uploaded_paths
-
-
-def create_workflow_dir(where, path, job, use_uuid=None):
+def create_workflow_dir(where, path, job, use_uuid=None, chmod=""):
 
     if use_uuid is None:
         use_uuid = six.text_type(uuid.uuid4())
@@ -76,7 +58,10 @@ def create_workflow_dir(where, path, job, use_uuid=None):
     constructed_dir = _append_slash_if_needed(path)
     constructed_dir += '%s/%s' % (job.name, use_uuid)
     with remote.get_remote(where) as r:
-        ret, stdout = r.execute_command("mkdir -p %s" % constructed_dir)
+        if chmod:
+            r.execute_command("mkdir -p -m %s %s" % (chmod, constructed_dir))
+        else:
+            r.execute_command("mkdir -p %s" % constructed_dir)
     return constructed_dir
 
 
@@ -94,3 +79,175 @@ def _append_slash_if_needed(path):
     if path[-1] != '/':
         path += '/'
     return path
+
+
+def may_contain_data_source_refs(job_configs):
+
+    def _check_data_source_ref_option(option):
+        truth = job_configs and (
+            job_configs.get('configs', {}).get(option))
+        # Config values specified in the UI may be
+        # passed as strings
+        return truth in (True, 'True')
+
+    return (
+        _check_data_source_ref_option(DATA_SOURCE_SUBST_NAME),
+        _check_data_source_ref_option(DATA_SOURCE_SUBST_UUID))
+
+
+def _data_source_ref_search(job_configs, func, prune=lambda x: x):
+    """Return a list of unique values in job_configs filtered by func().
+
+    Loop over the 'args', 'configs' and 'params' elements in
+    job_configs and return a list of all values for which
+    func(value) is True.
+
+    Optionally provide a 'prune' function that is applied
+    to values before they are added to the return value.
+    """
+    args = set([prune(arg) for arg in job_configs.get(
+        'args', []) if func(arg)])
+
+    configs = set([prune(val) for val in six.itervalues(
+        job_configs.get('configs', {})) if func(val)])
+
+    params = set([prune(val) for val in six.itervalues(
+        job_configs.get('params', {})) if func(val)])
+
+    return list(args | configs | params)
+
+
+def find_possible_data_source_refs_by_name(job_configs):
+    """Find string values in job_configs starting with 'datasource://'.
+
+    Loop over the 'args', 'configs', and 'params' elements of
+    job_configs to find all values beginning with the prefix
+    'datasource://'. Return a list of unique values with the prefix
+    removed.
+
+    Note that for 'configs' and 'params', which are dictionaries, only
+    the values are considered and the keys are not relevant.
+    """
+    def startswith(arg):
+        return isinstance(
+            arg,
+            six.string_types) and arg.startswith(DATA_SOURCE_PREFIX)
+    return _data_source_ref_search(job_configs,
+                                   startswith,
+                                   prune=lambda x: x[len(DATA_SOURCE_PREFIX):])
+
+
+def find_possible_data_source_refs_by_uuid(job_configs):
+    """Find string values in job_configs which are uuids.
+
+    Return a list of unique values in the 'args', 'configs', and 'params'
+    elements of job_configs which have the form of a uuid.
+
+    Note that for 'configs' and 'params', which are dictionaries, only
+    the values are considered and the keys are not relevant.
+    """
+    return _data_source_ref_search(job_configs, uuidutils.is_uuid_like)
+
+
+def _add_credentials_for_data_sources(ds_list, configs):
+
+    username = password = None
+    for src in ds_list:
+        if src.type == "swift" and hasattr(src, "credentials"):
+            if "user" in src.credentials:
+                username = src.credentials['user']
+            if "password" in src.credentials:
+                password = src.credentials['password']
+            break
+
+    # Don't overwrite if there is already a value here
+    if configs.get(sw.HADOOP_SWIFT_USERNAME, None) is None and (
+            username is not None):
+        configs[sw.HADOOP_SWIFT_USERNAME] = username
+    if configs.get(sw.HADOOP_SWIFT_PASSWORD, None) is None and (
+            password is not None):
+        configs[sw.HADOOP_SWIFT_PASSWORD] = password
+
+
+def resolve_data_source_references(job_configs):
+    """Resolve possible data_source references in job_configs.
+
+    Look for any string values in the 'args', 'configs', and 'params'
+    elements of job_configs which start with 'datasource://' or have
+    the form of a uuid.
+
+    For values beginning with 'datasource://', strip off the prefix
+    and search for a DataSource object with a name that matches the
+    value.
+
+    For values having the form of a uuid, search for a DataSource object
+    with an id that matches the value.
+
+    If a DataSource object is found for the value, replace the value
+    with the URL from the DataSource object. If any DataSource objects
+    are found which reference swift paths and contain credentials, set
+    credential configuration values in job_configs (use the first set
+    of swift credentials found).
+
+    If no values are resolved, return an empty list and a reference
+    to job_configs.
+
+    If any values are resolved, return a list of the referenced
+    data_source objects and a copy of job_configs with all of the
+    references replaced with URLs.
+    """
+    by_name, by_uuid = may_contain_data_source_refs(job_configs)
+    if not (by_name or by_uuid):
+        return [], job_configs
+
+    ctx = context.ctx()
+    ds_seen = {}
+    new_configs = {}
+
+    def _resolve(value):
+        kwargs = {}
+        if by_name and isinstance(
+                value,
+                six.string_types) and value.startswith(DATA_SOURCE_PREFIX):
+            value = value[len(DATA_SOURCE_PREFIX):]
+            kwargs['name'] = value
+
+        elif by_uuid and uuidutils.is_uuid_like(value):
+            kwargs['id'] = value
+
+        if kwargs:
+            # Name and id are both unique constraints so if there
+            # is more than 1 something is really wrong
+            ds = conductor.data_source_get_all(ctx, **kwargs)
+            if len(ds) == 1:
+                ds = ds[0]
+                ds_seen[ds.id] = ds
+                return ds.url
+        return value
+
+    # Loop over configs/params/args and look up each value as a data_source.
+    # If we find it, replace the value. In all cases, we've produced a
+    # copy which is not a FrozenClass type and can be updated.
+    new_configs['configs'] = {
+        k: _resolve(v) for k, v in six.iteritems(
+            job_configs.get('configs', {}))}
+    new_configs['params'] = {
+        k: _resolve(v) for k, v in six.iteritems(
+            job_configs.get('params', {}))}
+    new_configs['args'] = [_resolve(a) for a in job_configs.get('args', [])]
+
+    # If we didn't resolve anything we might as well return the original
+    ds_seen = ds_seen.values()
+    if not ds_seen:
+        return [], job_configs
+
+    # If there are no proxy_configs and the user has not already set configs
+    # for swift credentials, set those configs based on data_sources we found
+    if not job_configs.get('proxy_configs'):
+        _add_credentials_for_data_sources(ds_seen, new_configs['configs'])
+    else:
+        # we'll need to copy these, too, so job_configs is complete
+        new_configs['proxy_configs'] = {
+            k: v for k, v in six.iteritems(job_configs.get('proxy_configs'))}
+
+    return ds_seen, new_configs

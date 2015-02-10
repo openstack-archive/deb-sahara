@@ -221,9 +221,11 @@ Additional Details for Java jobs
 
 Java jobs use two special configuration values:
 
-* ``edp.java.main_class`` (required) Specifies the class containing ``main(String[] args)``
+* ``edp.java.main_class`` (required) Specifies the class(including the package name, for example: org.openstack.sahara.examples.WordCount) containing ``main(String[] args)``
 
 * ``edp.java.java_opts`` (optional) Specifies configuration values for the JVM
+
+* ``edp.java.adapt_for_oozie`` (optional) Specifies configuration values for adapting oozie. If this configuration value is unset or set to "False", users will need to modify source code as shown `here <https://github.com/openstack/sahara/blob/master/etc/edp-examples/edp-java/README.rst>` to read Hadoop configuration values from the Oozie job configuration. Setting this configuration value to "True" ensures that the Oozie job configuration values will be set in the Hadoop config automatically with no need for code modification and that exit conditions will be handled correctly by Oozie.
 
 A Java job will execute the ``main(String[] args)`` method of the specified main class.  There are two methods of passing
 values to the ``main`` method:

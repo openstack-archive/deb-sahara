@@ -14,12 +14,12 @@
 # limitations under the License.
 
 from oslo.config import cfg
+from oslo_log import log as logging
 
 from sahara import conductor as c
 from sahara import context
 from sahara import exceptions as ex
 from sahara.i18n import _LE
-from sahara.openstack.common import log as logging
 from sahara.service.edp.binary_retrievers import dispatch
 from sahara.service.edp import job_manager as manager
 from sahara.utils import edp
@@ -169,4 +169,4 @@ def get_job_binary_internal_data(id):
 
 def get_job_binary_data(id):
     job_binary = conductor.job_binary_get(context.ctx(), id)
-    return dispatch.get_raw_binary(job_binary)
+    return dispatch.get_raw_binary(job_binary, with_context=True)

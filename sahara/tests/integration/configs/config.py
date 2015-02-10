@@ -350,23 +350,26 @@ CDH_CONFIG_OPTS = [
     cfg.StrOpt('MANAGERNODE_FLAVOR',
                default='3',
                help='Id of flavor for manager-node'),
+    cfg.StrOpt('LARGE_FLAVOR',
+               default='4',
+               help='Id of flavor for services-node'),
     cfg.DictOpt('HADOOP_PROCESSES_WITH_PORTS',
                 default={
-                    'RESOURCEMANAGER': 8088,
-                    'NAMENODE': 50070,
-                    'SECONDARYNAMENODE': 50090,
-                    'NODEMANAGER': 8042,
-                    'DATANODE': 50075,
-                    'MANAGER': 7180,
-                    'JOBHISTORY': 19888,
+                    'YARN_RESOURCEMANAGER': 8088,
+                    'HDFS_NAMENODE': 50070,
+                    'HDFS_SECONDARYNAMENODE': 50090,
+                    'YARN_NODEMANAGER': 8042,
+                    'HDFS_DATANODE': 50075,
+                    'CLOUDERA_MANAGER': 7180,
+                    'YARN_JOBHISTORY': 19888,
                     'OOZIE_SERVER': 11000
                 },
                 help='Hadoop process map with ports for CDH plugin.'),
     cfg.DictOpt('PROCESS_NAMES',
                 default={
-                    'nn': 'NAMENODE',
-                    'tt': 'NODEMANAGER',
-                    'dn': 'DATANODE'
+                    'nn': 'HDFS_NAMENODE',
+                    'tt': 'YARN_NODEMANAGER',
+                    'dn': 'HDFS_DATANODE'
                 },
                 help='Names for namenode, nodemanager and datanode '
                      'processes.'),
@@ -379,7 +382,8 @@ CDH_CONFIG_OPTS = [
     cfg.BoolOpt('SKIP_EDP_TEST', default=False),
     cfg.BoolOpt('SKIP_MAP_REDUCE_TEST', default=False),
     cfg.BoolOpt('SKIP_SWIFT_TEST', default=False),
-    cfg.BoolOpt('SKIP_SCALING_TEST', default=False)
+    cfg.BoolOpt('SKIP_SCALING_TEST', default=False),
+    cfg.BoolOpt('SKIP_CHECK_SERVICES_TEST', default=True)
 ]
 
 
@@ -574,8 +578,6 @@ MAPR_CONFIG_OPTS = [
                     'image. If you do not specify image related parameters, '
                     'then image for cluster creation will be chosen by '
                     'tag "sahara_i_tests".'),
-    cfg.StrOpt('SSH_USERNAME',
-               help='Username to get cluster node with SSH.'),
     cfg.ListOpt('MASTER_NODE_PROCESSES',
                 default=['CLDB', 'FileServer', 'ZooKeeper',
                          'TaskTracker', 'JobTracker', 'Oozie'],
@@ -665,9 +667,6 @@ MAPR4_1_CONFIG_OPTS = [
                     'image. If you do not specify image related parameters, '
                     'then image for cluster creation will be chosen by '
                     'tag "sahara_i_tests".'),
-    cfg.StrOpt('SSH_USERNAME',
-               default=None,
-               help='Username to get cluster node with SSH.'),
     cfg.ListOpt('MASTER_NODE_PROCESSES',
                 default=['CLDB', 'FileServer', 'ZooKeeper',
                          'TaskTracker', 'JobTracker', 'Oozie'],
@@ -747,9 +746,6 @@ MAPR4_2_CONFIG_OPTS = [
                     'image. If you do not specify image related parameters, '
                     'then image for cluster creation will be chosen by '
                     'tag "sahara_i_tests".'),
-    cfg.StrOpt('SSH_USERNAME',
-               default=None,
-               help='Username to get cluster node with SSH.'),
     cfg.ListOpt('MASTER_NODE_PROCESSES',
                 default=['CLDB', 'FileServer', 'ZooKeeper', 'NodeManager',
                          'ResourceManager', 'HistoryServer', 'Oozie'],

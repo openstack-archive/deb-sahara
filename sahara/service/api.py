@@ -15,12 +15,12 @@
 
 from oslo.config import cfg
 from oslo.utils import excutils
+from oslo_log import log as logging
 import six
 from six.moves.urllib import parse as urlparse
 
 from sahara import conductor as c
 from sahara import context
-from sahara.openstack.common import log as logging
 from sahara.plugins import base as plugin_base
 from sahara.plugins import provisioning
 from sahara.utils import general as g
@@ -201,8 +201,8 @@ def construct_ngs_for_scaling(cluster, additional_node_groups):
 # Image Registry
 
 
-def get_images(tags):
-    return nova.client().images.list_registered(tags)
+def get_images(name, tags):
+    return nova.client().images.list_registered(name, tags)
 
 
 def get_image(**kwargs):
@@ -210,6 +210,10 @@ def get_image(**kwargs):
         return nova.client().images.get(kwargs['id'])
     else:
         return nova.client().images.find(**kwargs)
+
+
+def get_registered_image(id):
+    return nova.client().images.get_registered_image(id)
 
 
 def register_image(image_id, username, description=None):

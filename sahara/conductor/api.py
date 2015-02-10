@@ -16,10 +16,10 @@
 """Handles all requests to the conductor service."""
 
 from oslo.config import cfg
+from oslo_log import log as logging
 
 from sahara.conductor import manager
 from sahara.conductor import resource as r
-from sahara.openstack.common import log as logging
 
 
 conductor_opts = [
@@ -234,6 +234,14 @@ class LocalApi(object):
         e.g.  data_source_get_all(name='myfile', type='swift')
         """
         return self._manager.data_source_get_all(context, **kwargs)
+
+    def data_source_count(self, context, **kwargs):
+        """Count Data Sources filtered by **kwargs.
+
+        Uses sqlalchemy "in_" clause for any tuple values
+        Uses sqlalchemy "like" clause for any string values containing %
+        """
+        return self._manager.data_source_count(context, **kwargs)
 
     @r.wrap(r.DataSource)
     def data_source_create(self, context, values):

@@ -26,6 +26,7 @@ from sahara.service.edp import job_manager
 from sahara.service.edp import job_utils
 from sahara.service.edp.oozie.workflow_creator import workflow_factory
 from sahara.swift import swift_helper as sw
+from sahara.swift import utils as su
 from sahara.tests.unit import base
 from sahara.tests.unit.service.edp import edp_test_utils as u
 from sahara.utils import edp
@@ -67,49 +68,6 @@ class TestJobManager(base.SaharaWithDbTestCase):
         remote_instance.execute_command.assert_called_with(
             "mkdir -p /tmp/somewhere/job/generated_uuid")
 
-    @mock.patch('sahara.service.edp.binary_retrievers.dispatch.get_raw_binary')
-    @mock.patch('sahara.utils.remote.get_remote')
-    def test_upload_job_files(self, get_remote, get_raw_binary):
-        main_names = ["main1", "main2", "main3"]
-        lib_names = ["lib1", "lib2", "lib3"]
-
-        def make_data_objects(*args):
-            objs = []
-            for name in args:
-                m = mock.Mock()
-                m.name = name
-                objs.append(m)
-            return objs
-
-        job = mock.Mock()
-        job.name = "job"
-        job.mains = make_data_objects(*main_names)
-        job.libs = make_data_objects(*lib_names)
-
-        # This is to mock "with remote.get_remote(instance) as r"
-        remote_instance = mock.Mock()
-        get_remote.return_value.__enter__ = mock.Mock(
-            return_value=remote_instance)
-
-        get_raw_binary.return_value = "data"
-        paths = job_utils.upload_job_files(
-            "where", "/somedir", job, libs_subdir=False)
-        self.assertEqual(paths,
-                         ["/somedir/" + n for n in main_names + lib_names])
-        for path in paths:
-            remote_instance.write_file_to.assert_any_call(path, "data")
-        remote_instance.write_file_to.reset_mock()
-
-        paths = job_utils.upload_job_files(
-            "where", "/somedir", job, libs_subdir=True)
-        remote_instance.execute_command.assert_called_with(
-            "mkdir -p /somedir/libs")
-        expected = ["/somedir/" + n for n in main_names]
-        expected += ["/somedir/libs/" + n for n in lib_names]
-        self.assertEqual(paths, expected)
-        for path in paths:
-            remote_instance.write_file_to.assert_any_call(path, "data")
-
     @mock.patch('sahara.conductor.API.job_binary_get')
     def test_build_workflow_for_job_pig(self, job_binary):
 
@@ -120,8 +78,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
         output_data = u.create_data_source('swift://ex/o')
 
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec, input_data, output_data,
-            'hadoop')
+            job, u.create_cluster(), job_exec.job_configs,
+            input_data, output_data, 'hadoop')
 
         self.assertIn("""
       <param>INPUT=swift://ex.sahara/i</param>
@@ -147,8 +105,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
         job, job_exec = u.create_job_exec(edp.JOB_TYPE_PIG, proxy=True)
 
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec, input_data, output_data,
-            'hadoop')
+            job, u.create_cluster(), job_exec.job_configs,
+            input_data, output_data, 'hadoop')
 
         self.assertIn("""
       <configuration>
@@ -181,8 +139,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
         output_data = u.create_data_source('hdfs://user/hadoop/out')
 
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec, input_data, output_data,
-            'hadoop')
+            job, u.create_cluster(), job_exec.job_configs,
+            input_data, output_data, 'hadoop')
 
         self.assertIn("""
       <configuration>
@@ -200,8 +158,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
         output_data = u.create_data_source('swift://ex/o')
 
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec, input_data, output_data,
-            'hadoop')
+            job, u.create_cluster(), job_exec.job_configs,
+            input_data, output_data, 'hadoop')
 
         self.assertIn("""
       <configuration>
@@ -221,8 +179,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
         output_data = u.create_data_source('hdfs://user/hadoop/out')
 
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec, input_data, output_data,
-            'hadoop')
+            job, u.create_cluster(), job_exec.job_configs,
+            input_data, output_data, 'hadoop')
 
         self.assertIn("""
       <configuration>
@@ -246,8 +204,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
         output_data = u.create_data_source('swift://ex/o')
 
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec, input_data, output_data,
-            'hadoop')
+            job, u.create_cluster(), job_exec.job_configs,
+            input_data, output_data, 'hadoop')
 
         if streaming:
             self.assertIn("""
@@ -288,8 +246,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
             job, job_exec = u.create_job_exec(job_type, proxy=True)
 
             res = workflow_factory.get_workflow_xml(
-                job, u.create_cluster(), job_exec, input_data, output_data,
-                'hadoop')
+                job, u.create_cluster(), job_exec.job_configs,
+                input_data, output_data, 'hadoop')
 
             self.assertIn("""
         <property>
@@ -331,7 +289,7 @@ class TestJobManager(base.SaharaWithDbTestCase):
 
         job, job_exec = u.create_job_exec(edp.JOB_TYPE_JAVA, configs)
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec)
+            job, u.create_cluster(), job_exec.job_configs)
 
         self.assertIn("""
       <configuration>
@@ -361,7 +319,7 @@ class TestJobManager(base.SaharaWithDbTestCase):
         job, job_exec = u.create_job_exec(edp.JOB_TYPE_JAVA, configs,
                                           proxy=True)
         res = workflow_factory.get_workflow_xml(job, u.create_cluster(),
-                                                job_exec)
+                                                job_exec.job_configs)
 
         self.assertIn("""
       <configuration>
@@ -397,8 +355,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
         output_data = u.create_data_source('swift://ex/o')
 
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec, input_data, output_data,
-            'hadoop')
+            job, u.create_cluster(), job_exec.job_configs,
+            input_data, output_data, 'hadoop')
 
         doc = xml.parseString(res)
         hive = doc.getElementsByTagName('hive')[0]
@@ -425,8 +383,8 @@ class TestJobManager(base.SaharaWithDbTestCase):
         job, job_exec = u.create_job_exec(edp.JOB_TYPE_HIVE, proxy=True)
 
         res = workflow_factory.get_workflow_xml(
-            job, u.create_cluster(), job_exec, input_data, output_data,
-            'hadoop')
+            job, u.create_cluster(), job_exec.job_configs,
+            input_data, output_data, 'hadoop')
 
         doc = xml.parseString(res)
         hive = doc.getElementsByTagName('hive')[0]
@@ -478,15 +436,14 @@ class TestJobManager(base.SaharaWithDbTestCase):
         self.assertEqual(orig_exec_job_dict, exec_job_dict)
 
     def test_inject_swift_url_suffix(self):
-        w = workflow_factory.BaseFactory()
-        self.assertEqual(w.inject_swift_url_suffix("swift://ex/o"),
+        self.assertEqual(su.inject_swift_url_suffix("swift://ex/o"),
                          "swift://ex.sahara/o")
-        self.assertEqual(w.inject_swift_url_suffix("swift://ex.sahara/o"),
+        self.assertEqual(su.inject_swift_url_suffix("swift://ex.sahara/o"),
                          "swift://ex.sahara/o")
-        self.assertEqual(w.inject_swift_url_suffix("hdfs://my/path"),
+        self.assertEqual(su.inject_swift_url_suffix("hdfs://my/path"),
                          "hdfs://my/path")
-        self.assertEqual(w.inject_swift_url_suffix(12345), 12345)
-        self.assertEqual(w.inject_swift_url_suffix(['test']), ['test'])
+        self.assertEqual(su.inject_swift_url_suffix(12345), 12345)
+        self.assertEqual(su.inject_swift_url_suffix(['test']), ['test'])
 
     @mock.patch('sahara.conductor.API.job_execution_update')
     @mock.patch('sahara.service.edp.job_manager._run_job')

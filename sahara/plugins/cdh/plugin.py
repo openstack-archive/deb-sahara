@@ -37,31 +37,42 @@ class CDHPluginProvider(p.ProvisioningPluginBase):
                  '(CDH) with Cloudera Manager management console.')
 
     def get_versions(self):
-        return ['5', '5.2.0']
+        return ['5', '5.2.0', '5.3.0']
 
     def get_node_processes(self, hadoop_version):
-        return {
-            "CLOUDERA": ['MANAGER'],
+        processes = {
+            "CLOUDERA": ['CLOUDERA_MANAGER'],
             "HDFS": [],
-            "NAMENODE": ['NAMENODE'],
-            "DATANODE": ['DATANODE'],
-            "SECONDARYNAMENODE": ['SECONDARYNAMENODE'],
+            "NAMENODE": ['HDFS_NAMENODE'],
+            "DATANODE": ['HDFS_DATANODE'],
+            "SECONDARYNAMENODE": ['HDFS_SECONDARYNAMENODE'],
             "YARN": [],
-            "RESOURCEMANAGER": ['RESOURCEMANAGER'],
-            "NODEMANAGER": ['NODEMANAGER'],
-            "JOBHISTORY": ['JOBHISTORY'],
+            "RESOURCEMANAGER": ['YARN_RESOURCEMANAGER'],
+            "NODEMANAGER": ['YARN_NODEMANAGER'],
+            "JOBHISTORY": ['YARN_JOBHISTORY'],
             "OOZIE": ['OOZIE_SERVER'],
             "HIVE": [],
-            "HIVESERVER": ['HIVESERVER2'],
-            "HIVEMETASTORE": ['HIVEMETASTORE'],
-            "WEBHCAT": ['WEBHCAT'],
+            "HIVESERVER": ['HIVE_SERVER2'],
+            "HIVEMETASTORE": ['HIVE_METASTORE'],
+            "WEBHCAT": ['HIVE_WEBHCAT'],
             "HUE": ['HUE_SERVER'],
             "SPARK_ON_YARN": ['SPARK_YARN_HISTORY_SERVER'],
-            "ZOOKEEPER": ['SERVER'],
+            "ZOOKEEPER": ['ZOOKEEPER_SERVER'],
             "HBASE": [],
-            "MASTER": ['MASTER'],
-            "REGIONSERVER": ['REGIONSERVER']
+            "MASTER": ['HBASE_MASTER'],
+            "REGIONSERVER": ['HBASE_REGIONSERVER'],
+            "FLUME": ['FLUME_AGENT'],
+            "IMPALA": [],
+            "CATALOGSERVER": ['IMPALA_CATALOGSERVER'],
+            "STATESTORE": ['IMPALA_STATESTORE'],
+            "IMPALAD": ['IMPALAD'],
+            "KS_INDEXER": ['KEY_VALUE_STORE_INDEXER'],
+            "SOLR": ['SOLR_SERVER'],
+            "SQOOP": ['SQOOP_SERVER']
         }
+        if hadoop_version >= '5.2.0':
+            processes["SENTRY"] = ['SENTRY_SERVER']
+        return processes
 
     def get_configs(self, hadoop_version):
         return c_helper.get_plugin_configs()
