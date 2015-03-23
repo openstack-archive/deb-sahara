@@ -56,8 +56,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             }
         }
         self.ng_tmpl_tt_dn_id = self.create_node_group_template(**template)
-        self.addCleanup(self.delete_objects,
-                        node_group_template_id_list=[self.ng_tmpl_tt_dn_id])
+        self.addCleanup(self.delete_node_group_template, self.ng_tmpl_tt_dn_id)
 
     @b.errormsg("Failure while 'tt' node group template creation: ")
     def _create_tt_ng_template(self):
@@ -75,8 +74,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             }
         }
         self.ng_tmpl_tt_id = self.create_node_group_template(**template)
-        self.addCleanup(self.delete_objects,
-                        node_group_template_id_list=[self.ng_tmpl_tt_id])
+        self.addCleanup(self.delete_node_group_template, self.ng_tmpl_tt_id)
 
     @b.errormsg("Failure while 'dn' node group template creation: ")
     def _create_dn_ng_template(self):
@@ -94,8 +92,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             }
         }
         self.ng_tmpl_dn_id = self.create_node_group_template(**template)
-        self.addCleanup(self.delete_objects,
-                        node_group_template_id_list=[self.ng_tmpl_dn_id])
+        self.addCleanup(self.delete_node_group_template, self.ng_tmpl_dn_id)
 
     @b.errormsg("Failure while cluster template creation: ")
     def _create_cluster_template(self):
@@ -154,8 +151,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             ]
         }
         self.cluster_template_id = self.create_cluster_template(**template)
-        self.addCleanup(self.delete_objects,
-                        cluster_template_id=self.cluster_template_id)
+        self.addCleanup(self.delete_cluster_template, self.cluster_template_id)
 
     @b.errormsg("Failure while cluster creation: ")
     def _create_cluster(self):
@@ -169,7 +165,7 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             'cluster_configs': {}
         }
         cluster_id = self.create_cluster(**kw)
-        self.addCleanup(self.delete_objects, cluster_id=cluster_id)
+        self.addCleanup(self.delete_cluster, cluster_id)
         self.poll_cluster_state(cluster_id)
         self.cluster_info = self.get_cluster_info(self.plugin_config)
         self.await_active_workers_for_namenode(self.cluster_info['node_info'],
@@ -189,6 +185,8 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
         mapreduce_jar_data = self.edp_info.read_mapreduce_example_jar()
         # This is a modified version of WordCount that takes swift configs
         java_lib_data = self.edp_info.read_java_example_lib()
+        shell_script_data = self.edp_info.read_shell_example_script()
+        shell_file_data = self.edp_info.read_shell_example_text_file()
 
         yield self.edp_testing(
             job_type=utils_edp.JOB_TYPE_PIG,
@@ -218,6 +216,12 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
             lib_data_list=[{'jar': java_lib_data}],
             configs=self.edp_info.java_example_configs(),
             pass_input_output_args=True)
+
+        yield self.edp_testing(
+            job_type=utils_edp.JOB_TYPE_SHELL,
+            job_data_list=[{'script': shell_script_data}],
+            lib_data_list=[{'text': shell_file_data}],
+            configs=self.edp_info.shell_example_configs())
 
     @b.errormsg("Failure while EDP testing: ")
     def _check_edp(self):
@@ -293,13 +297,16 @@ class VanillaGatingTest(cinder.CinderVolumeTest,
         self._create_dn_ng_template()
         self._create_cluster_template()
         self._create_cluster()
+        self._test_event_log(self.cluster_id)
         self._check_cinder()
         self._check_cluster_config()
         self._check_edp()
         self._check_mapreduce()
         self._check_swift()
+
         if not self.plugin_config.SKIP_SCALING_TEST:
             self._check_scaling()
+            self._test_event_log(self.cluster_id)
             self._check_cinder_after_scaling()
             self._check_cluster_config_after_scaling()
             self._check_mapredure_after_scaling()

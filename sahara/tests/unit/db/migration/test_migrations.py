@@ -31,8 +31,8 @@ postgres=# create database openstack_citest with owner openstack_citest;
 
 import os
 
-from oslo.db.sqlalchemy import test_base
-from oslo.db.sqlalchemy import utils as db_utils
+from oslo_db.sqlalchemy import test_base
+from oslo_db.sqlalchemy import utils as db_utils
 
 from sahara.tests.unit.db.migration import test_migrations_base as base
 
@@ -366,17 +366,17 @@ class SaharaMigrationsCheckers(object):
         self.assertEqual(desc, new_desc)
         engine.execute(t.delete())
 
-    def _check_008(self, engine, date):
+    def _check_008(self, engine, data):
         self.assertColumnExists(engine, 'node_group_templates',
                                 'security_groups')
         self.assertColumnExists(engine, 'node_groups', 'security_groups')
         self.assertColumnExists(engine, 'templates_relations',
                                 'security_groups')
 
-    def _check_009(self, engine, date):
+    def _check_009(self, engine, data):
         self.assertColumnExists(engine, 'clusters', 'rollback_info')
 
-    def _check_010(self, engine, date):
+    def _check_010(self, engine, data):
         self.assertColumnExists(engine, 'node_group_templates',
                                 'auto_security_group')
         self.assertColumnExists(engine, 'node_groups', 'auto_security_group')
@@ -384,10 +384,10 @@ class SaharaMigrationsCheckers(object):
                                 'auto_security_group')
         self.assertColumnExists(engine, 'node_groups', 'open_ports')
 
-    def _check_011(self, engine, date):
+    def _check_011(self, engine, data):
         self.assertColumnExists(engine, 'clusters', 'sahara_info')
 
-    def _check_012(self, engine, date):
+    def _check_012(self, engine, data):
         self.assertColumnExists(engine, 'node_group_templates',
                                 'availability_zone')
         self.assertColumnExists(engine, 'node_groups', 'availability_zone')
@@ -434,12 +434,35 @@ class SaharaMigrationsCheckers(object):
         self.assertColumnCount(engine, 'cluster_events', events_columns)
         self.assertColumnsExists(engine, 'cluster_events', events_columns)
 
-    def _check_016(self, engine, date):
+    def _check_016(self, engine, data):
         self.assertColumnExists(engine, 'node_group_templates',
                                 'is_proxy_gateway')
         self.assertColumnExists(engine, 'node_groups', 'is_proxy_gateway')
         self.assertColumnExists(engine, 'templates_relations',
                                 'is_proxy_gateway')
+
+    def _check_017(self, engine, data):
+        self.assertColumnNotExists(engine, 'job_executions', 'progress')
+
+    def _check_018(self, engine, data):
+        self.assertColumnExists(engine, 'node_group_templates',
+                                'volume_local_to_instance')
+        self.assertColumnExists(engine, 'node_groups',
+                                'volume_local_to_instance')
+        self.assertColumnExists(engine, 'templates_relations',
+                                'volume_local_to_instance')
+
+    def _check_019(self, engine, data):
+        self.assertColumnExists(engine, 'node_group_templates', 'is_default')
+        self.assertColumnExists(engine, 'cluster_templates', 'is_default')
+
+    def _check_020(self, engine, data):
+        self.assertColumnNotExists(engine, 'cluster_provision_steps',
+                                   'completed')
+        self.assertColumnNotExists(engine, 'cluster_provision_steps',
+                                   'completed_at')
+        self.assertColumnNotExists(engine, 'cluster_provision_steps',
+                                   'started_at')
 
 
 class TestMigrationsMySQL(SaharaMigrationsCheckers,

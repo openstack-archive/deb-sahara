@@ -15,7 +15,7 @@
 
 import uuid
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
@@ -32,6 +32,7 @@ from sahara.plugins.vanilla.v1_2_1 import edp_engine
 from sahara.plugins.vanilla.v1_2_1 import run_scripts as run
 from sahara.plugins.vanilla.v1_2_1 import scaling as sc
 from sahara.topology import topology_helper as th
+from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import edp
 from sahara.utils import files as f
 from sahara.utils import general as g
@@ -100,25 +101,32 @@ class VersionHandler(avm.AbstractVersionHandler):
 
     def configure_cluster(self, cluster):
         instances = utils.get_instances(cluster)
-
         self._setup_instances(cluster, instances)
 
     def start_namenode(self, cluster):
         nn = vu.get_namenode(cluster)
         self._start_namenode(nn)
 
+    @cpo.event_wrapper(
+        True, step=utils.start_process_event_message("NameNode"))
     def _start_namenode(self, nn_instance):
         with remote.get_remote(nn_instance) as r:
             run.format_namenode(r)
             run.start_processes(r, "namenode")
 
     def start_secondarynamenodes(self, cluster):
-        if vu.get_secondarynamenodes(cluster) == 0:
+        snns = vu.get_secondarynamenodes(cluster)
+        if len(snns) == 0:
             return
+        cpo.add_provisioning_step(
+            cluster.id,
+            utils.start_process_event_message("SecondaryNameNodes"),
+            len(snns))
 
-        for snn in vu.get_secondarynamenodes(cluster):
+        for snn in snns:
             self._start_secondarynamenode(snn)
 
+    @cpo.event_wrapper(True)
     def _start_secondarynamenode(self, snn):
         run.start_processes(remote.get_remote(snn), "secondarynamenode")
 
@@ -127,6 +135,8 @@ class VersionHandler(avm.AbstractVersionHandler):
         if jt:
             self._start_jobtracker(jt)
 
+    @cpo.event_wrapper(
+        True, step=utils.start_process_event_message("JobTracker"))
     def _start_jobtracker(self, jt_instance):
         run.start_processes(remote.get_remote(jt_instance), "jobtracker")
 
@@ -135,6 +145,8 @@ class VersionHandler(avm.AbstractVersionHandler):
         if oozie:
             self._start_oozie(cluster, oozie)
 
+    @cpo.event_wrapper(
+        True, step=utils.start_process_event_message("Oozie"))
     def _start_oozie(self, cluster, oozie):
         nn_instance = vu.get_namenode(cluster)
 
@@ -144,14 +156,16 @@ class VersionHandler(avm.AbstractVersionHandler):
                 run.oozie_create_db(r)
             run.oozie_share_lib(r, nn_instance.hostname())
             run.start_oozie(r)
-            LOG.info(_LI("Oozie service at '%s' has been started"),
-                     nn_instance.hostname())
+            LOG.info(_LI("Oozie service at {host} has been started").format(
+                     host=nn_instance.hostname()))
 
     def start_hiveserver(self, cluster):
         hs = vu.get_hiveserver(cluster)
         if hs:
             self._start_hiveserver(cluster, hs)
 
+    @cpo.event_wrapper(
+        True, step=utils.start_process_event_message("HiveServer"))
     def _start_hiveserver(self, cluster, hive_server):
         oozie = vu.get_oozie(cluster)
 
@@ -163,11 +177,11 @@ class VersionHandler(avm.AbstractVersionHandler):
             if c_helper.is_mysql_enable(cluster):
                 if not oozie or hive_server.hostname() != oozie.hostname():
                     run.mysql_start(r, hive_server)
-                    run.hive_create_db(r, cluster.extra['hive_mysql_passwd'])
-                    run.hive_metastore_start(r)
-                    LOG.info(_LI("Hive Metastore server at %s has been "
-                                 "started"),
-                             hive_server.hostname())
+                run.hive_create_db(r, cluster.extra['hive_mysql_passwd'])
+                run.hive_metastore_start(r)
+                LOG.info(_LI("Hive Metastore server at {host} has been "
+                             "started").format(
+                                 host=hive_server.hostname()))
 
     def start_cluster(self, cluster):
         self.start_namenode(cluster)
@@ -180,36 +194,40 @@ class VersionHandler(avm.AbstractVersionHandler):
 
         self._await_datanodes(cluster)
 
-        LOG.info(_LI("Hadoop services in cluster %s have been started"),
-                 cluster.name)
+        LOG.info(_LI("Hadoop services in cluster {cluster} have been started")
+                 .format(cluster=cluster.name))
 
         self.start_oozie(cluster)
 
         self.start_hiveserver(cluster)
 
-        LOG.info(_LI('Cluster %s has been started successfully'), cluster.name)
+        LOG.info(_LI('Cluster {cluster} has been started successfully')
+                 .format(cluster=cluster.name))
         self._set_cluster_info(cluster)
 
+    @cpo.event_wrapper(
+        True, step=_("Await %s start up") % "DataNodes", param=('cluster', 1))
     def _await_datanodes(self, cluster):
         datanodes_count = len(vu.get_datanodes(cluster))
         if datanodes_count < 1:
             return
 
-        LOG.info(_LI("Waiting %s datanodes to start up"), datanodes_count)
+        LOG.debug("Waiting {count} datanodes to start up".format(
+            count=datanodes_count))
         with remote.get_remote(vu.get_namenode(cluster)) as r:
             while True:
                 if run.check_datanodes_count(r, datanodes_count):
                     LOG.info(
-                        _LI('Datanodes on cluster %s have been started'),
-                        cluster.name)
+                        _LI('Datanodes on cluster {cluster} have been started')
+                        .format(cluster=cluster.name))
                     return
 
                 context.sleep(1)
 
                 if not g.check_cluster_exists(cluster):
-                    LOG.info(
-                        _LI('Stop waiting datanodes on cluster %s since it has'
-                            ' been deleted'), cluster.name)
+                    LOG.debug('Stop waiting for datanodes on cluster {cluster}'
+                              ' since it has been deleted'.format(
+                                  cluster=cluster.name))
                     return
 
     def _generate_hive_mysql_password(self, cluster):
@@ -291,19 +309,30 @@ class VersionHandler(avm.AbstractVersionHandler):
     def _start_tt_dn_processes(self, instances):
         tt_dn_names = ["datanode", "tasktracker"]
 
+        instances = utils.instances_with_services(instances, tt_dn_names)
+
+        if not instances:
+            return
+
+        cpo.add_provisioning_step(
+            instances[0].cluster_id,
+            utils.start_process_event_message("DataNodes, TaskTrackers"),
+            len(instances))
+
         with context.ThreadGroup() as tg:
             for i in instances:
                 processes = set(i.node_group.node_processes)
                 tt_dn_procs = processes.intersection(tt_dn_names)
+                tg.spawn('vanilla-start-tt-dn-%s' % i.instance_name,
+                         self._start_tt_dn, i, list(tt_dn_procs))
 
-                if tt_dn_procs:
-                    tg.spawn('vanilla-start-tt-dn-%s' % i.instance_name,
-                             self._start_tt_dn, i, list(tt_dn_procs))
-
+    @cpo.event_wrapper(True)
     def _start_tt_dn(self, instance, tt_dn_procs):
         with instance.remote() as r:
             run.start_processes(r, *tt_dn_procs)
 
+    @cpo.event_wrapper(True, step=_("Setup instances and push configs"),
+                       param=('cluster', 1))
     def _setup_instances(self, cluster, instances):
         if (CONF.use_identity_api_v3 and CONF.use_domain_for_proxy_users and
                 vu.get_hiveserver(cluster) and

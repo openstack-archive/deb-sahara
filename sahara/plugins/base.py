@@ -15,7 +15,7 @@
 
 import abc
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 import six
 from stevedore import enabled
@@ -30,7 +30,7 @@ LOG = logging.getLogger(__name__)
 
 opts = [
     cfg.ListOpt('plugins',
-                default=['vanilla', 'hdp', 'spark'],
+                default=['vanilla', 'hdp', 'spark', 'cdh'],
                 help='List of plugins to be loaded. Sahara preserves the '
                      'order of the list when returning it.'),
 ]
@@ -103,9 +103,9 @@ class PluginManager(object):
                     _("Plugin with name '%s' already exists.") % ext.name)
             ext.obj.name = ext.name
             self.plugins[ext.name] = ext.obj
-            LOG.info(_LI("Plugin '%(plugin_name)s' loaded %(entry_point)s"),
-                     {'plugin_name': ext.name,
-                      'entry_point': ext.entry_point_target})
+            LOG.info(_LI("Plugin {plugin_name} loaded {entry_point}").format(
+                     plugin_name=ext.name,
+                     entry_point=ext.entry_point_target))
 
         if len(self.plugins) < len(config_plugins):
             loaded_plugins = set(six.iterkeys(self.plugins))

@@ -284,13 +284,19 @@ class TimeoutException(SaharaException):
     code = "TIMEOUT"
     message = _("'%(operation)s' timed out after %(timeout)i second(s)")
 
-    def __init__(self, timeout, op_name=None):
+    def __init__(self, timeout, op_name=None, timeout_name=None):
         if op_name:
-            op_name = _("Operation '%s'") % op_name
+            op_name = _("Operation with name '%s'") % op_name
         else:
             op_name = _("Operation")
         self.message = self.message % {
             'operation': op_name, 'timeout': timeout}
+
+        if timeout_name:
+            desc = _("%(message)s and following timeout was violated: "
+                     "%(timeout_name)s")
+            self.message = desc % {
+                'message': self.message, 'timeout_name': timeout_name}
 
         super(TimeoutException, self).__init__()
 
@@ -320,3 +326,36 @@ class ImageNotRegistered(SaharaException):
     def __init__(self, image):
         self.message = self.message % image
         super(ImageNotRegistered, self).__init__()
+
+
+class MalformedRequestBody(SaharaException):
+    code = "MALFORMED_REQUEST_BODY"
+    message = _("Malformed message body: %(reason)s")
+
+    def __init__(self, reason):
+        self.message = self.message % {"reason": reason}
+        super(MalformedRequestBody, self).__init__()
+
+
+class QuotaException(SaharaException):
+    code = "QUOTA_ERROR"
+    message = _("Quota exceeded for %(resource)s: Requested %(requested)s,"
+                " but available %(available)s")
+
+    def __init__(self, resource, requested, available):
+        self.message = self.message % {'resource': resource,
+                                       'requested': requested,
+                                       'available': available}
+        super(QuotaException, self).__init__()
+
+
+class UpdateFailedException(SaharaException):
+    message = _("Object '%s' could not be updated")
+    # Object was unable to be updated
+
+    def __init__(self, value, message=None):
+        self.code = "UPDATE_FAILED"
+        if message:
+            self.message = message
+        self.message = self.message % value
+        super(UpdateFailedException, self).__init__()

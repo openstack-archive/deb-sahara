@@ -15,7 +15,7 @@
 
 import itertools
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log
 
 from sahara import exceptions as ex
@@ -112,7 +112,7 @@ log.set_defaults(default_log_levels=[
     'paramiko=WARN',
     'requests=WARN',
     'iso8601=WARN',
-    'oslo.messaging=INFO',
+    'oslo_messaging=INFO',
 ])
 
 
@@ -127,6 +127,7 @@ def list_opts():
     from sahara.service.edp import job_utils
     from sahara.service import periodic
     from sahara.service import volumes
+    from sahara.utils import cluster_progress_ops as cpo
     from sahara.utils.openstack import heat
     from sahara.utils.openstack import neutron
     from sahara.utils.openstack import nova
@@ -148,7 +149,8 @@ def list_opts():
                          job_utils.opts,
                          periodic.periodic_opts,
                          volumes.opts,
-                         proxy.opts)),
+                         proxy.opts,
+                         cpo.event_log_opts)),
         (api.conductor_group.name,
          itertools.chain(api.conductor_opts)),
         (cinder.cinder_group.name,

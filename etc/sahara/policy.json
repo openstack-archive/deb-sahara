@@ -62,5 +62,5 @@
     "job-binary-internals:delete": "",
     "job-binary-internals:get_data": "",
 
-    "clusters:progress": ""
+    "job-types:get_all": ""
 }

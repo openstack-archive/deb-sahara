@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo.serialization import jsonutils as json
 from oslo_log import log as logging
+from oslo_serialization import jsonutils as json
 
 from sahara.i18n import _
 from sahara.plugins import exceptions as ex
@@ -22,6 +22,33 @@ from sahara.plugins.hdp.versions import versionhandlerfactory as vhf
 
 
 LOG = logging.getLogger(__name__)
+
+
+def validate_number_of_datanodes(cluster, scaled_groups, default_configs):
+    dfs_replication = 0
+    for config in default_configs:
+        if config.name == 'dfs.replication':
+            dfs_replication = config.default_value
+    conf = cluster.cluster_configs
+    if 'HDFS' in conf and 'dfs.replication' in conf['HDFS']:
+        dfs_replication = conf['HDFS']['dfs.replication']
+
+    if not scaled_groups:
+        scaled_groups = {}
+    dn_count = 0
+    for ng in cluster.node_groups:
+        if 'DATANODE' in ng.node_processes:
+            if ng.id in scaled_groups:
+                dn_count += scaled_groups[ng.id]
+            else:
+                dn_count += ng.count
+
+    if dn_count < int(dfs_replication):
+        raise ex.InvalidComponentCountException(
+            'datanode', _('%s or more') % dfs_replication, dn_count,
+            _('Number of %(dn)s instances should not be less '
+              'than %(replication)s')
+            % {'dn': 'DATANODE', 'replication': 'dfs.replication'})
 
 
 class ClusterSpec(object):

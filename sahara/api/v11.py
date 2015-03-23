@@ -24,7 +24,6 @@ from sahara.service.validations.edp import job_binary as v_j_b
 from sahara.service.validations.edp import job_binary_internal as v_j_b_i
 from sahara.service.validations.edp import job_execution as v_j_e
 import sahara.utils.api as u
-from sahara.utils import cluster_progress_ops as cpo
 
 
 LOG = logging.getLogger(__name__)
@@ -152,7 +151,17 @@ def job_config_hints_get(job_type):
     return u.render(api.get_job_config_hints(job_type))
 
 
+@rest.get('/job-types')
+@acl.enforce("job-types:get_all")
+def job_types_get():
+    # We want to use flat=False with to_dict() so that
+    # the value of each arg is given as a list. This supports
+    # filters of the form ?type=Pig&type=Java, etc.
+    return u.render(job_types=api.get_job_types(
+        **u.get_request_args().to_dict(flat=False)))
+
 # Job binary ops
+
 
 @rest.post('/job-binaries')
 @acl.enforce("job-binaries:create")
@@ -231,14 +240,3 @@ def job_binary_internal_delete(job_binary_internal_id):
 @v.check_exists(api.get_job_binary_internal, 'job_binary_internal_id')
 def job_binary_internal_data(job_binary_internal_id):
     return api.get_job_binary_internal_data(job_binary_internal_id)
-
-# Events ops
-
-
-@rest.get('/clusters/<cluster_id>/progress')
-@acl.enforce("clusters:progress")
-def get_cluster_events(cluster_id):
-    data = u.get_request_args()
-    provision_step = data.get('provision_step')
-    response = cpo.get_cluster_events(cluster_id, provision_step)
-    return u.render(events=[event.to_dict() for event in response])

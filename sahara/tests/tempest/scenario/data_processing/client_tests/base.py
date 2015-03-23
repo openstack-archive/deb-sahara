@@ -14,7 +14,7 @@
 
 import time
 
-from oslo.utils import timeutils
+from oslo_utils import timeutils
 from saharaclient.api import base as sab
 from saharaclient import client as sahara_client
 from tempest import config
@@ -114,20 +114,30 @@ class BaseDataProcessingTest(manager.ScenarioTest):
 
     @classmethod
     def get_floating_ip_pool_id_for_neutron(cls):
-        for network in cls.networks_client.list_networks()[1]:
-            if network['label'] == CONF.data_processing.floating_ip_pool:
-                return network['id']
-        raise exceptions.NotFound(
-            'Floating IP pool \'%s\' not found in pool list.'
-            % CONF.data_processing.floating_ip_pool)
+        net_id = cls._find_network_by_name(
+            CONF.data_processing.floating_ip_pool)
+        if not net_id:
+            raise exceptions.NotFound(
+                'Floating IP pool \'%s\' not found in pool list.'
+                % CONF.data_processing.floating_ip_pool)
+        return net_id
 
+    @classmethod
     def get_private_network_id(cls):
-        for network in cls.networks_client.list_networks()[1]:
-            if network['label'] == CONF.data_processing.private_network:
+        net_id = cls._find_network_by_name(
+            CONF.data_processing.private_network)
+        if not net_id:
+            raise exceptions.NotFound(
+                'Private network \'%s\' not found in network list.'
+                % CONF.data_processing.private_network)
+        return net_id
+
+    @classmethod
+    def _find_network_by_name(cls, network_name):
+        for network in cls.networks_client.list_networks():
+            if network['label'] == network_name:
                 return network['id']
-        raise exceptions.NotFound(
-            'Private network \'%s\' not found in network list.'
-            % CONF.data_processing.private_network)
+        return None
 
     def create_node_group_template(self, name, **kwargs):
 

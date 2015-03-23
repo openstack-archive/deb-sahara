@@ -15,14 +15,13 @@
 
 import json
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 import pkg_resources as pkg
 
 from sahara import context
 from sahara import exceptions as exc
 from sahara.i18n import _
-from sahara.i18n import _LC
 from sahara.i18n import _LE
 from sahara.i18n import _LI
 from sahara.i18n import _LW
@@ -32,6 +31,7 @@ from sahara.plugins.hdp import configprovider as cfgprov
 from sahara.plugins.hdp.versions import abstractversionhandler as avm
 from sahara.plugins.hdp.versions.version_1_3_2 import edp_engine
 from sahara.plugins.hdp.versions.version_1_3_2 import services
+from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import general as g
 from sahara import version
 
@@ -101,6 +101,9 @@ class VersionHandler(avm.AbstractVersionHandler):
             cluster_spec.create_operational_config(
                 cluster, user_inputs, scaled_groups)
 
+            cs.validate_number_of_datanodes(
+                cluster, scaled_groups, self.get_config_items())
+
         return cluster_spec
 
     def get_default_cluster_configuration(self):
@@ -123,6 +126,11 @@ class VersionHandler(avm.AbstractVersionHandler):
         return node_processes
 
     def install_swift_integration(self, servers):
+        if servers:
+            cpo.add_provisioning_step(
+                servers[0].cluster_id, _("Install Swift integration"),
+                len(servers))
+
         for server in servers:
             server.install_swift_integration()
 
@@ -133,6 +141,12 @@ class VersionHandler(avm.AbstractVersionHandler):
         if job_type in edp_engine.EdpOozieEngine.get_supported_job_types():
             return edp_engine.EdpOozieEngine(cluster)
         return None
+
+    def get_edp_job_types(self):
+        return edp_engine.EdpOozieEngine.get_supported_job_types()
+
+    def get_edp_config_hints(self, job_type):
+        return edp_engine.EdpOozieEngine.get_possible_job_config(job_type)
 
     def get_open_ports(self, node_group):
         ports = [8660]  # for Ganglia
@@ -177,10 +191,10 @@ class AmbariClient(object):
 
     def _post(self, url, ambari_info, data=None):
         if data:
-            LOG.debug('AmbariClient:_post call, url = ' + url +
-                      ' data = ' + str(data))
+            LOG.debug('AmbariClient:_post call, url = {url} data = {data}'
+                      .format(url=url, data=str(data)))
         else:
-            LOG.debug('AmbariClient:_post call, url = ' + url)
+            LOG.debug('AmbariClient:_post call, url = {url}'.format(url=url))
 
         session = self._get_http_session(ambari_info.host, ambari_info.port)
         return session.post(url, data=data,
@@ -188,7 +202,7 @@ class AmbariClient(object):
                             headers=self._get_standard_headers())
 
     def _delete(self, url, ambari_info):
-        LOG.debug('AmbariClient:_delete call, url = ' + url)
+        LOG.debug('AmbariClient:_delete call, url = {url}'.format(url=url))
         session = self._get_http_session(ambari_info.host, ambari_info.port)
         return session.delete(url,
                               auth=(ambari_info.user, ambari_info.password),
@@ -196,10 +210,10 @@ class AmbariClient(object):
 
     def _put(self, url, ambari_info, data=None):
         if data:
-            LOG.debug('AmbariClient:_put call, url = ' + url +
-                      ' data = ' + str(data))
+            LOG.debug('AmbariClient:_put call, url = {url} data = {data}'
+                      .format(url=url, data=str(data)))
         else:
-            LOG.debug('AmbariClient:_put call, url = ' + url)
+            LOG.debug('AmbariClient:_put call, url = {url}'.format(url=url))
 
         session = self._get_http_session(ambari_info.host, ambari_info.port)
         auth = (ambari_info.user, ambari_info.password)
@@ -207,7 +221,7 @@ class AmbariClient(object):
                            headers=self._get_standard_headers())
 
     def _get(self, url, ambari_info):
-        LOG.debug('AmbariClient:_get call, url = ' + url)
+        LOG.debug('AmbariClient:_get call, url = {url}'.format(url=url))
         session = self._get_http_session(ambari_info.host, ambari_info.port)
         return session.get(url, auth=(ambari_info.user, ambari_info.password),
                            headers=self._get_standard_headers())
@@ -220,10 +234,13 @@ class AmbariClient(object):
                             self.handler.get_version() + '"}}')
 
         if result.status_code != 201:
-            LOG.error(_LE('Create cluster command failed. %s') % result.text)
+            LOG.error(_LE('Create cluster command failed. {result}').format(
+                      result=result.text))
             raise ex.HadoopProvisionError(
                 _('Failed to add cluster: %s') % result.text)
 
+    @cpo.event_wrapper(True, step=_("Add configurations to cluster"),
+                       param=('ambari_info', 2))
     def _add_configurations_to_cluster(
             self, cluster_spec, ambari_info, name):
 
@@ -268,12 +285,14 @@ class AmbariClient(object):
             result = self._put(config_url, ambari_info, data=json.dumps(body))
             if result.status_code != 200:
                 LOG.error(
-                    _LE('Set configuration command failed. {0}').format(
-                        result.text))
+                    _LE('Set configuration command failed. {result}').format(
+                        result=result.text))
                 raise ex.HadoopProvisionError(
                     _('Failed to set configurations on cluster: %s')
                     % result.text)
 
+    @cpo.event_wrapper(
+        True, step=_("Add services to cluster"), param=('ambari_info', 2))
     def _add_services_to_cluster(self, cluster_spec, ambari_info, name):
         services = cluster_spec.services
         add_service_url = 'http://{0}/api/v1/clusters/{1}/services/{2}'
@@ -284,12 +303,14 @@ class AmbariClient(object):
                     ambari_info)
                 if result.status_code not in [201, 409]:
                     LOG.error(
-                        _LE('Create service command failed. {0}').format(
-                            result.text))
+                        _LE('Create service command failed. {result}').format(
+                            result=result.text))
                     raise ex.HadoopProvisionError(
                         _('Failed to add services to cluster: %s')
                         % result.text)
 
+    @cpo.event_wrapper(
+        True, step=_("Add components to services"), param=('ambari_info', 2))
     def _add_components_to_services(self, cluster_spec, ambari_info, name):
         add_component_url = ('http://{0}/api/v1/clusters/{1}/services/{'
                              '2}/components/{3}')
@@ -302,12 +323,14 @@ class AmbariClient(object):
                         ambari_info)
                     if result.status_code not in [201, 409]:
                         LOG.error(
-                            _LE('Create component command failed. {0}').format(
-                                result.text))
+                            _LE('Create component command failed. {result}')
+                            .format(result=result.text))
                         raise ex.HadoopProvisionError(
                             _('Failed to add components to services: %s')
                             % result.text)
 
+    @cpo.event_wrapper(
+        True, step=_("Add hosts and components"), param=('ambari_info', 3))
     def _add_hosts_and_components(
             self, cluster_spec, servers, ambari_info, name):
 
@@ -321,7 +344,8 @@ class AmbariClient(object):
                 ambari_info)
             if result.status_code != 201:
                 LOG.error(
-                    _LE('Create host command failed. {0}').format(result.text))
+                    _LE('Create host command failed. {result}').format(
+                        result=result.text))
                 raise ex.HadoopProvisionError(
                     _('Failed to add host: %s') % result.text)
 
@@ -336,14 +360,15 @@ class AmbariClient(object):
                         ambari_info)
                     if result.status_code != 201:
                         LOG.error(
-                            _LE('Create host_component command failed. %s'),
-                            result.text)
+                            _LE('Create host_component command failed. '
+                                '{result}').format(result=result.text))
                         raise ex.HadoopProvisionError(
                             _('Failed to add host component: %s')
                             % result.text)
 
+    @cpo.event_wrapper(
+        True, step=_("Install services"), param=('ambari_info', 2))
     def _install_services(self, cluster_name, ambari_info):
-        LOG.info(_LI('Installing required Hadoop services ...'))
 
         ambari_address = ambari_info.get_address()
         install_url = ('http://{0}/api/v1/clusters/{'
@@ -361,15 +386,16 @@ class AmbariClient(object):
                 ambari_info, cluster_name, request_id),
                 ambari_info)
             if success:
-                LOG.info(_LI("Install of Hadoop stack successful."))
+                LOG.info(_LI("Hadoop stack installed successfully."))
                 self._finalize_ambari_state(ambari_info)
             else:
-                LOG.critical(_LC('Install command failed.'))
+                LOG.error(_LE('Install command failed.'))
                 raise ex.HadoopProvisionError(
                     _('Installation of Hadoop stack failed.'))
         elif result.status_code != 200:
             LOG.error(
-                _LE('Install command failed. {0}').format(result.text))
+                _LE('Install command failed. {result}').format(
+                    result=result.text))
             raise ex.HadoopProvisionError(
                 _('Installation of Hadoop stack failed.'))
 
@@ -384,7 +410,8 @@ class AmbariClient(object):
         while not started:
             result = self._get(request_url, ambari_info)
             LOG.debug(
-                'async request ' + request_url + ' response:\n' + result.text)
+                'async request {url} response: {response}'.format(
+                    url=request_url, response=result.text))
             json_result = json.loads(result.text)
             started = True
             for items in json_result['items']:
@@ -399,7 +426,6 @@ class AmbariClient(object):
         return started
 
     def _finalize_ambari_state(self, ambari_info):
-        LOG.info(_LI('Finalizing Ambari cluster state.'))
 
         persist_state_uri = 'http://{0}/api/v1/persist'.format(
             ambari_info.get_address())
@@ -410,17 +436,15 @@ class AmbariClient(object):
         result = self._post(persist_state_uri, ambari_info, data=persist_data)
 
         if result.status_code != 201 and result.status_code != 202:
-            LOG.warning(_LW('Finalizing of Ambari cluster state failed. {0}').
-                        format(result.text))
+            LOG.warning(_LW('Finalizing of Ambari cluster state failed. '
+                            '{result}').format(result.text))
             raise ex.HadoopProvisionError(_('Unable to finalize Ambari '
                                             'state.'))
+        LOG.info(_LI('Ambari cluster state finalized.'))
 
+    @cpo.event_wrapper(
+        True, step=_("Start services"), param=('ambari_info', 3))
     def start_services(self, cluster_name, cluster_spec, ambari_info):
-        LOG.info(_LI('Starting Hadoop services ...'))
-        LOG.info(_LI('Cluster name: %(cluster_name)s, Ambari server address: '
-                     '%(server_address)s'),
-                 {'cluster_name': cluster_name,
-                  'server_address': ambari_info.get_address()})
         start_url = ('http://{0}/api/v1/clusters/{1}/services?ServiceInfo/'
                      'state=INSTALLED'.format(
                          ambari_info.get_address(), cluster_name))
@@ -438,28 +462,32 @@ class AmbariClient(object):
                                             request_id), ambari_info)
             if success:
                 LOG.info(
-                    _LI("Successfully started Hadoop cluster '{0}'.").format(
-                        cluster_name))
+                    _LI("Successfully started Hadoop cluster '{name}'.")
+                    .format(name=cluster_name))
+                LOG.info(_LI('Cluster name: {cluster_name}, '
+                             'Ambari server address: {server_address}')
+                         .format(cluster_name=cluster_name,
+                                 server_address=ambari_info.get_address()))
             else:
-                LOG.critical(_LC('Failed to start Hadoop cluster.'))
+                LOG.error(_LE('Failed to start Hadoop cluster.'))
                 raise ex.HadoopProvisionError(
                     _('Start of Hadoop services failed.'))
 
         elif result.status_code != 200:
             LOG.error(
-                _LE('Start command failed. Status: %(status)s, '
-                    'response: %(response)s'),
-                {'status': result.status_code, 'response': result.text})
+                _LE('Start command failed. Status: {status}, '
+                    'response: {response}').format(status=result.status_code,
+                                                   response=result.text))
             raise ex.HadoopProvisionError(
                 _('Start of Hadoop services failed.'))
 
     def _exec_ambari_command(self, ambari_info, body, cmd_uri):
 
-        LOG.debug('PUT URI: {0}'.format(cmd_uri))
+        LOG.debug('PUT URI: {uri}'.format(uri=cmd_uri))
         result = self._put(cmd_uri, ambari_info, data=body)
         if result.status_code == 202:
             LOG.debug(
-                'PUT response: {0}'.format(result.text))
+                'PUT response: {result}'.format(result=result.text))
             json_result = json.loads(result.text)
             href = json_result['href'] + '/tasks?fields=Tasks/status'
             success = self._wait_for_async_request(href, ambari_info)
@@ -467,16 +495,15 @@ class AmbariClient(object):
                 LOG.info(
                     _LI("Successfully changed state of Hadoop components "))
             else:
-                LOG.critical(_LC('Failed to change state of Hadoop '
-                                 'components'))
+                LOG.error(_LE('Failed to change state of Hadoop components'))
                 raise ex.HadoopProvisionError(
                     _('Failed to change state of Hadoop components'))
 
         else:
             LOG.error(
-                _LE('Command failed. Status: %(status)s, response: '
-                    '%(response)s'),
-                {'status': result.status_code, 'response': result.text})
+                _LE('Command failed. Status: {status}, response: '
+                    '{response}').format(status=result.status_code,
+                                         response=result.text))
             raise ex.HadoopProvisionError(_('Hadoop/Ambari command failed.'))
 
     def _get_host_list(self, servers):
@@ -493,10 +520,6 @@ class AmbariClient(object):
                                servers, cluster_spec)
 
     def _install_components(self, ambari_info, auth, cluster_name, servers):
-        LOG.info(_LI('Starting Hadoop components while scaling up'))
-        LOG.info(_LI('Cluster name %(cluster_name)s, Ambari server ip %(ip)s'),
-                 {'cluster_name': cluster_name,
-                  'ip': ambari_info.get_address()})
         # query for the host components on the given hosts that are in the
         # INIT state
         # TODO(jspeidel): provide request context
@@ -507,6 +530,10 @@ class AmbariClient(object):
                            ambari_info.get_address(), cluster_name,
                            self._get_host_list(servers)))
         self._exec_ambari_command(ambari_info, body, install_uri)
+        LOG.info(_LI('Started Hadoop components while scaling up'))
+        LOG.info(_LI('Cluster name {cluster_name}, Ambari server ip {ip}')
+                 .format(cluster_name=cluster_name,
+                         ip=ambari_info.get_address()))
 
     def _start_components(self, ambari_info, auth, cluster_name, servers,
                           cluster_spec):
@@ -520,7 +547,7 @@ class AmbariClient(object):
         result = self._get(installed_uri, ambari_info)
         if result.status_code == 200:
             LOG.debug(
-                'GET response: {0}'.format(result.text))
+                'GET response: {result}'.format(result=result.text))
             json_result = json.loads(result.text)
             items = json_result['items']
 
@@ -548,6 +575,8 @@ class AmbariClient(object):
                   'components in scaled instances.  status'
                   ' code returned = {0}').format(result.status))
 
+    @cpo.event_wrapper(True, step=_("Wait for all Ambari agents to register"),
+                       param=('ambari_info', 2))
     @g.await_process(
         3600, 5, _("Ambari agents registering with server"), _check_ambari)
     def wait_for_host_registrations(self, num_hosts, ambari_info):
@@ -556,16 +585,16 @@ class AmbariClient(object):
             result = self._get(url, ambari_info)
             json_result = json.loads(result.text)
 
-            LOG.info(_LI('Registered Hosts: %(current_number)s '
-                         'of %(final_number)s'),
-                     {'current_number': len(json_result['items']),
-                      'final_number': num_hosts})
+            LOG.debug('Registered Hosts: {current_number} '
+                      'of {final_number}'.format(
+                          current_number=len(json_result['items']),
+                          final_number=num_hosts))
             for hosts in json_result['items']:
-                LOG.debug('Registered Host: {0}'.format(
-                    hosts['Hosts']['host_name']))
+                LOG.debug('Registered Host: {host}'.format(
+                    host=hosts['Hosts']['host_name']))
             return result and len(json_result['items']) >= num_hosts
         except Exception:
-            LOG.info(_LI('Waiting to connect to ambari server ...'))
+            LOG.debug('Waiting to connect to ambari server')
             return False
 
     def update_ambari_admin_user(self, password, ambari_info):
@@ -627,6 +656,8 @@ class AmbariClient(object):
         self._install_and_start_components(
             name, servers, ambari_info, cluster_spec)
 
+    @cpo.event_wrapper(
+        True, step=_("Decommission nodes"), param=('cluster', 1))
     def decommission_cluster_instances(self, cluster, clusterspec, instances,
                                        ambari_info):
         raise exc.InvalidDataException(_('The HDP plugin does not support '
@@ -648,7 +679,7 @@ class AmbariClient(object):
         try:
             ambari_info.host.remote().close_http_session(ambari_info.port)
         except exc.NotFoundException:
-            LOG.info(_LI("HTTP session is not cached"))
+            LOG.warning(_LW("HTTP session is not cached"))
 
     def _get_services_in_state(self, cluster_name, ambari_info, state):
         services_url = ('http://{0}/api/v1/clusters/{1}/services?'

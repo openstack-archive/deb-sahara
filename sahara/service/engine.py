@@ -25,7 +25,6 @@ from sahara import conductor as c
 from sahara import context
 from sahara.i18n import _
 from sahara.i18n import _LI
-from sahara.i18n import _LW
 from sahara.service import networks
 from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import edp
@@ -85,7 +84,8 @@ class Engine(object):
             context.sleep(1)
 
         LOG.info(
-            _LI("Cluster '%s': all instances have IPs assigned"), cluster.id)
+            _LI("Cluster {cluster_id}: all instances have IPs assigned")
+            .format(cluster_id=cluster.id))
 
         cluster = conductor.cluster_get(context.ctx(), cluster)
         instances = g.get_instances(cluster, ips_assigned)
@@ -98,7 +98,8 @@ class Engine(object):
                 tg.spawn("wait-for-ssh-%s" % instance.instance_name,
                          self._wait_until_accessible, instance)
 
-        LOG.info(_LI("Cluster '%s': all instances are accessible"), cluster.id)
+        LOG.info(_LI("Cluster {cluster_id}: all instances are accessible")
+                 .format(cluster_id=cluster.id))
 
     @cpo.event_wrapper(mark_successful_on_exit=True)
     def _wait_until_accessible(self, instance):
@@ -111,15 +112,18 @@ class Engine(object):
 
                 if exit_code == 0:
                     LOG.debug(
-                        'Instance %s is accessible' % instance.instance_name)
+                        'Instance {instance_name} is accessible'.format(
+                            instance_name=instance.instance_name))
                     return
             except Exception as ex:
-                LOG.debug("Can't login to node %s (%s), reason %s",
-                          instance.instance_name, instance.management_ip, ex)
+                LOG.debug("Can't login to node {instance_name} {mgmt_ip}, "
+                          "reason {reason}".format(
+                              instance_name=instance.instance_name,
+                              mgmt_ip=instance.management_ip, reason=ex))
 
             context.sleep(5)
 
-            if not g.check_cluster_exists(instance.node_group.cluster):
+            if not g.check_cluster_exists(instance.cluster):
                 return
 
     def _configure_instances(self, cluster):
@@ -141,7 +145,8 @@ class Engine(object):
 
     @cpo.event_wrapper(mark_successful_on_exit=True)
     def _configure_instance(self, instance, hosts_file):
-        LOG.debug('Configuring instance %s' % instance.instance_name)
+        LOG.debug('Configuring instance {instance_name}'.format(
+            instance_name=instance.instance_name))
 
         with instance.remote() as r:
             r.write_file_to('etc-hosts', hosts_file)
@@ -183,12 +188,3 @@ sed '/^Defaults    requiretty*/ s/^/#/' -i /etc/sudoers\n
                 update.update({"info": info,
                                "end_time": datetime.datetime.now()})
             conductor.job_execution_update(ctx, je, update)
-
-    def _log_operation_exception(self, message, cluster, ex):
-        # we want to log the initial exception even if cluster was deleted
-        cluster_name = cluster.name if cluster is not None else '_unknown_'
-        LOG.warn(message, {'cluster': cluster_name, 'reason': ex})
-        if cluster is None:
-            LOG.warn(
-                _LW("Presumably the operation failed because the cluster was "
-                    "deleted by a user during the process."))

@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo.config import cfg
-from oslo.utils import timeutils as tu
+from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import timeutils as tu
 
 from sahara import conductor as c
 from sahara import context
@@ -52,12 +52,8 @@ def _count_instances_to_attach(instances):
     return result
 
 
-def _count_volumes_to_attach(instances):
+def _count_volumes_to_mount(instances):
     return sum([inst.node_group.volumes_per_node for inst in instances])
-
-
-def _get_cluster_id(instance):
-    return instance.node_group.cluster_id
 
 
 def attach_to_instances(instances):
@@ -66,7 +62,7 @@ def attach_to_instances(instances):
         return
 
     cpo.add_provisioning_step(
-        _get_cluster_id(instances[0]), _("Attach volumes to instances"),
+        instances[0].cluster_id, _("Attach volumes to instances"),
         instances_to_attach)
 
     with context.ThreadGroup() as tg:
@@ -100,19 +96,26 @@ def _attach_volumes_to_node(node_group, instance):
     for idx in range(1, node_group.volumes_per_node + 1):
         display_name = "volume_" + instance.instance_name + "_" + str(idx)
         device = _create_attach_volume(
-            ctx, instance, size, volume_type, display_name,
+            ctx, instance, size, volume_type,
+            node_group.volume_local_to_instance, display_name,
             node_group.volumes_availability_zone)
         devices.append(device)
-        LOG.debug("Attached volume %s to instance %s" %
-                  (device, instance.instance_id))
+        LOG.debug("Attached volume {device} to instance {uuid}".format(
+                  device=device, uuid=instance.instance_id))
 
     _await_attach_volumes(instance, devices)
 
+    paths = instance.node_group.storage_paths()
     for idx in range(0, instance.node_group.volumes_per_node):
-        _mount_volume_to_node(instance, idx, devices[idx])
+        LOG.debug("Mounting volume {volume} to instance {instance}"
+                  .format(volume=device, instance=instance.instance_name))
+        _mount_volume(instance, devices[idx], paths[idx])
+        LOG.debug("Mounted volume to instance {instance}"
+                  .format(instance=instance.instance_name))
 
 
-def _create_attach_volume(ctx, instance, size, volume_type, name=None,
+def _create_attach_volume(ctx, instance, size, volume_type,
+                          volume_local_to_instance, name=None,
                           availability_zone=None):
     if CONF.cinder.api_version == 1:
         kwargs = {'size': size, 'display_name': name}
@@ -122,6 +125,9 @@ def _create_attach_volume(ctx, instance, size, volume_type, name=None,
     kwargs['volume_type'] = volume_type
     if availability_zone is not None:
         kwargs['availability_zone'] = availability_zone
+
+    if volume_local_to_instance:
+        kwargs['scheduler_hints'] = {'local_to_instance': instance.instance_id}
 
     volume = cinder.client().volumes.create(**kwargs)
     conductor.append_volume(ctx, instance, volume.id)
@@ -157,8 +163,8 @@ def mount_to_instances(instances):
         return
 
     cpo.add_provisioning_step(
-        _get_cluster_id(instances[0]),
-        _("Mount volumes to instances"), _count_volumes_to_attach(instances))
+        instances[0].cluster_id,
+        _("Mount volumes to instances"), _count_volumes_to_mount(instances))
 
     with context.ThreadGroup() as tg:
         for instance in instances:
@@ -180,11 +186,12 @@ def _find_instance_volume_devices(instance):
 
 @cpo.event_wrapper(mark_successful_on_exit=True)
 def _mount_volume_to_node(instance, idx, device):
-    LOG.debug("Mounting volume %s to instance %s" %
-              (device, instance.instance_name))
+    LOG.debug("Mounting volume {device} to instance {id}".format(
+              device=device, id=instance.instance_id))
     mount_point = instance.node_group.storage_paths()[idx]
     _mount_volume(instance, device, mount_point)
-    LOG.debug("Mounted volume to instance %s" % instance.instance_id)
+    LOG.debug("Mounted volume to instance {id}".format(
+        id=instance.instance_id))
 
 
 def _mount_volume(instance, device_path, mount_point):
@@ -205,8 +212,8 @@ def _mount_volume(instance, device_path, mount_point):
             r.execute_command('sudo mount %s %s %s' %
                               (mount_opts, device_path, mount_point))
         except Exception:
-            LOG.error(_LE("Error mounting volume to instance %s"),
-                      instance.instance_id)
+            LOG.error(_LE("Error mounting volume to instance {id}")
+                      .format(id=instance.instance_id))
             raise
 
 
@@ -219,34 +226,35 @@ def detach_from_instance(instance):
 def _detach_volume(instance, volume_id):
     volume = cinder.get_volume(volume_id)
     try:
-        LOG.debug("Detaching volume %s from instance %s" % (
-            volume_id, instance.instance_name))
+        LOG.debug("Detaching volume {id}  from instance {instance}".format(
+                  id=volume_id, instance=instance.instance_name))
         nova.client().volumes.delete_server_volume(instance.instance_id,
                                                    volume_id)
     except Exception:
-        LOG.exception(_LE("Can't detach volume %s"), volume.id)
+        LOG.error(_LE("Can't detach volume {id}").format(id=volume.id))
 
     detach_timeout = CONF.detach_volume_timeout
-    LOG.debug("Waiting %d seconds to detach %s volume" % (detach_timeout,
-                                                          volume_id))
+    LOG.debug("Waiting {timeout} seconds to detach {id} volume".format(
+              timeout=detach_timeout, id=volume_id))
     s_time = tu.utcnow()
     while tu.delta_seconds(s_time, tu.utcnow()) < detach_timeout:
         volume = cinder.get_volume(volume_id)
         if volume.status not in ['available', 'error']:
             context.sleep(2)
         else:
-            LOG.debug("Volume %s has been detached" % volume_id)
+            LOG.debug("Volume {id} has been detached".format(id=volume_id))
             return
     else:
-        LOG.warn(_LW("Can't detach volume %(volume)s. "
-                     "Current status of volume: %(status)s"),
-                 {'volume': volume_id, 'status': volume.status})
+        LOG.warning(_LW("Can't detach volume {volume}. "
+                        "Current status of volume: {status}").format(
+                            volume=volume_id, status=volume.status))
 
 
 def _delete_volume(volume_id):
-    LOG.debug("Deleting volume %s" % volume_id)
+    LOG.debug("Deleting volume {volume}".format(volume=volume_id))
     volume = cinder.get_volume(volume_id)
     try:
         volume.delete()
     except Exception:
-        LOG.exception(_LE("Can't delete volume %s"), volume.id)
+        LOG.error(_LE("Can't delete volume {volume}").format(
+            volume=volume.id))

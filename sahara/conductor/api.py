@@ -15,7 +15,7 @@
 
 """Handles all requests to the conductor service."""
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from sahara.conductor import manager
@@ -62,9 +62,10 @@ class LocalApi(object):
     # Cluster ops
 
     @r.wrap(r.ClusterResource)
-    def cluster_get(self, context, cluster):
+    def cluster_get(self, context, cluster, show_progress=False):
         """Return the cluster or None if it does not exist."""
-        return self._manager.cluster_get(context, _get_id(cluster))
+        return self._manager.cluster_get(
+            context, _get_id(cluster), show_progress)
 
     @r.wrap(r.ClusterResource)
     def cluster_get_all(self, context, **kwargs):
@@ -179,13 +180,27 @@ class LocalApi(object):
         """
         return self._manager.cluster_template_create(context, values)
 
-    def cluster_template_destroy(self, context, cluster_template):
+    def cluster_template_destroy(self, context, cluster_template,
+                                 ignore_default=False):
         """Destroy the cluster template or raise if it does not exist.
 
         :returns: None
         """
         self._manager.cluster_template_destroy(context,
-                                               _get_id(cluster_template))
+                                               _get_id(cluster_template),
+                                               ignore_default)
+
+    @r.wrap(r.ClusterTemplateResource)
+    def cluster_template_update(self, context, id, cluster_template,
+                                ignore_default=False):
+        """Update the cluster template or raise if it does not exist.
+
+        :returns: the updated cluster template
+        """
+        return self._manager.cluster_template_update(context,
+                                                     id,
+                                                     cluster_template,
+                                                     ignore_default)
 
     # Node Group Template ops
 
@@ -212,13 +227,25 @@ class LocalApi(object):
         """
         return self._manager.node_group_template_create(context, values)
 
-    def node_group_template_destroy(self, context, node_group_template):
+    def node_group_template_destroy(self, context, node_group_template,
+                                    ignore_default=False):
         """Destroy the node group template or raise if it does not exist.
 
         :returns: None
         """
         self._manager.node_group_template_destroy(context,
-                                                  _get_id(node_group_template))
+                                                  _get_id(node_group_template),
+                                                  ignore_default)
+
+    @r.wrap(r.NodeGroupTemplateResource)
+    def node_group_template_update(self, context, id, values,
+                                   ignore_default=False):
+        """Update a node group template from the values dictionary.
+
+        :returns: the updated node group template
+        """
+        return self._manager.node_group_template_update(context, id, values,
+                                                        ignore_default)
 
     # Data Source ops
 
@@ -344,6 +371,15 @@ class LocalApi(object):
                 return binary["name"]
         return None
 
+    def job_lib_names(self, context, job):
+        """Return the name of all job lib binaries or an empty list.
+
+        :param job: This is expected to be a Job object
+        """
+        lib_ids = job.libs or []
+        binaries = (self.job_binary_get(context, lib_id) for lib_id in lib_ids)
+        return [binary["name"] for binary in binaries if binary is not None]
+
     # JobBinary ops
 
     @r.wrap(r.JobBinary)
@@ -406,31 +442,24 @@ class LocalApi(object):
     # Events ops
 
     def cluster_provision_step_add(self, context, cluster_id, values):
-        """Create a cluster assigned ProvisionStep
-
-        from the values dictionary
-        """
+        """Create a provisioning step assigned to cluster from values dict."""
         return self._manager.cluster_provision_step_add(
             context, cluster_id, values)
 
-    def cluster_provision_step_update(self, context, provision_step, values):
-        """Update the ProvisionStep from the values dictionary."""
-        self._manager.cluster_provision_step_update(
-            context, provision_step, values)
-
-    def cluster_provision_step_get_events(self, context, provision_step):
-        """Return all events from the specified ProvisionStep."""
-        return self._manager.cluster_provision_step_get_events(
+    def cluster_provision_step_update(self, context, provision_step):
+        """Update the cluster provisioning step."""
+        return self._manager.cluster_provision_step_update(
             context, provision_step)
 
-    def cluster_provision_step_remove_events(self, context, provision_step):
-        """Delete all event from the specified ProvisionStep."""
-        self._manager.cluster_provision_step_remove_events(
-            context, provision_step)
+    def cluster_provision_progress_update(self, context, cluster_id):
+        """Return cluster with provision progress updated field."""
+        return self._manager.cluster_provision_progress_update(
+            context, cluster_id)
 
     def cluster_event_add(self, context, provision_step, values):
-        """Assign new event to the specified ProvisionStep."""
-        self._manager.cluster_event_add(context, provision_step, values)
+        """Assign new event to the specified provision step."""
+        return self._manager.cluster_event_add(
+            context, provision_step, values)
 
 
 class RemoteApi(LocalApi):

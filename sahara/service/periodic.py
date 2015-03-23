@@ -15,14 +15,14 @@
 
 import random
 
-from oslo.config import cfg
-from oslo.utils import timeutils
+from oslo_config import cfg
 from oslo_log import log
+from oslo_utils import timeutils
 import six
 
 from sahara import conductor as c
 from sahara import context
-from sahara.i18n import _LI
+from sahara.i18n import _LW
 from sahara.openstack.common import periodic_task
 from sahara.openstack.common import threadgroup
 from sahara.service.edp import job_manager
@@ -52,12 +52,60 @@ periodic_opts = [
                help='Minimal "lifetime" in seconds for a transient cluster. '
                     'Cluster is guaranteed to be "alive" within this time '
                     'period.'),
+    cfg.IntOpt('cleanup_time_for_incomplete_clusters',
+               default=0,
+               help='Maximal time (in hours) for clusters allowed to be in '
+                    'states other than "Active", "Deleting" or "Error". If a '
+                    'cluster is not in "Active", "Deleting" or "Error" state '
+                    'and last update of it was longer than '
+                    '"cleanup_time_for_incomplete_clusters" hours ago then it '
+                    'will be deleted automatically. (0 value means that '
+                    'automatic clean up is disabled).')
 ]
 
 CONF = cfg.CONF
 CONF.register_opts(periodic_opts)
 
 conductor = c.API
+
+
+def get_time_since_last_update(cluster):
+    cluster_updated_at = timeutils.normalize_time(
+        timeutils.parse_isotime(cluster.updated_at))
+    current_time = timeutils.utcnow()
+    spacing = timeutils.delta_seconds(cluster_updated_at,
+                                      current_time)
+    return spacing
+
+
+def terminate_cluster(ctx, cluster, description):
+    if CONF.use_identity_api_v3:
+        trusts.use_os_admin_auth_token(cluster)
+
+        LOG.debug('Terminating {description} cluster {cluster} '
+                  'in "{status}" state with id {id}'
+                  .format(cluster=cluster.name,
+                          id=cluster.id,
+                          status=cluster.status,
+                          description=description))
+
+        try:
+            ops.terminate_cluster(cluster.id)
+        except Exception as e:
+            LOG.warning(_LW('Failed to terminate {description} cluster '
+                            '{cluster} in "{status}" state with id {id}: '
+                            '{error}.').format(cluster=cluster.name,
+                                               id=cluster.id,
+                                               error=six.text_type(e),
+                                               status=cluster.status,
+                                               description=description))
+
+    else:
+        if cluster.status != 'AwaitingTermination':
+            conductor.cluster_update(
+                ctx,
+                cluster,
+                {'status': 'AwaitingTermination'})
 
 
 def _make_periodic_tasks():
@@ -79,7 +127,7 @@ def _make_periodic_tasks():
             context.set_ctx(None)
 
         @periodic_task.periodic_task(spacing=90)
-        def terminate_unneeded_clusters(self, ctx):
+        def terminate_unneeded_transient_clusters(self, ctx):
             LOG.debug('Terminating unneeded transient clusters')
             ctx = context.get_admin_context()
             context.set_ctx(ctx)
@@ -94,36 +142,13 @@ def _make_periodic_tasks():
                 if jc > 0:
                     continue
 
-                cluster_updated_at = timeutils.normalize_time(
-                    timeutils.parse_isotime(cluster.updated_at))
-                current_time = timeutils.utcnow()
-                spacing = timeutils.delta_seconds(cluster_updated_at,
-                                                  current_time)
+                spacing = get_time_since_last_update(cluster)
                 if spacing < CONF.min_transient_cluster_active_time:
                     continue
 
-                if CONF.use_identity_api_v3:
-                    trusts.use_os_admin_auth_token(cluster)
-
-                    LOG.info(_LI('Terminating transient cluster %(cluster)s '
-                                 'with id %(id)s'),
-                             {'cluster': cluster.name, 'id': cluster.id})
-
-                    try:
-                        ops.terminate_cluster(cluster.id)
-                    except Exception as e:
-                        LOG.info(_LI('Failed to terminate transient cluster '
-                                 '%(cluster)s with id %(id)s: %(error)s.'),
-                                 {'cluster': cluster.name,
-                                  'id': cluster.id,
-                                  'error': six.text_type(e)})
-
-                else:
-                    if cluster.status != 'AwaitingTermination':
-                        conductor.cluster_update(
-                            ctx,
-                            cluster,
-                            {'status': 'AwaitingTermination'})
+                terminate_cluster(ctx, cluster, description='transient')
+                # Add event log info cleanup
+                context.ctx().current_instance_info = context.InstanceInfo()
             context.set_ctx(None)
 
         @periodic_task.periodic_task(spacing=zombie_task_spacing)
@@ -136,9 +161,34 @@ def _make_periodic_tasks():
                     je = conductor.job_execution_get(ctx, je_id)
                     if je is None or (je.info['status'] in
                                       edp.JOB_STATUSES_TERMINATED):
-                        LOG.debug('Found zombie proxy user {0}'.format(
-                            user.name))
+                        LOG.debug('Found zombie proxy user {username}'.format(
+                            username=user.name))
                         p.proxy_user_delete(user_id=user.id)
+            context.set_ctx(None)
+
+        @periodic_task.periodic_task(spacing=3600)
+        def terminate_incomplete_clusters(self, ctx):
+            if CONF.cleanup_time_for_incomplete_clusters <= 0:
+                return
+
+            LOG.debug('Terminating old clusters in non-final state')
+            ctx = context.get_admin_context()
+
+            context.set_ctx(ctx)
+            # NOTE(alazarev) Retrieving all clusters once in hour for now.
+            # Criteria support need to be implemented in sahara db API to
+            # have SQL filtering.
+            for cluster in conductor.cluster_get_all(ctx):
+                if cluster.status in ['Active', 'Error', 'Deleting']:
+                    continue
+
+                spacing = get_time_since_last_update(cluster)
+                if spacing < CONF.cleanup_time_for_incomplete_clusters * 3600:
+                    continue
+
+                terminate_cluster(ctx, cluster, description='incomplete')
+                # Add event log info cleanup
+                context.ctx().current_instance_info = context.InstanceInfo()
             context.set_ctx(None)
 
     return SaharaPeriodicTasks()
@@ -148,8 +198,8 @@ def setup():
     if CONF.periodic_enable:
         if CONF.periodic_fuzzy_delay:
             initial_delay = random.randint(0, CONF.periodic_fuzzy_delay)
-            LOG.debug("Starting periodic tasks with initial delay '%s' "
-                      "seconds", initial_delay)
+            LOG.debug("Starting periodic tasks with initial delay {seconds} "
+                      "seconds".format(seconds=initial_delay))
         else:
             initial_delay = None
 

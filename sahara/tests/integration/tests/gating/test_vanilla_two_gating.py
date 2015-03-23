@@ -42,7 +42,6 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
         super(VanillaTwoGatingTest, self).setUp()
         self.cluster_id = None
         self.cluster_template_id = None
-        self.ng_template_ids = []
 
     def get_plugin_config(self):
         return cfg.ITConfig().vanilla_two_config
@@ -71,9 +70,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             'node_configs': self.ng_params
         }
         self.ng_tmpl_nm_dn_id = self.create_node_group_template(**template)
-        self.ng_template_ids.append(self.ng_tmpl_nm_dn_id)
-        self.addCleanup(self.delete_objects,
-                        node_group_template_id_list=[self.ng_tmpl_nm_dn_id])
+        self.addCleanup(self.delete_node_group_template, self.ng_tmpl_nm_dn_id)
 
     @b.errormsg("Failure while 'nm' node group template creation: ")
     def _create_nm_ng_template(self):
@@ -89,9 +86,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             'node_configs': self.ng_params
         }
         self.ng_tmpl_nm_id = self.create_node_group_template(**template)
-        self.ng_template_ids.append(self.ng_tmpl_nm_id)
-        self.addCleanup(self.delete_objects,
-                        node_group_template_id_list=[self.ng_tmpl_nm_id])
+        self.addCleanup(self.delete_node_group_template, self.ng_tmpl_nm_id)
 
     @b.errormsg("Failure while 'dn' node group template creation: ")
     def _create_dn_ng_template(self):
@@ -107,9 +102,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             'node_configs': self.ng_params
         }
         self.ng_tmpl_dn_id = self.create_node_group_template(**template)
-        self.ng_template_ids.append(self.ng_tmpl_dn_id)
-        self.addCleanup(self.delete_objects,
-                        node_group_template_id_list=[self.ng_tmpl_dn_id])
+        self.addCleanup(self.delete_node_group_template, self.ng_tmpl_dn_id)
 
     @b.errormsg("Failure while cluster template creation: ")
     def _create_cluster_template(self):
@@ -162,8 +155,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             'net_id': self.internal_neutron_net
         }
         self.cluster_template_id = self.create_cluster_template(**template)
-        self.addCleanup(self.delete_objects,
-                        cluster_template_id=self.cluster_template_id)
+        self.addCleanup(self.delete_cluster_template, self.cluster_template_id)
 
     @b.errormsg("Failure while cluster creation: ")
     def _create_cluster(self):
@@ -177,7 +169,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             'cluster_configs': {}
         }
         cluster_id = self.create_cluster(**cluster)
-        self.addCleanup(self.delete_objects, cluster_id=cluster_id)
+        self.addCleanup(self.delete_cluster, cluster_id)
         self.poll_cluster_state(cluster_id)
         self.cluster_info = self.get_cluster_info(self.plugin_config)
         self.await_active_workers_for_namenode(self.cluster_info['node_info'],
@@ -212,6 +204,8 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             yield self._edp_java_test()
         if utils_edp.JOB_TYPE_HIVE not in skipped_edp_job_types:
             yield self._check_edp_hive()
+        if utils_edp.JOB_TYPE_SHELL not in skipped_edp_job_types:
+            yield self._edp_shell_test()
 
     # TODO(esikachev): Until fix bug 1413602
     def _run_edp_tests_after_scaling(self):
@@ -225,6 +219,8 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             yield self._edp_mapreduce_streaming_test()
         if utils_edp.JOB_TYPE_JAVA not in skipped_edp_job_types:
             yield self._edp_java_test()
+        if utils_edp.JOB_TYPE_SHELL not in skipped_edp_job_types:
+            yield self._edp_shell_test()
 
     def _edp_pig_test(self):
         pig_job = self.edp_info.read_pig_example_script()
@@ -263,6 +259,15 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
             job_data_list=[],
             lib_data_list=[{'jar': java_jar}],
             configs=java_configs)
+
+    def _edp_shell_test(self):
+        shell_script_data = self.edp_info.read_shell_example_script()
+        shell_file_data = self.edp_info.read_shell_example_text_file()
+        return self.edp_testing(
+            job_type=utils_edp.JOB_TYPE_SHELL,
+            job_data_list=[{'script': shell_script_data}],
+            lib_data_list=[{'text': shell_file_data}],
+            configs=self.edp_info.shell_example_configs())
 
     def _check_edp_hive(self):
         return self.check_edp_hive()
@@ -328,6 +333,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
         self._create_dn_ng_template()
         self._create_cluster_template()
         self._create_cluster()
+        self._test_event_log(self.cluster_id)
 
         self._check_cinder()
         self._check_mapreduce()
@@ -336,6 +342,7 @@ class VanillaTwoGatingTest(cluster_configs.ClusterConfigTest,
 
         if not self.plugin_config.SKIP_SCALING_TEST:
             self._check_scaling()
+            self._test_event_log(self.cluster_id)
             self._check_cinder_after_scaling()
             self._check_mapreduce_after_scaling()
             self._check_swift_after_scaling()

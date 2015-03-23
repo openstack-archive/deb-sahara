@@ -33,7 +33,7 @@ class TestMessagingSetup(base.SaharaTestCase):
         self.override_config('enable_notifications', True)
 
     def _install(self):
-        messaging.setup('fake://', optional=True)
+        messaging.setup()
         self.assertNotEqual(None, messaging.TRANSPORT)
         self.assertNotEqual(None, messaging.NOTIFIER)
 
@@ -42,7 +42,7 @@ class TestMessagingSetup(base.SaharaTestCase):
             messaging.TRANSPORT.cleanup()
             messaging.TRANSPORT = messaging.NOTIFIER = None
 
-    @mock.patch('oslo.messaging.set_transport_defaults')
+    @mock.patch('oslo_messaging.set_transport_defaults')
     def test_set_defaults(self, mock_transport):
         self._install()
 
@@ -53,26 +53,21 @@ class TestMessagingSetup(base.SaharaTestCase):
 
         self._remove_install()
 
-    @mock.patch('oslo.messaging.get_transport')
+    @mock.patch('oslo_messaging.get_transport')
     def test_get_transport(self, mock_transport):
         self._install()
 
         expected = [
-            mock.call(main.CONF, 'fake://', aliases=_ALIASES)
+            mock.call(main.CONF, aliases=_ALIASES)
         ]
         self.assertEqual(expected, mock_transport.call_args_list)
 
         self._remove_install()
 
-    @mock.patch('oslo.messaging.Notifier')
+    @mock.patch('oslo_messaging.Notifier')
     def test_notifier(self, mock_init):
         self._install()
 
-        serializer = messaging.SERIALIZER
-        expected = [
-            mock.call(messaging.TRANSPORT, serializer=serializer)
-        ]
-
-        self.assertEqual(expected, mock_init.call_args_list)
+        self.assertEqual(1, mock_init.call_count)
 
         self._remove_install()

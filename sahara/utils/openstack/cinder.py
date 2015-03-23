@@ -17,11 +17,12 @@
 
 from cinderclient.v1 import client as cinder_client_v1
 from cinderclient.v2 import client as cinder_client_v2
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from sahara import context
-from sahara.i18n import _
+from sahara import exceptions as ex
+from sahara.i18n import _LW
 from sahara.utils.openstack import base
 
 
@@ -50,15 +51,16 @@ CONF.register_opts(opts, group=cinder_group)
 
 def validate_config():
     if CONF.cinder.api_version == 1:
-        LOG.warn(_('The Cinder v1 API is deprecated and will be removed after '
-                   'the Juno release.  You should set cinder.api_version=2 in '
-                   'your sahara.conf file.'))
+        LOG.warning(_LW('The Cinder v1 API is deprecated and will be removed '
+                        'after the Juno release.  You should set '
+                        'cinder.api_version=2 in your sahara.conf file.'))
     elif CONF.cinder.api_version != 2:
-        LOG.warn(_('Unsupported Cinder API version: %(bad)s.  Please set a '
-                   'correct value for cinder.api_version in your sahara.conf '
-                   'file (currently supported versions are: %(supported)s).  '
-                   'Falling back to Cinder API version 2.'),
-                 {'bad': CONF.cinder.api_version, 'supported': [1, 2]})
+        LOG.warning(_LW('Unsupported Cinder API version: {bad}.  Please set a '
+                        'correct value for cinder.api_version in your '
+                        'sahara.conf file (currently supported versions are: '
+                        '{supported}). Falling back to Cinder API version 2.')
+                    .format(bad=CONF.cinder.api_version,
+                            supported=[1, 2]))
         CONF.set_override('api_version', 2, group='cinder')
 
 
@@ -81,6 +83,18 @@ def client():
     cinder.client.management_url = volume_url
 
     return cinder
+
+
+def check_cinder_exists():
+    if CONF.cinder.api_version == 1:
+        service_type = 'volume'
+    else:
+        service_type = 'volumev2'
+    try:
+        base.url_for(context.current().service_catalog, service_type)
+        return True
+    except ex.SystemError:
+        return False
 
 
 def get_volumes():

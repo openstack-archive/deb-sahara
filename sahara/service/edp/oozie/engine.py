@@ -14,9 +14,10 @@
 # limitations under the License.
 
 import abc
+import os
 import uuid
 
-from oslo.config import cfg
+from oslo_config import cfg
 import six
 
 from sahara import conductor as c
@@ -49,15 +50,38 @@ class OozieJobEngine(base_engine.JobEngine):
         return o.OozieClient(self.get_oozie_server_uri(self.cluster),
                              self.get_oozie_server(self.cluster))
 
-    def _get_oozie_job_params(self, hdfs_user, path_to_workflow):
+    def _get_oozie_job_params(self, hdfs_user, path_to_workflow, oozie_params,
+                              use_hbase_lib):
+        app_path = "oozie.wf.application.path"
+        oozie_libpath_key = "oozie.libpath"
+        oozie_libpath = ""
         rm_path = self.get_resource_manager_uri(self.cluster)
         nn_path = self.get_name_node_uri(self.cluster)
+        hbase_common_lib_path = "%s%s" % (nn_path, h.HBASE_COMMON_LIB_PATH)
+
+        if use_hbase_lib:
+            if oozie_libpath_key in oozie_params:
+                oozie_libpath = "%s,%s" % (oozie_params.get(oozie_libpath_key,
+                                           ""), hbase_common_lib_path)
+            else:
+                oozie_libpath = hbase_common_lib_path
+
         job_parameters = {
             "jobTracker": rm_path,
             "nameNode": nn_path,
             "user.name": hdfs_user,
-            "oozie.wf.application.path": "%s%s" % (nn_path, path_to_workflow),
+            oozie_libpath_key: oozie_libpath,
+            app_path: "%s%s" % (nn_path, path_to_workflow),
             "oozie.use.system.libpath": "true"}
+
+        # Don't let the application path be overwritten, that can't
+        # possibly make any sense
+        if app_path in oozie_params:
+            del oozie_params[app_path]
+        if oozie_libpath_key in oozie_params:
+            del oozie_params[oozie_libpath_key]
+
+        job_parameters.update(oozie_params)
         return job_parameters
 
     def _upload_workflow_file(self, where, job_dir, wf_xml, hdfs_user):
@@ -94,6 +118,15 @@ class OozieJobEngine(base_engine.JobEngine):
 
         proxy_configs = updated_job_configs.get('proxy_configs')
         configs = updated_job_configs.get('configs', {})
+        use_hbase_lib = configs.get('edp.hbase_common_lib', {})
+
+        # Extract all the 'oozie.' configs so that they can be set in the
+        # job properties file. These are config values for Oozie itself,
+        # not the job code
+        oozie_params = {}
+        for k in list(configs):
+            if k.startswith('oozie.'):
+                oozie_params[k] = configs[k]
 
         for data_source in [input_source, output_source] + additional_sources:
             if data_source and data_source.type == 'hdfs':
@@ -119,7 +152,9 @@ class OozieJobEngine(base_engine.JobEngine):
                                                       wf_xml, hdfs_user)
 
         job_params = self._get_oozie_job_params(hdfs_user,
-                                                path_to_workflow)
+                                                path_to_workflow,
+                                                oozie_params,
+                                                use_hbase_lib)
 
         client = self._get_client()
         oozie_job_id = client.add_job(x.create_hadoop_xml(job_params),
@@ -160,9 +195,12 @@ class OozieJobEngine(base_engine.JobEngine):
         pass
 
     def validate_job_execution(self, cluster, job, data):
-        # All types except Java require input and output objects
-        # and Java require main class
-        if job.type in [edp.JOB_TYPE_JAVA]:
+        # Shell job type requires no specific fields
+        if job.type == edp.JOB_TYPE_SHELL:
+            return
+        # All other types except Java require input and output
+        # objects and Java require main class
+        if job.type == edp.JOB_TYPE_JAVA:
             j.check_main_class_present(data, job)
         else:
             j.check_data_sources(data, job)
@@ -182,7 +220,8 @@ class OozieJobEngine(base_engine.JobEngine):
                 edp.JOB_TYPE_JAVA,
                 edp.JOB_TYPE_MAPREDUCE,
                 edp.JOB_TYPE_MAPREDUCE_STREAMING,
-                edp.JOB_TYPE_PIG]
+                edp.JOB_TYPE_PIG,
+                edp.JOB_TYPE_SHELL]
 
     def _upload_job_files_to_hdfs(self, where, job_dir, job, configs,
                                   proxy_configs=None):
@@ -191,14 +230,15 @@ class OozieJobEngine(base_engine.JobEngine):
         builtin_libs = edp.get_builtin_binaries(job, configs)
         uploaded_paths = []
         hdfs_user = self.get_hdfs_user()
-        lib_dir = job_dir + '/lib'
+        job_dir_suffix = 'lib' if job.type != edp.JOB_TYPE_SHELL else ''
+        lib_dir = os.path.join(job_dir, job_dir_suffix)
 
         with remote.get_remote(where) as r:
             for main in mains:
                 raw_data = dispatch.get_raw_binary(main, proxy_configs)
                 h.put_file_to_hdfs(r, raw_data, main.name, job_dir, hdfs_user)
                 uploaded_paths.append(job_dir + '/' + main.name)
-            if len(libs) > 0:
+            if len(libs) and job_dir_suffix:
                 # HDFS 2.2.0 fails to put file if the lib dir does not exist
                 self.create_hdfs_dir(r, lib_dir)
             for lib in libs:

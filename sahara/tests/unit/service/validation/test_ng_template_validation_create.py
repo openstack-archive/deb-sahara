@@ -14,6 +14,7 @@
 # limitations under the License.
 
 from sahara.service import api
+from sahara.service.validations import node_group_template_schema as ngt_schema
 from sahara.service.validations import node_group_templates as nt
 from sahara.tests.unit.service.validation import utils as u
 
@@ -22,7 +23,7 @@ class TestNGTemplateCreateValidation(u.ValidationTestCase):
     def setUp(self):
         super(TestNGTemplateCreateValidation, self).setUp()
         self._create_object_fun = nt.check_node_group_template_create
-        self.scheme = nt.NODE_GROUP_TEMPLATE_SCHEMA
+        self.scheme = ngt_schema.NODE_GROUP_TEMPLATE_SCHEMA
         api.plugin_base.setup_plugins()
 
     def test_node_groups_create_required(self):
@@ -101,9 +102,8 @@ class TestNGTemplateCreateValidation(u.ValidationTestCase):
                 'node_processes': ['wrong_process']
             },
             bad_req_i=(1, 'INVALID_REFERENCE',
-                       "Plugin supports the following node procesess: ["
-                       "'datanode', 'hiveserver', 'jobtracker', 'namenode', "
-                       "'oozie', 'secondarynamenode', 'tasktracker']")
+                       "Plugin doesn't support the following node processes: "
+                       "['wrong_process']")
         )
 
     def test_ng_template_create_v_right(self):

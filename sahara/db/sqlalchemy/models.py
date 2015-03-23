@@ -78,10 +78,10 @@ class Cluster(mb.SaharaBase):
     cluster_template = relationship('ClusterTemplate',
                                     backref="clusters", lazy='joined')
 
-    def to_dict(self):
+    def to_dict(self, show_progress=False):
         d = super(Cluster, self).to_dict()
         d['node_groups'] = [ng.to_dict() for ng in self.node_groups]
-        d['provision_progress'] = [pp.to_dict() for pp in
+        d['provision_progress'] = [pp.to_dict(show_progress) for pp in
                                    self.provision_progress]
         return d
 
@@ -124,6 +124,7 @@ class NodeGroup(mb.SaharaBase):
     availability_zone = sa.Column(sa.String(255))
     open_ports = sa.Column(st.JsonListType())
     is_proxy_gateway = sa.Column(sa.Boolean())
+    volume_local_to_instance = sa.Column(sa.Boolean())
 
     def to_dict(self):
         d = super(NodeGroup, self).to_dict()
@@ -174,6 +175,7 @@ class ClusterTemplate(mb.SaharaBase):
     hadoop_version = sa.Column(sa.String(80), nullable=False)
     node_groups = relationship('TemplatesRelation', cascade="all,delete",
                                backref='cluster_template', lazy='joined')
+    is_default = sa.Column(sa.Boolean(), default=False)
 
     def to_dict(self):
         d = super(ClusterTemplate, self).to_dict()
@@ -211,6 +213,8 @@ class NodeGroupTemplate(mb.SaharaBase):
     auto_security_group = sa.Column(sa.Boolean())
     availability_zone = sa.Column(sa.String(255))
     is_proxy_gateway = sa.Column(sa.Boolean())
+    volume_local_to_instance = sa.Column(sa.Boolean())
+    is_default = sa.Column(sa.Boolean(), default=False)
 
 
 class TemplatesRelation(mb.SaharaBase):
@@ -247,6 +251,7 @@ class TemplatesRelation(mb.SaharaBase):
     auto_security_group = sa.Column(sa.Boolean())
     availability_zone = sa.Column(sa.String(255))
     is_proxy_gateway = sa.Column(sa.Boolean())
+    volume_local_to_instance = sa.Column(sa.Boolean())
 
 
 # EDP objects: DataSource, Job, Job Execution, JobBinary
@@ -290,7 +295,6 @@ class JobExecution(mb.SaharaBase):
     cluster_id = sa.Column(sa.String(36),
                            sa.ForeignKey('clusters.id'))
     info = sa.Column(st.JsonDictType())
-    progress = sa.Column(sa.Float)
     oozie_job_id = sa.Column(sa.String(100))
     return_code = sa.Column(sa.String(80))
     job_configs = sa.Column(st.JsonDictType())
@@ -412,11 +416,14 @@ class ClusterProvisionStep(mb.SaharaBase):
     tenant_id = sa.Column(sa.String(36))
     step_name = sa.Column(sa.String(80))
     step_type = sa.Column(sa.String(36))
-    completed = sa.Column(sa.Integer)
     total = sa.Column(sa.Integer)
     successful = sa.Column(sa.Boolean, nullable=True)
-    started_at = sa.Column(sa.DateTime())
-    completed_at = sa.Column(sa.DateTime())
     events = relationship('ClusterEvent', cascade="all,delete",
                           backref='ClusterProvisionStep',
                           lazy='joined')
+
+    def to_dict(self, show_progress):
+        d = super(ClusterProvisionStep, self).to_dict()
+        if show_progress:
+            d['events'] = [event.to_dict() for event in self.events]
+        return d

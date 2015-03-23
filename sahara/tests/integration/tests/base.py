@@ -20,8 +20,8 @@ import time
 import fixtures
 from keystoneclient.v2_0 import client as keystone_client
 from neutronclient.v2_0 import client as neutron_client
-from novaclient.v1_1 import client as nova_client
-from oslo.utils import excutils
+from novaclient.v2 import client as nova_client
+from oslo_utils import excutils
 from oslo_utils import uuidutils
 from oslotest import base
 from saharaclient.api import base as client_base
@@ -80,6 +80,7 @@ class ITestCase(testcase.WithAttributes, base.BaseTestCase):
         self._setup_volume_params()
         self._setup_flavor()
         self._setup_ssh_access()
+        self.TEST_EVENT_LOG = True
 
         self._image_id, self._ssh_username = (
             self.get_image_id_and_ssh_username())
@@ -237,7 +238,7 @@ class ITestCase(testcase.WithAttributes, base.BaseTestCase):
         #               '172.18.168.242': ['namenode', 'jobtracker'],
         #               '172.18.168.167': ['datanode']
         #       },
-        #       'plugin_config': <oslo.config.cfg.GroupAttr object at 0x215d9d>
+        #       'plugin_config': <oslo_config.cfg.GroupAttr object at 0x215d9d>
         # }
         return {
             'cluster_id': self.cluster_id,
@@ -421,6 +422,36 @@ class ITestCase(testcase.WithAttributes, base.BaseTestCase):
                 % self.common_config.HDFS_INITIALIZATION_TIMEOUT)
         self.close_ssh_connection()
 
+    @skip_test('TEST_EVENT_LOG',
+               'Testing event log was skipped until 0.7.8 client release')
+    @errormsg("Failure while event log testing: ")
+    def _test_event_log(self, cluster_id):
+        cluster = self.sahara.clusters.get(cluster_id)
+        events = self.sahara.events.list(cluster_id)
+
+        invalid_steps = []
+        if not events:
+            events = []
+
+        for step in cluster.provision_progress:
+            if not step['successful']:
+                invalid_steps.append(step)
+
+        if len(invalid_steps) > 0 or len(events) > 0:
+            events_info = "\n".join(six.text_type(e) for e in events)
+            invalid_steps_info = "\n".join(six.text_type(e)
+                                           for e in invalid_steps)
+            steps_info = "\n".join(six.text_type(e)
+                                   for e in cluster.provision_progress)
+            self.fail(
+                "Issues with event log work: "
+                "\n Not removed events: \n\n {events}"
+                "\n Incomplete steps: \n\n {invalid_steps}"
+                "\n All steps: \n\n {steps}".format(
+                    events=events_info,
+                    steps=steps_info,
+                    invalid_steps=invalid_steps_info))
+
 # --------------------------------Remote---------------------------------------
 
     def connect_to_swift(self):
@@ -450,6 +481,19 @@ class ITestCase(testcase.WithAttributes, base.BaseTestCase):
     @staticmethod
     def close_ssh_connection():
         ssh_remote._cleanup()
+
+    def transfer_helper_conf_file_to_node(self, file_name):
+        file = open('sahara/tests/integration/tests/resources/%s' % file_name
+                    ).read()
+        try:
+            self.write_file_to(file_name, file)
+
+        except Exception as e:
+            with excutils.save_and_reraise_exception():
+                print(
+                    '\nFailure while conf file transferring '
+                    'to cluster node: ' + six.text_type(e)
+                )
 
     def transfer_helper_script_to_node(self, script_name, parameter_list=None):
         script = open('sahara/tests/integration/tests/resources/%s'
@@ -604,40 +648,37 @@ class ITestCase(testcase.WithAttributes, base.BaseTestCase):
                     % self.common_config.INTERNAL_NEUTRON_NETWORK
                 )
 
-    def delete_objects(self, cluster_id=None,
-                       cluster_template_id=None,
-                       node_group_template_id_list=None):
+    def delete_cluster(self, cluster_id):
         if not self.common_config.RETAIN_CLUSTER_AFTER_TEST:
-            if cluster_id:
-                try:
-                    self.sahara.clusters.delete(cluster_id)
-                except client_base.APIException:
-                    # cluster in deleting state or deleted
-                    pass
+            return self.delete_resource(self.sahara.clusters.delete,
+                                        cluster_id)
 
-                try:
-                    # waiting roughly for 300 seconds for cluster to terminate
-                    with fixtures.Timeout(300, gentle=True):
-                        while True:
-                            try:
-                                self.sahara.clusters.get(cluster_id)
-                            except client_base.APIException:
-                                # Cluster is finally deleted
-                                break
+    def delete_cluster_template(self, cluster_template_id):
+        if not self.common_config.RETAIN_CLUSTER_AFTER_TEST:
+            return self.delete_resource(self.sahara.cluster_templates.delete,
+                                        cluster_template_id)
 
-                            time.sleep(5)
+    def delete_node_group_template(self, node_group_template_id):
+        if not self.common_config.RETAIN_CLUSTER_AFTER_TEST:
+            return self.delete_resource(
+                self.sahara.node_group_templates.delete,
+                node_group_template_id)
 
-                except fixtures.TimeoutException:
-                    self.fail('Cluster failed to terminate in 300 seconds: '
-                              '%s' % cluster_id)
+    def is_resource_deleted(self, method, *args, **kwargs):
+        try:
+            method(*args, **kwargs)
+        except client_base.APIException as ex:
+            return ex.error_code == 404
 
-            if cluster_template_id:
-                self.sahara.cluster_templates.delete(cluster_template_id)
-            if node_group_template_id_list:
-                for node_group_template_id in node_group_template_id_list:
-                    self.sahara.node_group_templates.delete(
-                        node_group_template_id
-                    )
+        return False
+
+    def delete_resource(self, method, *args, **kwargs):
+        with fixtures.Timeout(self.common_config.DELETE_RESOURCE_TIMEOUT*60,
+                              gentle=True):
+            while True:
+                if self.is_resource_deleted(method, *args, **kwargs):
+                    break
+                time.sleep(5)
 
     @staticmethod
     def delete_swift_container(swift, container):

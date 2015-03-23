@@ -15,12 +15,9 @@
 
 import os
 
-import eventlet
-from eventlet import wsgi
 import flask
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log
-from oslo_log import loggers
 import six
 import stevedore
 from werkzeug import exceptions as werkzeug_exceptions
@@ -33,8 +30,7 @@ from sahara.api import v11 as api_v11
 from sahara import config
 from sahara import context
 from sahara.i18n import _LI
-from sahara.i18n import _LW
-from sahara.openstack.common import sslutils
+from sahara.openstack.common import systemd
 from sahara.plugins import base as plugins_base
 from sahara.service import api as service_api
 from sahara.service.edp import api as edp_api
@@ -44,6 +40,7 @@ from sahara.utils import api as api_utils
 from sahara.utils.openstack import cinder
 from sahara.utils import remote
 from sahara.utils import rpc as messaging
+from sahara.utils import wsgi
 
 
 LOG = log.getLogger(__name__)
@@ -59,7 +56,10 @@ opts = [
     cfg.StrOpt('remote',
                default='ssh',
                help='A method for Sahara to execute commands '
-                    'on VMs.')
+                    'on VMs.'),
+    cfg.IntOpt('api_workers', default=0,
+               help="Number of workers for Sahara API service (0 means "
+                    "all-in-one-thread configuration).")
 ]
 
 CONF = cfg.CONF
@@ -78,19 +78,15 @@ def setup_common(possible_topdir, service_name):
     config.parse_configs(config_files)
     log.setup(CONF, "sahara")
 
-    LOG.info(_LI('Starting Sahara %s'), service_name)
-
     # Validate other configurations (that may produce logs) here
     cinder.validate_config()
 
-    messaging.setup()
-
-    if service_name != 'all-in-one':
-        LOG.warn(
-            _LW("Distributed mode is in the alpha state, it's recommended to "
-                "use all-in-one mode by running 'sahara-all' binary."))
+    if service_name != 'all-in-one' or cfg.CONF.enable_notifications:
+        messaging.setup()
 
     plugins_base.setup_plugins()
+
+    LOG.info(_LI('Sahara {service} started').format(service=service_name))
 
 
 def setup_sahara_api(mode):
@@ -166,6 +162,7 @@ def make_app():
 
 
 def _load_driver(namespace, name):
+    # TODO(starodubcevna): add LI here in the future for logging improvement
     extension_manager = stevedore.DriverManager(
         namespace=namespace,
         name=name,
@@ -178,29 +175,27 @@ def _load_driver(namespace, name):
 def _get_infrastructure_engine():
     """Import and return one of sahara.service.*_engine.py modules."""
 
-    LOG.info(_LI("Loading '%s' infrastructure engine"),
-             CONF.infrastructure_engine)
+    LOG.debug("Infrastructure engine {engine} is loading".format(
+        engine=CONF.infrastructure_engine))
 
     return _load_driver('sahara.infrastructure.engine',
                         CONF.infrastructure_engine)
 
 
 def _get_remote_driver():
-    LOG.info(_LI("Loading '%s' remote"), CONF.remote)
+    LOG.debug("Remote {remote} is loading".format(remote=CONF.remote))
 
     return _load_driver('sahara.remote', CONF.remote)
 
 
 def _get_ops_driver(driver_name):
-    LOG.info(_LI("Loading '%s' ops"), driver_name)
+    LOG.debug("Ops {driver} is loading".format(driver=driver_name))
 
     return _load_driver('sahara.run.mode', driver_name)
 
 
 def start_server(app):
-    sock = eventlet.listen((cfg.CONF.host, cfg.CONF.port), backlog=500)
-    if sslutils.is_enabled():
-        LOG.info(_LI("Using HTTPS for port %s"), cfg.CONF.port)
-        sock = sslutils.wrap(sock)
-
-    wsgi.server(sock, app, log=loggers.WritableLogger(LOG), debug=False)
+    server = wsgi.Server()
+    server.start(app)
+    systemd.notify_once()
+    server.wait()

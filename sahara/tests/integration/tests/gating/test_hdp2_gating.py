@@ -35,7 +35,6 @@ class HDP2GatingTest(swift.SwiftTest, scaling.ScalingTest,
         super(HDP2GatingTest, self).setUp()
         self.cluster_id = None
         self.cluster_template_id = None
-        self.ng_template_ids = []
 
     def get_plugin_config(self):
         return cfg.ITConfig().hdp2_config
@@ -52,9 +51,7 @@ class HDP2GatingTest(swift.SwiftTest, scaling.ScalingTest,
             'node_configs': {}
         }
         self.ng_tmpl_rm_nn_id = self.create_node_group_template(**template)
-        self.ng_template_ids.append(self.ng_tmpl_rm_nn_id)
-        self.addCleanup(self.delete_objects,
-                        node_group_template_id_list=[self.ng_tmpl_rm_nn_id])
+        self.addCleanup(self.delete_node_group_template, self.ng_tmpl_rm_nn_id)
 
     @b.errormsg("Failure while 'nm-dn' node group template creation: ")
     def _create_nm_dn_ng_template(self):
@@ -68,9 +65,7 @@ class HDP2GatingTest(swift.SwiftTest, scaling.ScalingTest,
             'node_configs': {}
         }
         self.ng_tmpl_nm_dn_id = self.create_node_group_template(**template)
-        self.ng_template_ids.append(self.ng_tmpl_nm_dn_id)
-        self.addCleanup(self.delete_objects,
-                        node_group_template_id_list=[self.ng_tmpl_nm_dn_id])
+        self.addCleanup(self.delete_node_group_template, self.ng_tmpl_nm_dn_id)
 
     @b.errormsg("Failure while cluster template creation: ")
     def _create_cluster_template(self):
@@ -98,8 +93,7 @@ class HDP2GatingTest(swift.SwiftTest, scaling.ScalingTest,
             'net_id': self.internal_neutron_net
         }
         self.cluster_template_id = self.create_cluster_template(**template)
-        self.addCleanup(self.delete_objects,
-                        cluster_template_id=self.cluster_template_id)
+        self.addCleanup(self.delete_cluster_template, self.cluster_template_id)
 
     @b.errormsg("Failure while cluster creation: ")
     def _create_cluster(self):
@@ -113,7 +107,7 @@ class HDP2GatingTest(swift.SwiftTest, scaling.ScalingTest,
             'cluster_configs': {}
         }
         cluster_id = self.create_cluster(**cluster)
-        self.addCleanup(self.delete_objects, cluster_id=cluster_id)
+        self.addCleanup(self.delete_cluster, cluster_id)
         self.poll_cluster_state(cluster_id)
         self.cluster_info = self.get_cluster_info(self.plugin_config)
         self.await_active_workers_for_namenode(self.cluster_info['node_info'],
@@ -131,7 +125,6 @@ class HDP2GatingTest(swift.SwiftTest, scaling.ScalingTest,
         # check pig
         pig_job = self.edp_info.read_pig_example_script()
         pig_lib = self.edp_info.read_pig_example_jar()
-
         yield self.edp_testing(
             job_type=utils_edp.JOB_TYPE_PIG,
             job_data_list=[{'pig': pig_job}],
@@ -165,6 +158,15 @@ class HDP2GatingTest(swift.SwiftTest, scaling.ScalingTest,
             job_data_list=[],
             lib_data_list=[{'jar': java_jar}],
             configs=java_configs)
+
+        # check shell
+        shell_script_data = self.edp_info.read_shell_example_script()
+        shell_file_data = self.edp_info.read_shell_example_text_file()
+        yield self.edp_testing(
+            job_type=utils_edp.JOB_TYPE_SHELL,
+            job_data_list=[{'script': shell_script_data}],
+            lib_data_list=[{'text': shell_file_data}],
+            configs=self.edp_info.shell_example_configs())
 
     @b.errormsg("Failure while cluster scaling: ")
     def _check_scaling(self):
@@ -207,12 +209,13 @@ class HDP2GatingTest(swift.SwiftTest, scaling.ScalingTest,
         self._create_nm_dn_ng_template()
         self._create_cluster_template()
         self._create_cluster()
-
+        self._test_event_log(self.cluster_id)
         self._check_swift()
         self._check_edp()
 
         if not self.plugin_config.SKIP_SCALING_TEST:
             self._check_scaling()
+            self._test_event_log(self.cluster_id)
             self._check_swift_after_scaling()
             self._check_edp_after_scaling()
 

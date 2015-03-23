@@ -13,16 +13,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
-from sahara.i18n import _LI
+from sahara.i18n import _
+from sahara.i18n import _LW
 from sahara.plugins.vanilla.hadoop2 import config_helper as c_helper
 from sahara.plugins.vanilla.hadoop2 import oozie_helper as o_helper
 from sahara.plugins.vanilla import utils as vu
 from sahara.swift import swift_helper as swift
 from sahara.topology import topology_helper as th
+from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import files as f
 from sahara.utils import proxy
 from sahara.utils import xmlutils as x
@@ -38,7 +40,7 @@ HADOOP_GROUP = 'hadoop'
 
 
 def configure_cluster(pctx, cluster):
-    LOG.debug("Configuring cluster \"%s\"", cluster.name)
+    LOG.debug("Configuring cluster {cluster}".format(cluster=cluster.name))
     if (CONF.use_identity_api_v3 and CONF.use_domain_for_proxy_users and
             vu.get_hiveserver(cluster) and
             c_helper.is_swift_enabled(pctx, cluster)):
@@ -54,9 +56,20 @@ def configure_cluster(pctx, cluster):
 
 
 def configure_instances(pctx, instances):
+    if len(instances) == 0:
+        return
+
+    cpo.add_provisioning_step(
+        instances[0].cluster_id, _("Configure instances"), len(instances))
+
     for instance in instances:
-        _provisioning_configs(pctx, instance)
-        _post_configuration(pctx, instance)
+        _configure_instance(pctx, instance)
+
+
+@cpo.event_wrapper(True)
+def _configure_instance(pctx, instance):
+    _provisioning_configs(pctx, instance)
+    _post_configuration(pctx, instance)
 
 
 def _provisioning_configs(pctx, instance):
@@ -261,7 +274,8 @@ def _push_xml_configs(instance, configs):
 
 
 def _push_configs_to_instance(instance, configs):
-    LOG.debug("Push configs to instance \"%s\"", instance.instance_name)
+    LOG.debug("Push configs to instance {instance}".format(
+        instance=instance.instance_name))
     with instance.remote() as r:
         for fl, data in six.iteritems(configs):
             r.write_file_to(fl, data, run_as_root=True)
@@ -291,7 +305,7 @@ def _post_configuration(pctx, instance):
         r.execute_command('sudo /tmp/post_conf.sh')
 
         if c_helper.is_data_locality_enabled(pctx,
-                                             instance.node_group.cluster):
+                                             instance.cluster):
             t_script = HADOOP_CONF_DIR + '/topology.sh'
             r.write_file_to(t_script, f.get_file_text(
                             'plugins/vanilla/hadoop2/resources/topology.sh'),
@@ -335,10 +349,13 @@ def _merge_configs(a, b):
     return res
 
 
+@cpo.event_wrapper(
+    True, step=_("Configure topology data"), param=('cluster', 1))
 def configure_topology_data(pctx, cluster):
     if c_helper.is_data_locality_enabled(pctx, cluster):
-        LOG.info(_LI("Node group awareness is not implemented in YARN yet "
-                     "so enable_hypervisor_awareness set to False explicitly"))
+        LOG.warning(_LW("Node group awareness is not implemented in YARN yet "
+                        "so enable_hypervisor_awareness set to False "
+                        "explicitly"))
         tpl_map = th.generate_topology_map(cluster, is_node_awareness=False)
         topology_data = "\n".join(
             [k + " " + v for k, v in tpl_map.items()]) + "\n"
@@ -375,5 +392,9 @@ def get_open_ports(node_group):
 
     if "oozie" in node_group.node_processes:
         ports.append(11000)
+
+    if "hiveserver" in node_group.node_processes:
+        ports.append(9999)
+        ports.append(10000)
 
     return ports

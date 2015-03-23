@@ -18,15 +18,13 @@ from eventlet.green import threading
 from eventlet.green import time
 from eventlet import greenpool
 from eventlet import semaphore
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_context import context
 from oslo_log import log as logging
 
 from sahara import exceptions as ex
 from sahara.i18n import _
-from sahara.i18n import _LE
 from sahara.i18n import _LW
-from sahara.openstack.common import local
 
 
 CONF = cfg.CONF
@@ -50,8 +48,8 @@ class Context(context.RequestContext):
                  overwrite=True,
                  **kwargs):
         if kwargs:
-            LOG.warn(_LW('Arguments dropped when creating context: %s'),
-                     kwargs)
+            LOG.warning(_LW('Arguments dropped when creating context: '
+                            '{args}').format(args=kwargs))
 
         super(Context, self).__init__(auth_token=auth_token,
                                       user=user_id,
@@ -68,13 +66,13 @@ class Context(context.RequestContext):
             self.auth_uri = auth_uri
         else:
             self.auth_uri = _get_auth_uri()
-        if overwrite or not hasattr(local.store, 'context'):
-            local.store.context = self
+        if overwrite or not hasattr(context._request_store, 'context'):
+            self.update_store()
 
         if current_instance_info is not None:
             self.current_instance_info = current_instance_info
         else:
-            self.current_instance_info = []
+            self.current_instance_info = InstanceInfo()
 
     def clone(self):
         return Context(
@@ -103,7 +101,7 @@ class Context(context.RequestContext):
             'is_admin': self.is_admin,
             'roles': self.roles,
             'auth_uri': self.auth_uri,
-            'instance_uuid': self.resource_uuid,
+            'resource_uuid': self.resource_uuid,
         }
 
     def is_auth_capable(self):
@@ -155,12 +153,12 @@ def current():
 def set_ctx(new_ctx):
     if not new_ctx and has_ctx():
         delattr(_CTX_STORE, _CTX_KEY)
-        if hasattr(local.store, 'context'):
-            delattr(local.store, 'context')
+        if hasattr(context._request_store, 'context'):
+            delattr(context._request_store, 'context')
 
     if new_ctx:
         setattr(_CTX_STORE, _CTX_KEY, new_ctx)
-        setattr(local.store, 'context', new_ctx)
+        setattr(context._request_store, 'context', new_ctx)
 
 
 def _get_auth_uri():
@@ -190,9 +188,9 @@ def _wrapper(ctx, thread_description, thread_group, func, *args, **kwargs):
         set_ctx(ctx)
         func(*args, **kwargs)
     except BaseException as e:
-        LOG.exception(
-            _LE("Thread '%(thread)s' fails with exception: '%(exception)s'"),
-            {'thread': thread_description, 'exception': e})
+        LOG.debug(
+            "Thread {thread} failed with exception: {exception}".format(
+                thread=thread_description, exception=e))
         if thread_group and not thread_group.exc:
             thread_group.exc = e
             thread_group.failed_thread = thread_description
@@ -274,9 +272,28 @@ def sleep(seconds=0):
     time.sleep(seconds)
 
 
+class InstanceInfo(object):
+    def __init__(self, cluster_id=None, instance_id=None, instance_name=None,
+                 node_group_id=None, step_type=None, step_id=None):
+        self.cluster_id = cluster_id
+        self.instance_id = instance_id
+        self.instance_name = instance_name
+        self.node_group_id = node_group_id
+        self.step_type = step_type
+        self.step_id = step_id
+
+
+def set_step_type(step_type):
+    current().current_instance_info.step_type = step_type
+
+
 class InstanceInfoManager(object):
     def __init__(self, instance_info):
         self.prev_instance_info = current().current_instance_info
+        if not instance_info.step_type:
+            instance_info.step_type = self.prev_instance_info.step_type
+        if not instance_info.step_id:
+            instance_info.step_id = self.prev_instance_info.step_id
         current().current_instance_info = instance_info
 
     def __enter__(self):

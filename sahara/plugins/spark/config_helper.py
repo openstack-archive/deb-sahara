@@ -13,13 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
 from sahara import conductor as c
 from sahara.i18n import _
-from sahara.i18n import _LI
 from sahara.plugins import provisioning as p
 from sahara.plugins import utils
 from sahara.swift import swift_helper as swift
@@ -263,7 +262,7 @@ def generate_cfg_from_general(cfg, configs, general_config,
         for name, value in configs['general'].items():
             if value:
                 cfg = _set_config(cfg, general_config, name)
-                LOG.info(_LI("Applying config: %s"), name)
+                LOG.debug("Applying config: {name}".format(name=name))
     else:
         cfg = _set_config(cfg, general_config)
     return cfg
@@ -285,6 +284,8 @@ def generate_xml_configs(configs, storage_path, nn_hostname, hadoop_port):
                                                      '/dfs/dn'),
         'hadoop.tmp.dir': extract_hadoop_path(storage_path,
                                               '/dfs'),
+        'dfs.hosts': '/etc/hadoop/dn.incl',
+        'dfs.hosts.exclude': '/etc/hadoop/dn.excl'
     }
 
     # inserting user-defined configs

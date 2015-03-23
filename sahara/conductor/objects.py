@@ -23,7 +23,7 @@ fields via docstrings and contains implementation of helper methods.
 
 import random
 
-from oslo.config import cfg
+from oslo_config import cfg
 
 from sahara.utils import configs
 from sahara.utils import remote
@@ -107,6 +107,8 @@ class NodeGroup(object):
                  True
     is_proxy_gateway - indicates if nodes from this node group should be used
                        as proxy to access other cluster nodes
+    volume_local_to_instance - indicates if volumes and instances should be
+                               created on the same physical host
 
     count
     instances - list of Instance objects
@@ -206,6 +208,7 @@ class NodeGroupTemplate(object):
     auto_security_group
     availability_zone
     is_proxy_gateway
+    volume_local_to_instance
     """
 
 
@@ -236,7 +239,6 @@ class JobExecution(object):
     end_time
     cluster_id
     info
-    progress
     oozie_job_id
     return_code
     """
@@ -291,11 +293,8 @@ class ClusterProvisionStep(object):
     tenant_id
     step_name
     step_type
-    completed
     total
     successful
-    started_at
-    completed_at
     events - list of Events objects assigned to the cluster
     """
 

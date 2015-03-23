@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo.config import cfg
-from oslo.utils import excutils
+from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_utils import excutils
 import six
 from six.moves.urllib import parse as urlparse
 
@@ -23,6 +23,7 @@ from sahara import conductor as c
 from sahara import context
 from sahara.plugins import base as plugin_base
 from sahara.plugins import provisioning
+from sahara.service import quotas
 from sahara.utils import general as g
 from sahara.utils.notification import sender
 from sahara.utils.openstack import nova
@@ -48,8 +49,8 @@ def get_clusters(**kwargs):
     return conductor.cluster_get_all(context.ctx(), **kwargs)
 
 
-def get_cluster(id):
-    return conductor.cluster_get(context.ctx(), id)
+def get_cluster(id, show_progress=False):
+    return conductor.cluster_get(context.ctx(), id, show_progress)
 
 
 def scale_cluster(id, data):
@@ -69,15 +70,16 @@ def scale_cluster(id, data):
 
     additional = construct_ngs_for_scaling(cluster, additional_node_groups)
     cluster = conductor.cluster_get(ctx, cluster)
+    _add_ports_for_auto_sg(ctx, cluster, plugin)
 
     try:
         cluster = g.change_cluster_status(cluster, "Validating")
-
+        quotas.check_scaling(cluster, to_be_enlarged, additional)
         plugin.validate_scaling(cluster, to_be_enlarged, additional)
-    except Exception:
+    except Exception as e:
         with excutils.save_and_reraise_exception():
             g.clean_cluster_from_empty_ng(cluster)
-            g.change_cluster_status(cluster, "Active")
+            g.change_cluster_status(cluster, "Active", six.text_type(e))
 
     # If we are here validation is successful.
     # So let's update to_be_enlarged map:
@@ -97,19 +99,28 @@ def create_cluster(values):
     sender.notify(ctx, cluster.id, cluster.name, "New",
                   "create")
     plugin = plugin_base.PLUGINS.get_plugin(cluster.plugin_name)
+    _add_ports_for_auto_sg(ctx, cluster, plugin)
 
     # validating cluster
     try:
         cluster = g.change_cluster_status(cluster, "Validating")
+        quotas.check_cluster(cluster)
         plugin.validate(cluster)
     except Exception as e:
         with excutils.save_and_reraise_exception():
             g.change_cluster_status(cluster, "Error",
-                                    status_description=six.text_type(e))
+                                    six.text_type(e))
 
     OPS.provision_cluster(cluster.id)
 
     return cluster
+
+
+def _add_ports_for_auto_sg(ctx, cluster, plugin):
+    for ng in cluster.node_groups:
+        if ng.auto_security_group:
+            ports = {'open_ports': plugin.get_open_ports(ng)}
+            conductor.node_group_update(ctx, ng, ports)
 
 
 def terminate_cluster(id):
@@ -138,6 +149,10 @@ def terminate_cluster_template(id):
     return conductor.cluster_template_destroy(context.ctx(), id)
 
 
+def update_cluster_template(id, values):
+    return conductor.cluster_template_update(context.ctx(), id, values)
+
+
 # NodeGroupTemplate ops
 
 def get_node_group_templates(**kwargs):
@@ -154,6 +169,10 @@ def create_node_group_template(values):
 
 def terminate_node_group_template(id):
     return conductor.node_group_template_destroy(context.ctx(), id)
+
+
+def update_node_group_template(id, values):
+    return conductor.node_group_template_update(context.ctx(), id, values)
 
 
 # Plugins ops

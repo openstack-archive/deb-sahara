@@ -13,12 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+
 import testtools
 
 from sahara.conductor import manager
 from sahara import context
 from sahara import exceptions as ex
 import sahara.tests.unit.conductor.base as test_base
+import sahara.tests.unit.conductor.manager.test_clusters as cluster_tests
 
 
 SAMPLE_NGT = {
@@ -129,6 +132,21 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
         with testtools.ExpectedException(ex.NotFoundException):
             self.api.node_group_template_destroy(ctx, _id)
 
+    def test_ngt_delete_default(self):
+        ctx = context.ctx()
+        vals = copy.copy(SAMPLE_NGT)
+        vals["is_default"] = True
+        db_obj_ngt = self.api.node_group_template_create(ctx, vals)
+        _id = db_obj_ngt['id']
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            self.api.node_group_template_destroy(ctx, _id)
+
+        self.api.node_group_template_destroy(ctx, _id, ignore_default=True)
+
+        with testtools.ExpectedException(ex.NotFoundException):
+            self.api.node_group_template_destroy(ctx, _id)
+
     def test_ngt_search(self):
         ctx = context.ctx()
         self.api.node_group_template_create(ctx, SAMPLE_NGT)
@@ -149,6 +167,49 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
         # Invalid field
         lst = self.api.node_group_template_get_all(ctx, **{'badfield': 'junk'})
         self.assertEqual(len(lst), 0)
+
+    def test_ngt_update(self):
+        ctx = context.ctx()
+        ngt = self.api.node_group_template_create(ctx, SAMPLE_NGT)
+        ngt_id = ngt["id"]
+
+        UPDATE_NAME = "UpdatedSampleNGTName"
+        update_values = {"name": UPDATE_NAME}
+        updated_ngt = self.api.node_group_template_update(ctx,
+                                                          ngt_id,
+                                                          update_values)
+        self.assertEqual(UPDATE_NAME, updated_ngt["name"])
+
+        updated_ngt = self.api.node_group_template_get(ctx, ngt_id)
+        self.assertEqual(UPDATE_NAME, updated_ngt["name"])
+
+        with testtools.ExpectedException(ex.NotFoundException):
+            self.api.node_group_template_update(ctx, -1, update_values)
+
+        ngt = self.api.node_group_template_create(ctx, SAMPLE_NGT)
+        ngt_id = ngt['id']
+        with testtools.ExpectedException(ex.DBDuplicateEntry):
+            self.api.node_group_template_update(ctx, ngt_id, update_values)
+
+    def test_ngt_update_default(self):
+        ctx = context.ctx()
+        vals = copy.copy(SAMPLE_NGT)
+        vals["is_default"] = True
+        ngt = self.api.node_group_template_create(ctx, vals)
+        ngt_id = ngt["id"]
+
+        UPDATE_NAME = "UpdatedSampleNGTName"
+        update_values = {"name": UPDATE_NAME}
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.node_group_template_update(ctx,
+                                                ngt_id,
+                                                update_values)
+
+        updated_ngt = self.api.node_group_template_update(ctx,
+                                                          ngt_id,
+                                                          update_values,
+                                                          ignore_default=True)
+        self.assertEqual(UPDATE_NAME, updated_ngt["name"])
 
 
 class ClusterTemplates(test_base.ConductorManagerTestCase):
@@ -214,6 +275,7 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
             ng.pop("volume_type")
             ng.pop("auto_security_group")
             ng.pop("is_proxy_gateway")
+            ng.pop('volume_local_to_instance')
 
         self.assertEqual(SAMPLE_CLT["node_groups"],
                          clt_db_obj["node_groups"])
@@ -224,6 +286,21 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
         _id = db_obj_clt['id']
 
         self.api.cluster_template_destroy(ctx, _id)
+
+        with testtools.ExpectedException(ex.NotFoundException):
+            self.api.cluster_template_destroy(ctx, _id)
+
+    def test_clt_delete_default(self):
+        ctx = context.ctx()
+        vals = copy.copy(SAMPLE_CLT)
+        vals["is_default"] = True
+        db_obj_clt = self.api.cluster_template_create(ctx, vals)
+        _id = db_obj_clt['id']
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            self.api.cluster_template_destroy(ctx, _id)
+
+        self.api.cluster_template_destroy(ctx, _id, ignore_default=True)
 
         with testtools.ExpectedException(ex.NotFoundException):
             self.api.cluster_template_destroy(ctx, _id)
@@ -248,3 +325,57 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
         # Invalid field
         lst = self.api.cluster_template_get_all(ctx, **{'badfield': 'junk'})
         self.assertEqual(len(lst), 0)
+
+    def test_clt_update(self):
+        ctx = context.ctx()
+        clt = self.api.cluster_template_create(ctx, SAMPLE_CLT)
+        clt_id = clt["id"]
+
+        UPDATE_NAME = "UpdatedClusterTemplate"
+        update_values = {"name": UPDATE_NAME}
+        updated_clt = self.api.cluster_template_update(ctx,
+                                                       clt_id,
+                                                       update_values)
+        self.assertEqual(UPDATE_NAME, updated_clt["name"])
+
+        updated_clt = self.api.cluster_template_get(ctx, clt_id)
+        self.assertEqual(UPDATE_NAME, updated_clt["name"])
+
+        # check duplicate name handling
+        clt = self.api.cluster_template_create(ctx, SAMPLE_CLT)
+        clt_id = clt["id"]
+        with testtools.ExpectedException(ex.DBDuplicateEntry):
+            self.api.cluster_template_update(ctx, clt_id, update_values)
+
+        with testtools.ExpectedException(ex.NotFoundException):
+            self.api.cluster_template_update(ctx, -1, update_values)
+
+        # create a cluster and try updating the referenced cluster template
+        cluster_val = copy.deepcopy(cluster_tests.SAMPLE_CLUSTER)
+        cluster_val['name'] = "ClusterTempalteUpdateTestCluster"
+        cluster_val['cluster_template_id'] = clt['id']
+        self.api.cluster_create(ctx, cluster_val)
+        update_values = {"name": "noUpdateInUseName"}
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.cluster_template_update(ctx, clt['id'], update_values)
+
+    def test_clt_update_default(self):
+        ctx = context.ctx()
+        vals = copy.copy(SAMPLE_CLT)
+        vals["is_default"] = True
+        clt = self.api.cluster_template_create(ctx, vals)
+        clt_id = clt["id"]
+
+        UPDATE_NAME = "UpdatedClusterTemplate"
+        update_values = {"name": UPDATE_NAME}
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.cluster_template_update(ctx,
+                                             clt_id,
+                                             update_values)
+
+        updated_clt = self.api.cluster_template_update(ctx,
+                                                       clt_id,
+                                                       update_values,
+                                                       ignore_default=True)
+        self.assertEqual(UPDATE_NAME, updated_clt["name"])

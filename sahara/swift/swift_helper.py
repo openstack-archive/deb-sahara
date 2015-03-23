@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo.config import cfg
+from oslo_config import cfg
 from oslo_log import log as logging
 
 from sahara import context
@@ -49,7 +49,7 @@ def get_swift_configs():
 
     result = [cfg for cfg in configs if cfg['value']]
     LOG.info(_LI("Swift would be integrated with the following "
-             "params: %s"), result)
+             "params: {result}").format(result=result))
     return result
 
 
