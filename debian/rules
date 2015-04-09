@@ -36,7 +36,18 @@ override_dh_install:
 	dh_install -O--buildsystem=python_distutils --fail-missing
 
 	# Install the config file.
-	install -D -m 0644 $(CURDIR)/etc/sahara/sahara.conf.sample $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
+	mkdir -p $(CURDIR)/debian/sahara-common/usr/share/sahara-common
+	oslo-config-generator \
+		--namespace sahara.config \
+		--namespace oslo.db \
+		--namespace oslo.messaging \
+		--namespace oslo.concurrency \
+		--namespace keystonemiddleware.auth_token \
+		--namespace periodic.config \
+		--namespace ssl.config \
+		--namespace oslo.log \
+		--namespace oslo.policy \
+		--output-file $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
 	sed -i 's|#connection=<None>|connection=sqlite:///var/lib/sahara/saharadb|' $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
 
 	# Copy the alembic migration scripts which aren't copied
