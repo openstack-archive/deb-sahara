@@ -31,7 +31,7 @@ from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import general as g
 from sahara.utils.openstack import neutron
 from sahara.utils.openstack import nova
-
+from sahara.utils import poll_utils
 
 conductor = c.API
 CONF = cfg.CONF
@@ -115,12 +115,18 @@ class DirectEngine(e.Engine):
 
         if rollback_info.get('shutdown', False):
             self._rollback_cluster_creation(cluster, reason)
+            LOG.warning(_LW("Cluster {name} creation rollback "
+                            "(reason: {reason})").format(name=cluster.name,
+                                                         reason=reason))
             return False
 
         instance_ids = rollback_info.get('instance_ids', [])
         if instance_ids:
             self._rollback_cluster_scaling(
                 cluster, g.get_instances(cluster, instance_ids), reason)
+            LOG.warning(_LW("Cluster {name} scaling rollback "
+                            "(reason: {reason})").format(name=cluster.name,
+                                                         reason=reason))
 
             return True
 
@@ -417,6 +423,19 @@ class DirectEngine(e.Engine):
                 networks.assign_floating_ip(instance.instance_id,
                                             node_group.floating_ip_pool)
 
+    @poll_utils.poll_status(
+        'await_for_instances_active',
+        _("Wait for instances to become active"), sleep=1)
+    def _check_active(self, active_ids, cluster, instances):
+        if not g.check_cluster_exists(cluster):
+            return True
+        for instance in instances:
+            if instance.id not in active_ids:
+                if self._check_if_active(instance):
+                    active_ids.add(instance.id)
+                    cpo.add_successful_event(instance)
+        return len(instances) == len(active_ids)
+
     def _await_active(self, cluster, instances):
         """Await all instances are in Active status and available."""
         if not instances:
@@ -427,19 +446,26 @@ class DirectEngine(e.Engine):
             len(instances))
 
         active_ids = set()
-        while len(active_ids) != len(instances):
-            if not g.check_cluster_exists(cluster):
-                return
-            for instance in instances:
-                if instance.id not in active_ids:
-                    if self._check_if_active(instance):
-                        active_ids.add(instance.id)
-                        cpo.add_successful_event(instance)
-
-            context.sleep(1)
+        self._check_active(active_ids, cluster, instances)
 
         LOG.info(_LI("Cluster {cluster_id}: all instances are active").format(
                  cluster_id=cluster.id))
+
+    @poll_utils.poll_status(
+        'delete_instances_timeout',
+        _("Wait for instances to be deleted"), sleep=1)
+    def _check_deleted(self, deleted_ids, cluster, instances):
+        if not g.check_cluster_exists(cluster):
+            return True
+
+        for instance in instances:
+            if instance.id not in deleted_ids:
+                if self._check_if_deleted(instance):
+                    LOG.debug("Instance {instance} is deleted".format(
+                              instance=instance.instance_name))
+                    deleted_ids.add(instance.id)
+                    cpo.add_successful_event(instance)
+        return len(deleted_ids) == len(instances)
 
     def _await_deleted(self, cluster, instances):
         """Await all instances are deleted."""
@@ -449,18 +475,7 @@ class DirectEngine(e.Engine):
             cluster.id, _("Wait for instances to be deleted"), len(instances))
 
         deleted_ids = set()
-        while len(deleted_ids) != len(instances):
-            if not g.check_cluster_exists(cluster):
-                return
-            for instance in instances:
-                if instance.id not in deleted_ids:
-                    if self._check_if_deleted(instance):
-                        LOG.debug("Instance {instance} is deleted".format(
-                                  instance=instance.instance_name))
-                        deleted_ids.add(instance.id)
-                        cpo.add_successful_event(instance)
-
-            context.sleep(1)
+        self._check_deleted(deleted_ids, cluster, instances)
 
     @cpo.event_wrapper(mark_successful_on_exit=False)
     def _check_if_active(self, instance):
@@ -481,19 +496,11 @@ class DirectEngine(e.Engine):
 
     def _rollback_cluster_creation(self, cluster, ex):
         """Shutdown all instances and update cluster status."""
-        # TODO(starodubcevna): Need to add LOG.warning to upper level in next
-        # commits
-        LOG.debug("Cluster {name} creation rollback "
-                  "(reason: {reason})".format(name=cluster.name, reason=ex))
 
         self.shutdown_cluster(cluster)
 
     def _rollback_cluster_scaling(self, cluster, instances, ex):
-        # TODO(starodubcevna): Need to add LOG.warning to upper level in next
-        # commits
         """Attempt to rollback cluster scaling."""
-        LOG.debug("Cluster {name} scaling rollback "
-                  "(reason: {reason})".format(name=cluster.name, reason=ex))
 
         for i in instances:
             self._shutdown_instance(i)

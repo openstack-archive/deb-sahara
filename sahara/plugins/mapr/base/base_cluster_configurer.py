@@ -32,6 +32,7 @@ import sahara.plugins.mapr.services.yarn.yarn as yarn
 import sahara.plugins.mapr.util.general as util
 from sahara.topology import topology_helper as th
 import sahara.utils.configs as sahara_configs
+import sahara.utils.files as files
 
 
 LOG = logging.getLogger(__name__)
@@ -127,11 +128,13 @@ class BaseConfigurer(ac.AbstractConfigurer):
         is_node_aware = context.is_node_aware
         if is_node_aware:
             topo = th.generate_topology_map(context.cluster, is_node_aware)
-            topo = '\n'.join(['%s %s' % i for i in six.iteritems(topo)])
+            topo = '\n'.join(['%s %s' % i for i in six.iteritems(topo)]) + '\n'
             data_path = '%s/topology.data' % context.mapr_home
+            script = files.get_file_text(_TOPO_SCRIPT)
+            script_path = '%s/topology.sh' % context.mapr_home
             util.execute_on_instances(instances, write_file, data_path, topo)
             util.execute_on_instances(
-                instances, util.run_script, _TOPO_SCRIPT, 'root', data_path)
+                instances, util.write_file, script_path, script, '+x', 'root')
         else:
             LOG.debug('Data locality is disabled.')
         LOG.info(_LI('Cluster topology successfully configured'))
@@ -303,10 +306,8 @@ class BaseConfigurer(ac.AbstractConfigurer):
         cluster_mode = cluster_context.cluster_mode
         if not cluster_mode:
             return
-        cldb = cluster_context.get_instance(maprfs.CLDB)
-        with cldb.remote() as r:
-            cmd = 'sudo -u mapr maprcli cluster mapreduce set -mode %s'
-            r.execute_command(cmd % cluster_mode)
+        cmd = 'maprcli cluster mapreduce set -mode %s' % cluster_mode
+        util.execute_command(cluster_context.get_instances(), cmd, 'mapr')
 
     def _install_mapr_repo(self, cluster_context, instances):
         d_name = cluster_context.distro.name

@@ -36,6 +36,7 @@ from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import edp
 from sahara.utils import files as f
 from sahara.utils import general as g
+from sahara.utils import poll_utils
 from sahara.utils import proxy
 from sahara.utils import remote
 
@@ -212,23 +213,14 @@ class VersionHandler(avm.AbstractVersionHandler):
         if datanodes_count < 1:
             return
 
-        LOG.debug("Waiting {count} datanodes to start up".format(
-            count=datanodes_count))
+        l_message = _("Waiting on %s datanodes to start up") % datanodes_count
+        LOG.info(l_message)
         with remote.get_remote(vu.get_namenode(cluster)) as r:
-            while True:
-                if run.check_datanodes_count(r, datanodes_count):
-                    LOG.info(
-                        _LI('Datanodes on cluster {cluster} have been started')
-                        .format(cluster=cluster.name))
-                    return
-
-                context.sleep(1)
-
-                if not g.check_cluster_exists(cluster):
-                    LOG.debug('Stop waiting for datanodes on cluster {cluster}'
-                              ' since it has been deleted'.format(
-                                  cluster=cluster.name))
-                    return
+            poll_utils.plugin_option_poll(
+                cluster, run.check_datanodes_count,
+                c_helper.DATANODES_STARTUP_TIMEOUT, l_message, 1, {
+                    'remote': r,
+                    'count': datanodes_count})
 
     def _generate_hive_mysql_password(self, cluster):
         extra = cluster.extra.to_dict() if cluster.extra else {}
@@ -548,6 +540,12 @@ class VersionHandler(avm.AbstractVersionHandler):
         if job_type in edp_engine.EdpOozieEngine.get_supported_job_types():
             return edp_engine.EdpOozieEngine(cluster)
         return None
+
+    def get_edp_job_types(self):
+        return edp_engine.EdpOozieEngine.get_supported_job_types()
+
+    def get_edp_config_hints(self, job_type):
+        return edp_engine.EdpOozieEngine.get_possible_job_config(job_type)
 
     def get_open_ports(self, node_group):
         cluster = node_group.cluster

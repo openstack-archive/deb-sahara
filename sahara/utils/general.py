@@ -13,11 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import functools
 import re
 
 from oslo_log import log as logging
-from oslo_utils import timeutils
 import six
 
 from sahara import conductor as c
@@ -76,14 +74,14 @@ def natural_sort_key(s):
 
 
 def change_cluster_status_description(cluster, status_description):
-    ctx = context.ctx()
-
-    cluster = conductor.cluster_get(ctx, cluster) if cluster else None
-
-    if cluster is None or cluster.status == "Deleting":
-        return cluster
-    return conductor.cluster_update(
-        ctx, cluster, {'status_description': status_description})
+    if cluster is None:
+        return None
+    try:
+        ctx = context.ctx()
+        return conductor.cluster_update(
+            ctx, cluster, {'status_description': status_description})
+    except e.NotFoundException:
+        return None
 
 
 def change_cluster_status(cluster, status, status_description=None):
@@ -93,14 +91,14 @@ def change_cluster_status(cluster, status, status_description=None):
     # but this reduces probability at least.
     cluster = conductor.cluster_get(ctx, cluster) if cluster else None
 
+    if status_description is not None:
+        change_cluster_status_description(cluster, status_description)
+
     # 'Deleting' is final and can't be changed
     if cluster is None or cluster.status == 'Deleting':
         return cluster
 
     update_dict = {"status": status}
-    if status_description:
-        update_dict["status_description"] = status_description
-
     cluster = conductor.cluster_update(ctx, cluster, update_dict)
     conductor.cluster_provision_progress_update(ctx, cluster.id)
 
@@ -165,47 +163,3 @@ def generate_auto_security_group_name(node_group):
 
 def generate_aa_group_name(cluster_name):
     return ("%s-aa-group" % cluster_name).lower()
-
-
-def _get_consumed(start_time):
-    return timeutils.delta_seconds(start_time, timeutils.utcnow())
-
-
-def get_obj_in_args(check_obj, *args, **kwargs):
-    for arg in args:
-        val = check_obj(arg)
-        if val is not None:
-            return val
-
-    for arg in kwargs.values():
-        val = check_obj(arg)
-        if val is not None:
-            return val
-    return None
-
-
-def await_process(timeout, sleeping_time, op_name, check_object):
-    """"Awaiting something in cluster."""
-    def decorator(func):
-        @functools.wraps(func)
-        def handler(*args, **kwargs):
-            start_time = timeutils.utcnow()
-            cluster = get_obj_in_args(check_object, *args, **kwargs)
-
-            while _get_consumed(start_time) < timeout:
-                consumed = _get_consumed(start_time)
-                if func(*args, **kwargs):
-                    LOG.info(
-                        _LI("Operation {op_name} was successfully executed "
-                            "in seconds: {sec}").format(op_name=op_name,
-                                                        sec=consumed))
-                    return
-
-                if not check_cluster_exists(cluster):
-                    return
-
-                context.sleep(sleeping_time)
-
-            raise e.TimeoutException(timeout, op_name)
-        return handler
-    return decorator

@@ -24,6 +24,7 @@ import time
 import traceback
 
 import fixtures
+from oslo_utils import timeutils
 import prettytable
 import six
 from tempest_lib import base
@@ -49,9 +50,11 @@ def track_result(check_name, exit_with_error=True):
             test_info = {
                 'check_name': check_name,
                 'status': CHECK_OK_STATUS,
+                'duration': None,
                 'traceback': None
             }
             self._results.append(test_info)
+            started_at = timeutils.utcnow()
             try:
                 return fct(self, *args, **kwargs)
             except Exception:
@@ -60,6 +63,9 @@ def track_result(check_name, exit_with_error=True):
                     *sys.exc_info())
                 if exit_with_error:
                     raise
+            finally:
+                test_time = timeutils.utcnow() - started_at
+                test_info['duration'] = test_time.seconds
         return wrapper
     return decorator
 
@@ -112,7 +118,7 @@ class BaseTestCase(base.BaseTestCase):
         self.ng_id_map = self._create_node_group_templates()
         cl_tmpl_id = self._create_cluster_template()
         self.cluster_id = self._create_cluster(cl_tmpl_id)
-        self._poll_cluster_status(self.cluster_id)
+        self._poll_cluster_status_tracked(self.cluster_id)
 
     @track_result("Check transient")
     def check_transient(self):
@@ -365,6 +371,10 @@ class BaseTestCase(base.BaseTestCase):
 
         return self.__create_cluster(**kwargs)
 
+    @track_result("Check cluster state")
+    def _poll_cluster_status_tracked(self, cluster_id):
+        self._poll_cluster_status(cluster_id)
+
     def _poll_cluster_status(self, cluster_id):
         # TODO(sreshetniak): make timeout configurable
         with fixtures.Timeout(1800, gentle=True):
@@ -441,13 +451,16 @@ class BaseTestCase(base.BaseTestCase):
 
     def tearDown(self):
         tbs = []
-        table = prettytable.PrettyTable(["Check", "Status"])
+        table = prettytable.PrettyTable(["Check", "Status", "Duration, s"])
         table.align["Check"] = "l"
         for check in self._results:
-            table.add_row([check['check_name'], check['status']])
+            table.add_row(
+                [check['check_name'], check['status'], check['duration']])
             if check['status'] == CHECK_FAILED_STATUS:
                 tbs.extend(check['traceback'])
                 tbs.append("")
+        print("Results of testing plugin", self.plugin_opts['plugin_name'],
+              self.plugin_opts['hadoop_version'])
         print(table)
         print("\n".join(tbs), file=sys.stderr)
 

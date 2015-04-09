@@ -25,8 +25,6 @@ from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import xmlutils
 
 
-CM_API_PORT = 7180
-
 HDFS_SERVICE_TYPE = 'HDFS'
 YARN_SERVICE_TYPE = 'YARN'
 OOZIE_SERVICE_TYPE = 'OOZIE'
@@ -148,6 +146,9 @@ class ClouderaUtilsV530(cu.ClouderaUtils):
             cm_cluster.create_service(self.IMPALA_SERVICE_NAME,
                                       IMPALA_SERVICE_TYPE)
 
+    def await_agents(self, cluster, instances):
+        self._await_agents(cluster, instances, c_helper.AWAIT_AGENTS_TIMEOUT)
+
     @cpo.event_wrapper(
         True, step=_("Configure services"), param=('cluster', 1))
     def configure_services(self, cluster):
@@ -237,7 +238,7 @@ class ClouderaUtilsV530(cu.ClouderaUtils):
             core_site_safety_valve = ''
             if self.pu.c_helper.is_swift_enabled(cluster):
                 configs = swift_helper.get_swift_configs()
-                confs = dict((c['name'], c['value']) for c in configs)
+                confs = {c['name']: c['value'] for c in configs}
                 core_site_safety_valve = xmlutils.create_elements_xml(confs)
             all_confs = {
                 'HDFS': {

@@ -14,12 +14,12 @@
 
 import time
 
+from oslo_log import log as logging
 from oslo_utils import timeutils
 from saharaclient.api import base as sab
 from saharaclient import client as sahara_client
 from tempest import config
 from tempest import exceptions
-from tempest.openstack.common import log as logging
 from tempest.scenario.data_processing import config as sahara_test_config
 from tempest.scenario import manager
 
@@ -54,6 +54,7 @@ class BaseDataProcessingTest(manager.ScenarioTest):
 
         cls.object_client = cls.manager.object_client
         cls.container_client = cls.manager.container_client
+        cls.networks_client = cls.manager.networks_client
 
         cls.floating_ip_pool = CONF.data_processing.floating_ip_pool
         if TEMPEST_CONF.service_available.neutron:

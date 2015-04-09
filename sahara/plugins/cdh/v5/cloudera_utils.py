@@ -17,14 +17,13 @@ import six
 
 from sahara.i18n import _
 from sahara.plugins.cdh import cloudera_utils as cu
+from sahara.plugins.cdh.v5 import config_helper as c_helper
 from sahara.plugins.cdh.v5 import plugin_utils as pu
 from sahara.plugins.cdh.v5 import validation as v
 from sahara.swift import swift_helper
 from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import xmlutils
 
-
-CM_API_PORT = 7180
 
 HDFS_SERVICE_TYPE = 'HDFS'
 YARN_SERVICE_TYPE = 'YARN'
@@ -117,6 +116,9 @@ class ClouderaUtilsV5(cu.ClouderaUtils):
             cm_cluster.create_service(self.HBASE_SERVICE_NAME,
                                       HBASE_SERVICE_TYPE)
 
+    def await_agents(self, cluster, instances):
+        self._await_agents(cluster, instances, c_helper.AWAIT_AGENTS_TIMEOUT)
+
     @cpo.event_wrapper(
         True, step=_("Configure services"), param=('cluster', 1))
     def configure_services(self, cluster):
@@ -169,7 +171,7 @@ class ClouderaUtilsV5(cu.ClouderaUtils):
             core_site_safety_valve = ''
             if self.pu.c_helper.is_swift_enabled(cluster):
                 configs = swift_helper.get_swift_configs()
-                confs = dict((c['name'], c['value']) for c in configs)
+                confs = {c['name']: c['value'] for c in configs}
                 core_site_safety_valve = xmlutils.create_elements_xml(confs)
             all_confs = {
                 'HDFS': {

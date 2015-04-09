@@ -6,6 +6,11 @@ dashboard up and running. Don't forget to make sure that Sahara is registered in
 Keystone. If you require assistance with that, please see the
 `installation guide <../installation.guide.html>`_.
 
+The sections below give a panel by panel overview of setting up clusters
+and running jobs.  For a description of using the guided cluster and job tools,
+look at `Launching a cluster via the Cluster Creation Guide`_ and
+`Running a job via the Job Execution Guide`_.
+
 Launching a cluster via the Sahara UI
 -------------------------------------
 Registering an Image
@@ -174,15 +179,15 @@ for your job.
 
 6) Repeat for additional Job Binaries
 
-Jobs
-----
-Jobs are where you define the type of job you'd like to run as well as which
-"Job Binaries" are required
+Job Templates (Known as "Jobs" in the API)
+------------------------------------------
+Job templates are where you define the type of job you'd like to run as well
+as which "Job Binaries" are required.
 
-1) From the Data Processing/Jobs page, click on the "Create Job" button at the
-   top right
+1) From the Data Processing/Jobs page, click on the "Create Job Template"
+   button at the top right
 
-2) Give your Job a name
+2) Give your Job Template a name
 
 3) Choose the type of job you'd like to run
 
@@ -191,23 +196,23 @@ Jobs are where you define the type of job you'd like to run as well as which
    - This is required for Hive, Pig, and Spark jobs
    - Other job types do not use a main binary
 
-5) Enter an optional description for your Job
+5) Enter an optional description for your Job Template
 
-6) Click on the "Libs" tab and choose any libraries needed by your job
+6) Click on the "Libs" tab and choose any libraries needed by your job template
 
    - MapReduce and Java jobs require at least one library
    - Other job types may optionally use libraries
 
 7) Click on "Create"
 
-Job Executions
---------------
-Job Executions are what you get by "Launching" a job.  You can monitor the
+Jobs (Known as "Job Executions" in the API)
+-------------------------------------------
+Jobs are what you get by "Launching" a job template.  You can monitor the
 status of your job to see when it has completed its run
 
-1) From the Data Processing/Jobs page, find the row that contains the job you
-   want to launch and click on the "Launch Job" button at the right side of that
-   row
+1) From the Data Processing/Job Templates page, find the row that contains the
+   job template you  want to launch and click either "Launch on New Cluster" or
+   "Launch on Existing Cluster" the right side of that row
 
 2) Choose the cluster (already running--see `Launching a Cluster`_ above) on
    which you would like the job to run
@@ -222,9 +227,9 @@ status of your job to see when it has completed its run
     org.apache.oozie.example.SampleMapper for the Value
 
 5) Click on "Launch".  To monitor the status of your job, you can navigate to
-   the Sahara/Job Executions panel
+   the Data Processing/Jobs panel
 
-6) You can relaunch a Job Execution from the Job Executions page by using the
+6) You can relaunch a Job from the Jobs page by using the
    "Relaunch on New Cluster" or "Relaunch on Existing Cluster" links
 
   - Relaunch on New Cluster will take you through the forms to start a new
@@ -276,9 +281,9 @@ assume that you already have a cluster up and running (in the "Active" state).
       database, click Browse and find udf.jar wherever you checked out the
       sahara project <sahara root>/etc/edp-examples/edp-pig/trim-spaces
 
-  - Create a Job
+  - Create a Job Template
 
-    - Navigate to Data Processing/Jobs, Click on Create Job
+    - Navigate to Data Processing/Job Templates, Click on Create Job Template
 
     - Name = pigsample, Job Type = Pig, Choose "example.pig" as the main binary
 
@@ -287,8 +292,9 @@ assume that you already have a cluster up and running (in the "Active" state).
 
   - Launch your job
 
-    - To launch your job from the Jobs page, click on the down arrow at the far
-      right of the screen and choose "Launch on Existing Cluster"
+    - To launch your job from the Job Templates page, click on the down
+      arrow at the far right of the screen and choose
+      "Launch on Existing Cluster"
 
     - For the input, choose "pig-input-ds", for output choose "pig-output-ds".
       Also choose whichever cluster you'd like to run the job on
@@ -296,7 +302,7 @@ assume that you already have a cluster up and running (in the "Active" state).
     - For this job, no additional configuration is necessary, so you can just
       click on "Launch"
 
-    - You will be taken to the "Job Executions" page where you can see your job
+    - You will be taken to the "Jobs" page where you can see your job
       progress through "PENDING, RUNNING, SUCCEEDED" phases
 
     - When your job finishes with "SUCCEEDED", you can navigate back to Object
@@ -314,15 +320,16 @@ assume that you already have a cluster up and running (in the "Active" state).
       location <sahara root>/etc/edp-examples/edp-spark and choose
       spark-example.jar, Click "Create"
 
-  - Create a Job
+  - Create a Job Template
 
     - Name = sparkexamplejob, Job Type = Spark,
       Main binary = Choose sparkexample.jar, Click "Create"
 
   - Launch your job
 
-    - To launch your job from the Jobs page, click on the down arrow at the far
-      right of the screen and choose "Launch on Existing Cluster"
+    - To launch your job from the Job Templates page, click on the
+      down arrow at the far right of the screen and choose
+      "Launch on Existing Cluster"
 
     - Choose whichever cluster you'd like to run the job on
 
@@ -335,13 +342,13 @@ assume that you already have a cluster up and running (in the "Active" state).
 
     - Click on Launch
 
-    - You will be taken to the "Job Executions" page where you can see your job
+    - You will be taken to the "Jobs" page where you can see your job
       progress through "PENDING, RUNNING, SUCCEEDED" phases
 
     - When your job finishes with "SUCCEEDED", you can see your results by
       sshing to the Spark "master" node
 
-    - The output is located at /tmp/spark-edp/<name of job>/<job execution id>.
+    - The output is located at /tmp/spark-edp/<name of job template>/<job id>.
       You can do ``cat stdout`` which should display something like
       "Pi is roughly 3.14156132"
 
@@ -353,12 +360,78 @@ Additional Notes
 ----------------
 1) Throughout the Sahara UI, you will find that if you try to delete an object
    that you will not be able to delete it if another object depends on it.
-   An example of this would be trying to delete a Job that has an existing Job
-   Execution.  In order to be able to delete that job, you would first need to
-   delete any Job Executions that relate to that job.
+   An example of this would be trying to delete a Job Template that has an
+   existing Job.  In order to be able to delete that job, you would
+   first need to delete any Job Templates that relate to that job.
 
 2) In the examples above, we mention adding your username/password for the Swift
    Data Sources. It should be noted that it is possible to configure Sahara such
    that the username/password credentials are *not* required. For more
    information on that, please refer to:
    :doc:`Sahara Advanced Configuration Guide <../userdoc/advanced.configuration.guide>`
+
+Launching a cluster via the Cluster Creation Guide
+--------------------------------------------------
+1) Under the Data Processing group, choose "Guides" and then click on the
+   "Cluster Creation Guide" button.
+
+2) Click on the "Choose Plugin" button then select the cluster type from the
+   Plugin Name dropdown and choose your target version. When done, click
+   on "Select" to proceed.
+
+3) Click on "Create a Master Node Group Template".  Give your template a name,
+   choose a flavor and choose which processes should run on nodes launched
+   for this node group.  The processes chosen here should be things that are
+   more server-like in nature (namenode, oozieserver, spark master, etc).
+   Optionally, you can set other options here such as availability zone,
+   storage, security and process specific parameters.  Click on "Create"
+   to proceed.
+
+4) Click on "Create a Worker Node Group Template".  Give your template a name,
+   choose a flavor and choose which processes should run on nodes launched
+   for this node group.  Processes chosen here should be more worker-like in
+   nature (datanode, spark slave, task tracker, etc).  Optionally, you can set
+   other options here such as availability zone, storage, security and process
+   specific parameters.  Click on "Create" to proceed.
+
+5) Click on "Create a Cluster Template".  Give your template a name.  Next,
+   click on the "Node Groups" tab and enter the count for each of the node
+   groups (these are pre-populated from steps 3 and 4).  It would be common
+   to have 1 for the "master" node group type and some larger number of
+   "worker" instances depending on you desired cluster size.  Optionally,
+   you can also set additional parameters for cluster-wide settings via
+   the other tabs on this page.  Click on "Create" to proceed.
+
+6) Click on "Launch a Cluster".  Give your cluster a name and choose the image
+   that you want to use for all instances in your cluster.  The cluster
+   template that you created in step 5 is already pre-populated.  If you want
+   ssh access to the instances of your cluster, select a keypair from the
+   dropdown.  Click on "Launch" to proceed.  You will be taken to the Clusters
+   panel where you can see your cluster progress toward the Active state.
+
+Running a job via the Job Execution Guide
+-----------------------------------------
+1) Under the Data Processing group, choose "Guides" and then click on the
+   "Job Execution Guide" button.
+
+2) Click on "Select type" and choose the type of job that you want to run.
+
+3) If your job requires input/output data sources, you will have the option
+   to create them via the "Create a Data Source" button (Note: This button will
+   not be shown for job types that do not require data sources).  Give your
+   data source a name and choose the type.  If you have chosen swift, you
+   may also enter the username and password.  Enter the URL for your data
+   source.  For more details on what the URL should look like, see
+   `Data Sources`_.
+
+4) Click on "Create a job template".  Give your job template a name.
+   Depending on the type of job that you've chosen, you may need to select
+   your main binary and/or additional libraries (available from the "Libs"
+   tab).  If you have not yet uploaded the files to run your program, you
+   can add them via the "+" icon next to the "Choose a main binary" select box.
+
+5) Click on "Launch job".  Choose the active cluster where you want to run you
+   job.  Optionally, you can click on the "Configure" tab and provide any
+   required configuration, arguments or parameters for your job.  Click on
+   "Launch" to execute your job.  You will be taken to the Jobs panel where
+   you can monitor the state of your job as it progresses.

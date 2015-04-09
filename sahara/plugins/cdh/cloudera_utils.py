@@ -16,15 +16,15 @@
 import functools
 
 from oslo_log import log as logging
-from oslo_utils import timeutils
 
 from sahara import context
 from sahara.i18n import _
 from sahara.plugins.cdh.client import api_client
 from sahara.plugins.cdh.client import services
+from sahara.plugins.cdh import db_helper
 from sahara.plugins import exceptions as ex
 from sahara.utils import cluster_progress_ops as cpo
-
+from sahara.utils import poll_utils
 
 LOG = logging.getLogger(__name__)
 
@@ -62,12 +62,26 @@ class ClouderaUtils(object):
         # pu will be defined in derived class.
         self.pu = None
 
-    def get_api_client(self, cluster):
+    def get_api_client_by_default_password(self, cluster):
         manager_ip = self.pu.get_manager(cluster).management_ip
         return api_client.ApiResource(manager_ip,
                                       username=self.CM_DEFAULT_USERNAME,
                                       password=self.CM_DEFAULT_PASSWD,
                                       version=self.CM_API_VERSION)
+
+    def get_api_client(self, cluster):
+        manager_ip = self.pu.get_manager(cluster).management_ip
+        cm_password = db_helper.get_cm_password(cluster)
+        return api_client.ApiResource(manager_ip,
+                                      username=self.CM_DEFAULT_USERNAME,
+                                      password=cm_password,
+                                      version=self.CM_API_VERSION)
+
+    def update_cloudera_password(self, cluster):
+        api = self.get_api_client_by_default_password(cluster)
+        user = api.get_user(self.CM_DEFAULT_USERNAME)
+        user.password = db_helper.get_cm_password(cluster)
+        api.update_user(user)
 
     def get_cloudera_cluster(self, cluster):
         api = self.get_api_client(cluster)
@@ -204,30 +218,22 @@ class ClouderaUtils(object):
                 _("Process %(process)s is not supported by CDH plugin") %
                 {'process': process})
 
-    @cpo.event_wrapper(True, step=_("Await agents"), param=('cluster', 1))
-    def await_agents(self, cluster, instances):
-        api = self.get_api_client(instances[0].cluster)
-        timeout = 300
-        LOG.debug("Waiting {timeout} seconds for agent connected to manager"
-                  .format(timeout=timeout))
-        s_time = timeutils.utcnow()
-        while timeutils.delta_seconds(s_time, timeutils.utcnow()) < timeout:
-            hostnames = [i.fqdn() for i in instances]
-            hostnames_to_manager = [h.hostname for h in
-                                    api.get_all_hosts('full')]
-            is_ok = True
-            for hostname in hostnames:
-                if hostname not in hostnames_to_manager:
-                    is_ok = False
-                    break
+    def _agents_connected(self, instances, api):
+        hostnames = [i.fqdn() for i in instances]
+        hostnames_to_manager = [h.hostname for h in
+                                api.get_all_hosts('full')]
+        for hostname in hostnames:
+            if hostname not in hostnames_to_manager:
+                return False
+        return True
 
-            if not is_ok:
-                context.sleep(5)
-            else:
-                break
-        else:
-            raise ex.HadoopProvisionError(_("Cloudera agents failed to connect"
-                                            " to Cloudera Manager"))
+    @cpo.event_wrapper(True, step=_("Await agents"), param=('cluster', 1))
+    def _await_agents(self, cluster, instances, timeout_config):
+        api = self.get_api_client(instances[0].cluster)
+        poll_utils.plugin_option_poll(
+            cluster, self._agents_connected, timeout_config,
+            _("Await Cloudera agents"), 5, {
+                'instances': instances, 'api': api})
 
     def configure_instances(self, instances, cluster=None):
         # instances non-empty

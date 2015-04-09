@@ -78,6 +78,7 @@ class MapRFS(s.Service):
             vu.at_least(1, CLDB),
             vu.each_node_has(FILE_SERVER),
             vu.on_same_node(CLDB, FILE_SERVER),
+            vu.has_volumes(),
         ]
 
     def service_dir(self, cluster_context):
@@ -130,7 +131,4 @@ class MapRFS(s.Service):
 
     def _get_cldb_conf_props(self, context):
         zookeepers = context.get_zookeeper_nodes_ip_with_port()
-        result = {'cldb.zookeeper.servers': zookeepers}
-        if context.is_node_aware:
-            result['net.topology.script.file.name'] = '/opt/mapr/topology.sh'
-        return result
+        return {'cldb.zookeeper.servers': zookeepers}
