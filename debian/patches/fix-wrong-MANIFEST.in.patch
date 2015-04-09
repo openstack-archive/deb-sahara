@@ -9,9 +9,9 @@ Last-Update: 2014-09-22
 
 Index: sahara/MANIFEST.in
 ===================================================================
---- sahara.orig/MANIFEST.in	2014-10-05 11:23:02.000000000 +0800
-+++ sahara/MANIFEST.in	2014-10-05 11:47:00.000000000 +0800
-@@ -37,6 +37,7 @@
+--- sahara.orig/MANIFEST.in
++++ sahara/MANIFEST.in
+@@ -61,6 +61,7 @@ include sahara/tests/unit/resources/*.he
  include sahara/tests/unit/resources/*.xml
  include sahara/tests/unit/resources/*.txt
  include sahara/topology/resources/*.xml
