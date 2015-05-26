@@ -1,6 +1,14 @@
 sahara (2015.1.0-3) unstable; urgency=medium
 
   * Removes obsolete patches.
+  * Adds new sahara-api and sahara-engine packages, as this is now the
+    recommended way to run Sahara. The old sahara package is now a
+    metapackage (for compatibility reasons) which depends on them:
+    - Moves files to sahara-common.install instead of sahara.install.
+    - sahara-common Breaks+Replaces: the old sahara .deb.
+    - Moves the sahara API endpoint registration to sahara-api.
+    - Moves sahara.logrotate to sahara-common.logrotate, and makes it
+      rotate /var/log/sahara/*.log.
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 26 May 2015 13:51:04 +0200
 

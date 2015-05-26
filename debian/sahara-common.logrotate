@@ -1,4 +1,4 @@
-/var/log/sahara/sahara-all.log {
+/var/log/sahara/*.log {
     daily
     missingok
     compress

@@ -73,7 +73,6 @@ Vcs-Git: git://anonscm.debian.org/openstack/sahara.git
 Package: python-sahara
 Architecture: all
 Section: python
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: alembic (>= 0.7.2),
          python-babel,
          python-barbicanclient (>= 3.0.1),
@@ -123,7 +122,6 @@ Description: OpenStack data processing cluster as a service - library
 Package: sahara-common
 Architecture: all
 Section: python
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: adduser,
          dbconfig-common,
          debconf,
@@ -131,6 +129,8 @@ Depends: adduser,
          ${misc:Depends},
          ${python:Depends},
 Recommends: python-ldap
+Breaks: sahara (<< 2015.1.0-3~)
+Replaces: sahara (<< 2015.1.0-3~)
 Description: OpenStack data processing cluster as a service - common files
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
@@ -138,13 +138,43 @@ Description: OpenStack data processing cluster as a service - common files
  .
  This package contains the common files.
 
-Package: sahara
+Package: sahara-api
 Architecture: all
 Section: python
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: adduser,
          dbconfig-common,
          sahara-common (= ${source:Version}),
+         ${misc:Depends},
+         ${ostack-lsb-base},
+         ${python:Depends},
+Description: OpenStack data processing cluster as a service - API server
+ The Sahara project provides a simple means to provision a data-intensive
+ application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
+ Savanna project, renamed due to potential trademark issues.
+ .
+ This package contains the API server.
+
+Package: sahara-engine
+Architecture: all
+Section: python
+Depends: adduser,
+         dbconfig-common,
+         sahara-common (= ${source:Version}),
+         ${misc:Depends},
+         ${ostack-lsb-base},
+         ${python:Depends},
+Description: OpenStack data processing cluster as a service - Engine server
+ The Sahara project provides a simple means to provision a data-intensive
+ application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
+ Savanna project, renamed due to potential trademark issues.
+ .
+ This package contains the engine daemon.
+
+Package: sahara
+Architecture: all
+Section: python
+Depends: sahara-engine (= ${source:Version}),
+         sahara-api (= ${source:Version}),
          ${misc:Depends},
          ${ostack-lsb-base},
          ${python:Depends},
@@ -153,12 +183,11 @@ Description: OpenStack data processing cluster as a service - API & Engine
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
  Savanna project, renamed due to potential trademark issues.
  .
- This package contains the API server and engine daemons.
+ This metapackage depends on the API server and the engine daemon.
 
 Package: sahara-doc
 Architecture: all
 Section: doc
-Pre-Depends: dpkg (>= 1.15.6~)
 Depends: ${misc:Depends}, ${sphinxdoc:Depends}
 Description: OpenStack data processing cluster as a service - doc
  The Sahara project provides a simple means to provision a data-intensive
