@@ -27,8 +27,8 @@ endif
 
 override_dh_auto_build:
 	dh_auto_build
-	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara.config
-	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara.postinst
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-api.config
+	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-api.postinst
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-common.config
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-common.postinst
 
@@ -59,7 +59,7 @@ override_dh_install:
 override_dh_clean:
 	rm -rf build 	debian/sahara-common.postinst \
 			debian/sahara-common.config \
-			debian/sahara.postinst \
-			debian/sahara.config
+			debian/sahara-api.postinst \
+			debian/sahara-api.config
 	rm -f debian/*.init debian/*.service debian/*.upstart
 	dh_clean -O--buildsystem=python_distutils
