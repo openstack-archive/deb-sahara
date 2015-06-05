@@ -68,5 +68,6 @@ override_dh_clean:
 			debian/sahara-common.config \
 			debian/sahara-api.postinst \
 			debian/sahara-api.config
+	rm -rf doc/build
 	rm -f debian/*.init debian/*.service debian/*.upstart
 	dh_clean -O--buildsystem=python_distutils
