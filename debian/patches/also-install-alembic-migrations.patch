@@ -1,0 +1,16 @@
+Description: Also install Alembic migration scripts
+ Upstream MANIFEST.in doesn't make it so alembic migrations are in.
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: no
+Last-Update: 2015-06-12
+
+--- sahara-2015.1.0.orig/MANIFEST.in
++++ sahara-2015.1.0/MANIFEST.in
+@@ -11,6 +11,7 @@ include sahara/db/migration/alembic_migr
+ include sahara/db/templates/README.rst
+ 
+ recursive-include sahara/locale *
++recursive-include sahara/db/migration/alembic_migrations *
+ 
+ recursive-include sahara/plugins/default_templates *.json
+ include sahara/plugins/default_templates/template.conf

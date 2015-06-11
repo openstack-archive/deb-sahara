@@ -57,12 +57,6 @@ override_dh_install:
 		cp -rfv etc/sahara/$$i $(CURDIR)/debian/sahara-commom/etc/sahara ; \
 	done
 
-	# Copy the alembic migration scripts which aren't copied
-	# by python setup.py
-	set -e ; for pyvers in $(PYTHONS); do \
-		cp -rfv $(CURDIR)/sahara/db/migration/alembic_migrations $(CURDIR)/debian/python-sahara/usr/lib/python$$pyvers/dist-packages/sahara/db/migration/ ; \
-	done
-
 override_dh_clean:
 	rm -rf build 	debian/sahara-common.postinst \
 			debian/sahara-common.config \

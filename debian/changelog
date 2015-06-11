@@ -1,3 +1,10 @@
+sahara (2015.1.0-5) unstable; urgency=medium
+
+  * Patches MANIFEST.in to get alembic_migrations in instead of copying
+    them in debian/rules.
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 12 Jun 2015 00:51:21 +0200
+
 sahara (2015.1.0-4) unstable; urgency=medium
 
   * Added fr.po thanks to Julien Patriarca (Closes: #785354).
