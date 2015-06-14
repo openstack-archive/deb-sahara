@@ -5,6 +5,10 @@ PYTHONS:=$(shell pyversions -vr)
 include /usr/share/openstack-pkg-tools/pkgos.make
 export OSLO_PACKAGE_VERSION=$(VERSION)
 
+LAST_CHANGE = $(shell dpkg-parsechangelog -S Date)
+BUILD_DATE  = $(shell LC_ALL=C date -u "+%B %d, %Y" -d "$(LAST_CHANGE)")
+SPHINXOPTS := -D html_last_updated_fmt="$(BUILD_DATE)"
+
 %:
 	dh $@ --buildsystem=python_distutils --with python2,sphinxdoc,systemd
 
@@ -15,13 +19,13 @@ endif
 
 override_dh_sphinxdoc:
 ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
-	PYTHONPATH=. sphinx-build -b html doc/source $(CURDIR)/debian/sahara-doc/usr/share/doc/sahara-doc/html
+	PYTHONPATH=. sphinx-build $(SPHINXOPTS) -b html doc/source $(CURDIR)/debian/sahara-doc/usr/share/doc/sahara-doc/html
 	dh_sphinxdoc -O--buildsystem=python_distutils
 endif
 
 override_dh_installman:
 ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
-	PYTHONPATH=. sphinx-build -b man doc/source doc/build/man
+	PYTHONPATH=. sphinx-build $(SPHINXOPTS) -b man doc/source doc/build/man
 	dh_installman -O--buildsystem=python_distutils
 endif
 

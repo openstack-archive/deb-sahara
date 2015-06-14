@@ -1,3 +1,10 @@
+sahara (2015.1.0-6) unstable; urgency=medium
+
+  * Makes build reproducible thanks to Juan Picca <jumapico@gmail.com>
+    (Closes: #788595).
+
+ -- Thomas Goirand <zigo@debian.org>  Sun, 14 Jun 2015 15:49:50 +0200
+
 sahara (2015.1.0-5) unstable; urgency=medium
 
   * Patches MANIFEST.in to get alembic_migrations in instead of copying
