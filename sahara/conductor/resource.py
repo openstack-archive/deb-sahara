@@ -28,6 +28,7 @@ import datetime
 import six
 
 from sahara.conductor import objects
+from sahara import exceptions as ex
 from sahara.i18n import _
 from sahara.swift import swift_helper
 from sahara.utils import types
@@ -87,7 +88,7 @@ class Resource(types.FrozenDict):
     def __init__(self, dct):
         super(Resource, self).__setattr__('_initial_dict', dct)
         newdct = dict()
-        for refname, entity in dct.iteritems():
+        for refname, entity in six.iteritems(dct):
             newdct[refname] = self._wrap_entity(refname, entity)
 
         super(Resource, self).__init__(newdct)
@@ -143,7 +144,7 @@ class Resource(types.FrozenDict):
 
     def _to_dict(self, backref):
         dct = dict()
-        for refname, entity in self.iteritems():
+        for refname, entity in six.iteritems(self):
             if refname != backref and refname not in self._filter_fields:
                 childs_backref = None
                 if refname in self._children:
@@ -169,7 +170,7 @@ class Resource(types.FrozenDict):
         return self[item]
 
     def __setattr__(self, *args):
-        raise types.FrozenClassError(self)
+        raise ex.FrozenClassError(self)
 
 
 class NodeGroupTemplateResource(Resource, objects.NodeGroupTemplate):
@@ -177,7 +178,7 @@ class NodeGroupTemplateResource(Resource, objects.NodeGroupTemplate):
 
 
 class InstanceResource(Resource, objects.Instance):
-    _filter_fields = ['tenant_id', 'node_group_id']
+    _filter_fields = ['tenant_id', 'node_group_id', "volumes"]
 
     @property
     def cluster_id(self):
@@ -258,6 +259,7 @@ class JobExecution(Resource, objects.JobExecution):
     _filter_fields = ['extra']
     _sanitize_fields = {'job_configs': sanitize_job_configs,
                         'info': sanitize_info}
+    # TODO(egafford): Sanitize interface ("secret" bool field on job args?)
 
 
 class JobBinary(Resource, objects.JobBinary):

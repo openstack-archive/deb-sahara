@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from novaclient import exceptions as nova_exceptions
 from oslo_config import cfg
 from oslo_log import log as logging
 import six
@@ -40,11 +39,18 @@ LOG = logging.getLogger(__name__)
 SSH_PORT = 22
 
 
+def _warning_logger():
+    LOG.warning(_LW("Direct infrastructure engine is deprecated in Liberty"
+                    " release and will be removed after that release."
+                    " Use Heat infrastructure engine instead."))
+
+
 class DirectEngine(e.Engine):
     def get_type_and_version(self):
         return "direct.1.0"
 
     def create_cluster(self, cluster):
+        _warning_logger()
         ctx = context.ctx()
         self._update_rollback_strategy(cluster, shutdown=True)
 
@@ -75,6 +81,7 @@ class DirectEngine(e.Engine):
         self._update_rollback_strategy(cluster)
 
     def scale_cluster(self, cluster, node_group_id_map):
+        _warning_logger()
         ctx = context.ctx()
         cluster = g.change_cluster_status(cluster, "Scaling: Spawning")
 
@@ -110,23 +117,22 @@ class DirectEngine(e.Engine):
         return instance_ids
 
     def rollback_cluster(self, cluster, reason):
+        _warning_logger()
         rollback_info = cluster.rollback_info or {}
         self._update_rollback_strategy(cluster)
 
         if rollback_info.get('shutdown', False):
             self._rollback_cluster_creation(cluster, reason)
-            LOG.warning(_LW("Cluster {name} creation rollback "
-                            "(reason: {reason})").format(name=cluster.name,
-                                                         reason=reason))
+            LOG.warning(_LW("Cluster creation rollback "
+                            "(reason: {reason})").format(reason=reason))
             return False
 
         instance_ids = rollback_info.get('instance_ids', [])
         if instance_ids:
             self._rollback_cluster_scaling(
                 cluster, g.get_instances(cluster, instance_ids), reason)
-            LOG.warning(_LW("Cluster {name} scaling rollback "
-                            "(reason: {reason})").format(name=cluster.name,
-                                                         reason=reason))
+            LOG.warning(_LW("Cluster scaling rollback "
+                            "(reason: {reason})").format(reason=reason))
 
             return True
 
@@ -190,15 +196,6 @@ class DirectEngine(e.Engine):
         server_group = client.create(name=server_group_name,
                                      policies=['anti-affinity'])
         return server_group.id
-
-    def _delete_aa_server_group(self, cluster):
-        if cluster.anti_affinity:
-            server_group_name = g.generate_aa_group_name(cluster.name)
-            client = nova.client().server_groups
-
-            server_groups = client.findall(name=server_group_name)
-            if len(server_groups) == 1:
-                client.delete(server_groups[0].id)
 
     def _find_aa_server_group(self, cluster):
         server_group_name = g.generate_aa_group_name(cluster.name)
@@ -282,7 +279,8 @@ class DirectEngine(e.Engine):
             cluster = g.change_cluster_status(cluster, "Deleting Instances")
 
             for instance in instances_to_delete:
-                self._shutdown_instance(instance)
+                with context.set_current_instance_id(instance.instance_id):
+                    self._shutdown_instance(instance)
 
         self._await_deleted(cluster, instances_to_delete)
         for ng in cluster.node_groups:
@@ -418,10 +416,11 @@ class DirectEngine(e.Engine):
 
     def _assign_floating_ips(self, instances):
         for instance in instances:
-            node_group = instance.node_group
-            if node_group.floating_ip_pool:
-                networks.assign_floating_ip(instance.instance_id,
-                                            node_group.floating_ip_pool)
+            with context.set_current_instance_id(instance.instance_id):
+                node_group = instance.node_group
+                if node_group.floating_ip_pool:
+                    networks.assign_floating_ip(instance.instance_id,
+                                                node_group.floating_ip_pool)
 
     @poll_utils.poll_status(
         'await_for_instances_active',
@@ -431,9 +430,10 @@ class DirectEngine(e.Engine):
             return True
         for instance in instances:
             if instance.id not in active_ids:
-                if self._check_if_active(instance):
-                    active_ids.add(instance.id)
-                    cpo.add_successful_event(instance)
+                with context.set_current_instance_id(instance.instance_id):
+                    if self._check_if_active(instance):
+                        active_ids.add(instance.id)
+                        cpo.add_successful_event(instance)
         return len(instances) == len(active_ids)
 
     def _await_active(self, cluster, instances):
@@ -448,34 +448,7 @@ class DirectEngine(e.Engine):
         active_ids = set()
         self._check_active(active_ids, cluster, instances)
 
-        LOG.info(_LI("Cluster {cluster_id}: all instances are active").format(
-                 cluster_id=cluster.id))
-
-    @poll_utils.poll_status(
-        'delete_instances_timeout',
-        _("Wait for instances to be deleted"), sleep=1)
-    def _check_deleted(self, deleted_ids, cluster, instances):
-        if not g.check_cluster_exists(cluster):
-            return True
-
-        for instance in instances:
-            if instance.id not in deleted_ids:
-                if self._check_if_deleted(instance):
-                    LOG.debug("Instance {instance} is deleted".format(
-                              instance=instance.instance_name))
-                    deleted_ids.add(instance.id)
-                    cpo.add_successful_event(instance)
-        return len(deleted_ids) == len(instances)
-
-    def _await_deleted(self, cluster, instances):
-        """Await all instances are deleted."""
-        if not instances:
-            return
-        cpo.add_provisioning_step(
-            cluster.id, _("Wait for instances to be deleted"), len(instances))
-
-        deleted_ids = set()
-        self._check_deleted(deleted_ids, cluster, instances)
+        LOG.info(_LI("All instances are active"))
 
     @cpo.event_wrapper(mark_successful_on_exit=False)
     def _check_if_active(self, instance):
@@ -484,15 +457,6 @@ class DirectEngine(e.Engine):
             raise exc.SystemError(_("Node %s has error status") % server.name)
 
         return server.status == 'ACTIVE'
-
-    @cpo.event_wrapper(mark_successful_on_exit=False)
-    def _check_if_deleted(self, instance):
-        try:
-            nova.get_instance_info(instance)
-        except nova_exceptions.NotFound:
-            return True
-
-        return False
 
     def _rollback_cluster_creation(self, cluster, ex):
         """Shutdown all instances and update cluster status."""
@@ -503,71 +467,15 @@ class DirectEngine(e.Engine):
         """Attempt to rollback cluster scaling."""
 
         for i in instances:
-            self._shutdown_instance(i)
+            with context.set_current_instance_id(i.instance_id):
+                self._shutdown_instance(i)
 
         cluster = conductor.cluster_get(context.ctx(), cluster)
         g.clean_cluster_from_empty_ng(cluster)
-
-    def _shutdown_instances(self, cluster):
-        for node_group in cluster.node_groups:
-            for instance in node_group.instances:
-                self._shutdown_instance(instance)
-
-            self._await_deleted(cluster, node_group.instances)
-            self._delete_auto_security_group(node_group)
-
-    def _delete_auto_security_group(self, node_group):
-        if not node_group.auto_security_group:
-            return
-
-        if not node_group.security_groups:
-            # node group has no security groups
-            # nothing to delete
-            return
-
-        name = node_group.security_groups[-1]
-
-        try:
-            client = nova.client().security_groups
-            security_group = client.get(name)
-            if (security_group.name !=
-                    g.generate_auto_security_group_name(node_group)):
-                LOG.warning(_LW("Auto security group for node group {name} is "
-                                "not found").format(name=node_group.name))
-                return
-            client.delete(name)
-        except Exception:
-            LOG.warning(_LW("Failed to delete security group {name}").format(
-                name=name))
-
-    def _shutdown_instance(self, instance):
-        ctx = context.ctx()
-
-        if instance.node_group.floating_ip_pool:
-            try:
-                networks.delete_floating_ip(instance.instance_id)
-            except nova_exceptions.NotFound:
-                LOG.warning(_LW("Attempted to delete non-existent floating IP "
-                                "in pool {pool} from instance {instance}")
-                            .format(pool=instance.node_group.floating_ip_pool,
-                                    instance=instance.instance_id))
-
-        try:
-            volumes.detach_from_instance(instance)
-        except Exception:
-            LOG.warning(_LW("Detaching volumes from instance {id} failed")
-                        .format(id=instance.instance_id))
-
-        try:
-            nova.client().servers.delete(instance.instance_id)
-        except nova_exceptions.NotFound:
-            LOG.warning(_LW("Attempted to delete non-existent instance {id}")
-                        .format(id=instance.instance_id))
-
-        conductor.instance_remove(ctx, instance)
 
     def shutdown_cluster(self, cluster):
         """Shutdown specified cluster and all related resources."""
         self._shutdown_instances(cluster)
         self._clean_job_executions(cluster)
         self._delete_aa_server_group(cluster)
+        self._remove_db_objects(cluster)

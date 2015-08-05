@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import re
 
+from oslo_serialization import jsonutils as json
 from six.moves.urllib import parse as urlparse
 
 import sahara.exceptions as ex
@@ -23,8 +23,8 @@ import sahara.exceptions as ex
 
 class OozieClient(object):
     def __init__(self, url, oozie_server):
-        self.job_url = url + "/v1/job/%s"
-        self.jobs_url = url + "/v1/jobs"
+        self.job_url = url + "/v2/job/%s"
+        self.jobs_url = url + "/v2/jobs"
         self.oozie_server = oozie_server
         self.port = urlparse.urlparse(url).port
 
@@ -84,7 +84,7 @@ def _check_status_code(resp, expected_code):
         message = resp_text.split("<HR size=\"1\" noshade=\"noshade\">")[1]
         message = message.replace("</p><p>", "\n")
         message = re.sub('<[^<]+?>', ' ', message)
-        raise OozieException(message)
+        raise ex.OozieException(message)
 
 
 def get_json(response):
@@ -95,9 +95,3 @@ def get_json(response):
         return response.json()
     else:
         return json.loads(response.content)
-
-
-class OozieException(ex.SaharaException):
-    def __init__(self, message):
-        self.message = message
-        self.code = "OOZIE_EXCEPTION"

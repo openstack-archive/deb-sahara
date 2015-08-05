@@ -258,11 +258,11 @@ class ConductorManager(db_base.Base):
                                 ignore_default=False):
         """Update a cluster_template from the values dictionary."""
         values = copy.deepcopy(values)
-        values = _apply_defaults(values, CLUSTER_DEFAULTS)
         values['tenant_id'] = context.tenant_id
         values['id'] = id
 
-        values['node_groups'] = self._populate_node_groups(context, values)
+        if 'node_groups' in values:
+            values['node_groups'] = self._populate_node_groups(context, values)
 
         return self.db.cluster_template_update(context, values, ignore_default)
 
@@ -336,6 +336,12 @@ class ConductorManager(db_base.Base):
     def data_source_destroy(self, context, data_source):
         """Destroy the Data Source or raise if it does not exist."""
         return self.db.data_source_destroy(context, data_source)
+
+    def data_source_update(self, context, id, values):
+        """Update the Data Source or raise if it does not exist."""
+        values = copy.deepcopy(values)
+        values["id"] = id
+        return self.db.data_source_update(context, values)
 
     # JobExecution ops
 
@@ -430,6 +436,13 @@ class ConductorManager(db_base.Base):
     def job_binary_destroy(self, context, job_binary):
         """Destroy the JobBinary or raise if it does not exist."""
         self.db.job_binary_destroy(context, job_binary)
+
+    def job_binary_update(self, context, id, values):
+        """Update a JobBinary from the values dictionary."""
+
+        values = copy.deepcopy(values)
+        values['id'] = id
+        return self.db.job_binary_update(context, values)
 
     # JobBinaryInternal ops
 

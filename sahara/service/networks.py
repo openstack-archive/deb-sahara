@@ -19,6 +19,7 @@ import six
 
 from sahara import conductor as c
 from sahara import context
+from sahara.utils.openstack import base as b
 from sahara.utils.openstack import neutron
 from sahara.utils.openstack import nova
 
@@ -57,32 +58,31 @@ def init_instances_ips(instance):
     # NOTE(aignatov): Once bug #1262529 is fixed this 'if' block should be
     # reviewed and reformatted again, probably removed completely.
     if CONF.use_neutron and not (management_ip and internal_ip):
-        LOG.debug("Instance {instance_name} doesn't yet contain Floating "
-                  "IP or Internal IP. Floating IP={mgmt_ip}, Internal IP="
-                  "{internal_ip}. Trying to get via Neutron.".format(
-                      instance_name=server.name, mgmt_ip=management_ip,
-                      internal_ip=internal_ip))
+        LOG.debug("Instance doesn't yet contain Floating IP or Internal IP. "
+                  "Floating IP={mgmt_ip}, Internal IP={internal_ip}. "
+                  "Trying to get via Neutron.".format(
+                      mgmt_ip=management_ip, internal_ip=internal_ip))
         neutron_client = neutron.client()
-        ports = neutron_client.list_ports(device_id=server.id)["ports"]
+        ports = b.execute_with_retries(
+            neutron_client.list_ports, device_id=server.id)["ports"]
         if ports:
             target_port_id = ports[0]['id']
-            fl_ips = neutron_client.list_floatingips(
+            fl_ips = b.execute_with_retries(
+                neutron_client.list_floatingips,
                 port_id=target_port_id)['floatingips']
             if fl_ips:
                 fl_ip = fl_ips[0]
                 if not internal_ip:
                     internal_ip = fl_ip['fixed_ip_address']
-                    LOG.debug('Found fixed IP {internal_ip} for {server}'
-                              .format(internal_ip=internal_ip,
-                                      server=server.name))
+                    LOG.debug('Found fixed IP {internal_ip}'
+                              .format(internal_ip=internal_ip))
                 # Zeroing management_ip if Sahara in private network
                 if not CONF.use_floating_ips:
                     management_ip = internal_ip
                 elif not management_ip:
                     management_ip = fl_ip['floating_ip_address']
-                    LOG.debug('Found floating IP {mgmt_ip} for {server}'
-                              .format(mgmt_ip=management_ip,
-                                      server=server.name))
+                    LOG.debug('Found floating IP {mgmt_ip}'
+                              .format(mgmt_ip=management_ip))
 
     conductor.instance_update(context.ctx(), instance,
                               {"management_ip": management_ip,
@@ -92,11 +92,13 @@ def init_instances_ips(instance):
 
 
 def assign_floating_ip(instance_id, pool):
-    ip = nova.client().floating_ips.create(pool)
-    nova.client().servers.get(instance_id).add_floating_ip(ip)
+    ip = b.execute_with_retries(nova.client().floating_ips.create, pool)
+    server = b.execute_with_retries(nova.client().servers.get, instance_id)
+    b.execute_with_retries(server.add_floating_ip, ip)
 
 
 def delete_floating_ip(instance_id):
-    fl_ips = nova.client().floating_ips.findall(instance_id=instance_id)
+    fl_ips = b.execute_with_retries(
+        nova.client().floating_ips.findall, instance_id=instance_id)
     for fl_ip in fl_ips:
-        nova.client().floating_ips.delete(fl_ip.id)
+        b.execute_with_retries(nova.client().floating_ips.delete, fl_ip.id)

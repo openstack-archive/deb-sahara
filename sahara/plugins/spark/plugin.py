@@ -20,10 +20,12 @@ from oslo_log import log as logging
 
 from sahara import conductor
 from sahara import context
+from sahara import exceptions
 from sahara.i18n import _
 from sahara.i18n import _LI
 from sahara.plugins import exceptions as ex
 from sahara.plugins import provisioning as p
+from sahara.plugins import recommendations_utils as ru
 from sahara.plugins.spark import config_helper as c_helper
 from sahara.plugins.spark import edp_engine
 from sahara.plugins.spark import run_scripts as run
@@ -56,7 +58,7 @@ class SparkProvider(p.ProvisioningPluginBase):
                  "CDH cluster without any management consoles.")
 
     def get_versions(self):
-        return ['1.0.0', '0.9.1']
+        return ['1.3.1', '1.0.0']
 
     def get_configs(self, hadoop_version):
         return c_helper.get_plugin_configs()
@@ -65,6 +67,11 @@ class SparkProvider(p.ProvisioningPluginBase):
         return self.processes
 
     def validate(self, cluster):
+        if cluster.hadoop_version == "1.0.0":
+            raise exceptions.DeprecatedException(
+                _("Support for Spark version 1.0.0 is now deprecated and will"
+                  " be removed in the 2016.1 release."))
+
         nn_count = sum([ng.count for ng
                         in utils.get_node_groups(cluster, "namenode")])
         if nn_count != 1:
@@ -76,8 +83,9 @@ class SparkProvider(p.ProvisioningPluginBase):
             raise ex.InvalidComponentCountException("datanode", _("1 or more"),
                                                     nn_count)
 
-        rep_factor = c_helper.get_config_value('HDFS', "dfs.replication",
-                                               cluster)
+        rep_factor = utils.get_config_value_or_default('HDFS',
+                                                       "dfs.replication",
+                                                       cluster)
         if dn_count < rep_factor:
             raise ex.InvalidComponentCountException(
                 'datanode', _('%s or more') % rep_factor, dn_count,
@@ -123,8 +131,7 @@ class SparkProvider(p.ProvisioningPluginBase):
     def _start_spark(self, cluster, sm_instance):
         with remote.get_remote(sm_instance) as r:
             run.start_spark_master(r, self._spark_home(cluster))
-            LOG.info(_LI("Spark service at {host} has been started").format(
-                     host=sm_instance.hostname()))
+            LOG.info(_LI("Spark service has been started"))
 
     def start_cluster(self, cluster):
         nn_instance = utils.get_instance(cluster, "namenode")
@@ -136,8 +143,7 @@ class SparkProvider(p.ProvisioningPluginBase):
         # start the data nodes
         self._start_datanode_processes(dn_instances)
 
-        LOG.info(_LI("Hadoop services in cluster {cluster} have been started")
-                 .format(cluster=cluster.name))
+        LOG.info(_LI("Hadoop services have been started"))
 
         with remote.get_remote(nn_instance) as r:
             r.execute_command("sudo -u hdfs hdfs dfs -mkdir -p /user/$USER/")
@@ -147,12 +153,13 @@ class SparkProvider(p.ProvisioningPluginBase):
         # start spark nodes
         self.start_spark(cluster)
 
-        LOG.info(_LI('Cluster {cluster} has been started successfully').format(
-                 cluster=cluster.name))
+        LOG.info(_LI('Cluster has been started successfully'))
         self._set_cluster_info(cluster)
 
     def _spark_home(self, cluster):
-        return c_helper.get_config_value("Spark", "Spark home", cluster)
+        return utils.get_config_value_or_default("Spark",
+                                                 "Spark home",
+                                                 cluster)
 
     def _extract_configs_to_extra(self, cluster):
         nn = utils.get_instance(cluster, "namenode")
@@ -381,7 +388,7 @@ class SparkProvider(p.ProvisioningPluginBase):
         info = {}
 
         if nn:
-            address = c_helper.get_config_value(
+            address = utils.get_config_value_or_default(
                 'HDFS', 'dfs.http.address', cluster)
             port = address[address.rfind(':') + 1:]
             info['HDFS'] = {
@@ -390,7 +397,7 @@ class SparkProvider(p.ProvisioningPluginBase):
             info['HDFS']['NameNode'] = 'hdfs://%s:8020' % nn.hostname()
 
         if sp_master:
-            port = c_helper.get_config_value(
+            port = utils.get_config_value_or_default(
                 'Spark', 'Master webui port', cluster)
             if port is not None:
                 info['Spark'] = {
@@ -441,8 +448,7 @@ class SparkProvider(p.ProvisioningPluginBase):
         self._start_datanode_processes(dn_instances)
 
         run.start_spark_master(r_master, self._spark_home(cluster))
-        LOG.info(_LI("Spark master service at {host} has been restarted")
-                 .format(host=master.hostname()))
+        LOG.info(_LI("Spark master service has been restarted"))
 
     def _get_scalable_processes(self):
         return ["datanode", "slave"]
@@ -473,8 +479,9 @@ class SparkProvider(p.ProvisioningPluginBase):
                         ' '.join(ng.node_processes))
 
         dn_amount = len(utils.get_instances(cluster, "datanode"))
-        rep_factor = c_helper.get_config_value('HDFS', "dfs.replication",
-                                               cluster)
+        rep_factor = utils.get_config_value_or_default('HDFS',
+                                                       "dfs.replication",
+                                                       cluster)
 
         if dn_to_delete > 0 and dn_amount - dn_to_delete < rep_factor:
             raise ex.ClusterCannotBeScaled(
@@ -508,14 +515,16 @@ class SparkProvider(p.ProvisioningPluginBase):
             'namenode': [8020, 50070, 50470],
             'datanode': [50010, 1004, 50075, 1006, 50020],
             'master': [
-                int(c_helper.get_config_value("Spark", "Master port",
-                                              cluster)),
-                int(c_helper.get_config_value("Spark", "Master webui port",
-                                              cluster)),
+                int(utils.get_config_value_or_default("Spark", "Master port",
+                                                      cluster)),
+                int(utils.get_config_value_or_default("Spark",
+                                                      "Master webui port",
+                                                      cluster)),
             ],
             'slave': [
-                int(c_helper.get_config_value("Spark", "Worker webui port",
-                                              cluster))
+                int(utils.get_config_value_or_default("Spark",
+                                                      "Worker webui port",
+                                                      cluster))
             ]
         }
 
@@ -525,3 +534,14 @@ class SparkProvider(p.ProvisioningPluginBase):
                 ports.extend(ports_map[process])
 
         return ports
+
+    def recommend_configs(self, cluster):
+        want_to_configure = {
+            'cluster_configs': {
+                'dfs.replication': ('HDFS', 'dfs.replication')
+            }
+        }
+        provider = ru.HadoopAutoConfigsProvider(
+            want_to_configure, self.get_configs(
+                cluster.hadoop_version), cluster)
+        provider.apply_recommended_configs()

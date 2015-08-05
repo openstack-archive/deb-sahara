@@ -22,6 +22,7 @@ from sahara import exceptions as ex
 from sahara.i18n import _
 from sahara.i18n import _LE
 from sahara.utils import cluster_progress_ops as cpo
+from sahara.utils.openstack import base as b
 from sahara.utils.openstack import cinder
 from sahara.utils.openstack import nova
 from sahara.utils import poll_utils
@@ -59,9 +60,11 @@ def attach_to_instances(instances):
     with context.ThreadGroup() as tg:
         for instance in instances:
             if instance.node_group.volumes_per_node > 0:
-                tg.spawn(
-                    'attach-volumes-for-instance-%s' % instance.instance_name,
-                    _attach_volumes_to_node, instance.node_group, instance)
+                with context.set_current_instance_id(instance.instance_id):
+                    tg.spawn(
+                        'attach-volumes-for-instance-%s'
+                        % instance.instance_name, _attach_volumes_to_node,
+                        instance.node_group, instance)
 
 
 @poll_utils.poll_status(
@@ -84,18 +87,16 @@ def _attach_volumes_to_node(node_group, instance):
             node_group.volume_local_to_instance, display_name,
             node_group.volumes_availability_zone)
         devices.append(device)
-        LOG.debug("Attached volume {device} to instance {uuid}".format(
-                  device=device, uuid=instance.instance_id))
+        LOG.debug("Attached volume {device} to instance".format(device=device))
 
     _await_attach_volumes(instance, devices)
 
     paths = instance.node_group.storage_paths()
     for idx in range(0, instance.node_group.volumes_per_node):
-        LOG.debug("Mounting volume {volume} to instance {id}"
-                  .format(volume=devices[idx], id=instance.instance_id))
+        LOG.debug("Mounting volume {volume} to instance"
+                  .format(volume=devices[idx]))
         _mount_volume(instance, devices[idx], paths[idx])
-        LOG.debug("Mounted volume to instance {id}"
-                  .format(id=instance.instance_id))
+        LOG.debug("Mounted volume to instance")
 
 
 @poll_utils.poll_status(
@@ -123,12 +124,12 @@ def _create_attach_volume(ctx, instance, size, volume_type,
     if volume_local_to_instance:
         kwargs['scheduler_hints'] = {'local_to_instance': instance.instance_id}
 
-    volume = cinder.client().volumes.create(**kwargs)
+    volume = b.execute_with_retries(cinder.client().volumes.create, **kwargs)
     conductor.append_volume(ctx, instance, volume.id)
     _await_available(volume)
 
-    resp = nova.client().volumes.create_server_volume(
-        instance.instance_id, volume.id, None)
+    resp = b.execute_with_retries(nova.client().volumes.create_server_volume,
+                                  instance.instance_id, volume.id, None)
     return resp.device
 
 
@@ -156,30 +157,30 @@ def mount_to_instances(instances):
 
     with context.ThreadGroup() as tg:
         for instance in instances:
-            devices = _find_instance_volume_devices(instance)
-
-            # Since formatting can take several minutes (for large disks) and
-            # can be done in parallel, launch one thread per disk.
-            for idx in range(0, instance.node_group.volumes_per_node):
-                tg.spawn('mount-volume-%d-to-node-%s' %
-                         (idx, instance.instance_name),
-                         _mount_volume_to_node, instance, idx, devices[idx])
+            with context.set_current_instance_id(instance.instance_id):
+                devices = _find_instance_volume_devices(instance)
+                # Since formating can take several minutes (for large disks)
+                # and can be done in parallel, launch one thread per disk.
+                for idx in range(0, instance.node_group.volumes_per_node):
+                    tg.spawn(
+                        'mount-volume-%d-to-node-%s' %
+                        (idx, instance.instance_name),
+                        _mount_volume_to_node, instance, idx, devices[idx])
 
 
 def _find_instance_volume_devices(instance):
-    volumes = nova.client().volumes.get_server_volumes(instance.instance_id)
+    volumes = b.execute_with_retries(nova.client().volumes.get_server_volumes,
+                                     instance.instance_id)
     devices = [volume.device for volume in volumes]
     return devices
 
 
 @cpo.event_wrapper(mark_successful_on_exit=True)
 def _mount_volume_to_node(instance, idx, device):
-    LOG.debug("Mounting volume {device} to instance {id}".format(
-              device=device, id=instance.instance_id))
+    LOG.debug("Mounting volume {device} to instance".format(device=device))
     mount_point = instance.node_group.storage_paths()[idx]
     _mount_volume(instance, device, mount_point)
-    LOG.debug("Mounted volume to instance {id}".format(
-        id=instance.instance_id))
+    LOG.debug("Mounted volume to instance")
 
 
 def _mount_volume(instance, device_path, mount_point):
@@ -200,8 +201,7 @@ def _mount_volume(instance, device_path, mount_point):
             r.execute_command('sudo mount %s %s %s' %
                               (mount_opts, device_path, mount_point))
         except Exception:
-            LOG.error(_LE("Error mounting volume to instance {id}")
-                      .format(id=instance.instance_id))
+            LOG.error(_LE("Error mounting volume to instance"))
             raise
 
 
@@ -223,10 +223,9 @@ def _await_detach(volume_id):
 def _detach_volume(instance, volume_id):
     volume = cinder.get_volume(volume_id)
     try:
-        LOG.debug("Detaching volume {id}  from instance {instance}".format(
-                  id=volume_id, instance=instance.instance_name))
-        nova.client().volumes.delete_server_volume(instance.instance_id,
-                                                   volume_id)
+        LOG.debug("Detaching volume {id} from instance".format(id=volume_id))
+        b.execute_with_retries(nova.client().volumes.delete_server_volume,
+                               instance.instance_id, volume_id)
     except Exception:
         LOG.error(_LE("Can't detach volume {id}").format(id=volume.id))
 
@@ -240,7 +239,7 @@ def _delete_volume(volume_id):
     LOG.debug("Deleting volume {volume}".format(volume=volume_id))
     volume = cinder.get_volume(volume_id)
     try:
-        volume.delete()
+        b.execute_with_retries(volume.delete)
     except Exception:
         LOG.error(_LE("Can't delete volume {volume}").format(
             volume=volume.id))

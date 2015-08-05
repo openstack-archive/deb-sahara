@@ -18,6 +18,7 @@ import swiftclient
 
 from sahara.swift import swift_helper as sh
 from sahara.swift import utils as su
+from sahara.utils.openstack import base
 from sahara.utils.openstack import keystone as k
 
 opts = [
@@ -57,13 +58,18 @@ def client(username, password, trust_id=None):
         proxyclient = k.client_for_proxy_user(username, password, trust_id)
         return client_from_token(proxyclient.auth_token)
     else:
-        return swiftclient.Connection(auth_version='2.0',
-                                      cacert=CONF.swift.ca_file,
-                                      insecure=CONF.swift.api_insecure,
-                                      authurl=su.retrieve_auth_url(),
-                                      user=username,
-                                      key=password,
-                                      tenant_name=sh.retrieve_tenant())
+        return swiftclient.Connection(
+            auth_version='2.0',
+            cacert=CONF.swift.ca_file,
+            insecure=CONF.swift.api_insecure,
+            authurl=su.retrieve_auth_url(),
+            user=username,
+            key=password,
+            tenant_name=sh.retrieve_tenant(),
+            retries=CONF.retries.retries_number,
+            retry_on_ratelimit=True,
+            starting_backoff=CONF.retries.retry_after,
+            max_backoff=CONF.retries.retry_after)
 
 
 def client_from_token(token):
@@ -71,5 +77,10 @@ def client_from_token(token):
     return swiftclient.Connection(auth_version='2.0',
                                   cacert=CONF.swift.ca_file,
                                   insecure=CONF.swift.api_insecure,
-                                  preauthurl=su.retrieve_preauth_url(),
-                                  preauthtoken=token)
+                                  preauthurl=base.url_for(
+                                      service_type="object-store"),
+                                  preauthtoken=token,
+                                  retries=CONF.retries.retries_number,
+                                  retry_on_ratelimit=True,
+                                  starting_backoff=CONF.retries.retry_after,
+                                  max_backoff=CONF.retries.retry_after)

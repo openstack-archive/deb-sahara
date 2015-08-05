@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import traceback
+
 import eventlet
 from eventlet.green import threading
 from eventlet.green import time
@@ -42,9 +44,9 @@ class Context(context.RequestContext):
                  roles=None,
                  is_admin=None,
                  remote_semaphore=None,
-                 auth_uri=None,
                  resource_uuid=None,
                  current_instance_info=None,
+                 request_id=None,
                  overwrite=True,
                  **kwargs):
         if kwargs:
@@ -55,17 +57,14 @@ class Context(context.RequestContext):
                                       user=user_id,
                                       tenant=tenant_id,
                                       is_admin=is_admin,
-                                      resource_uuid=resource_uuid)
+                                      resource_uuid=resource_uuid,
+                                      request_id=request_id)
         self.service_catalog = service_catalog
         self.username = username
         self.tenant_name = tenant_name
         self.remote_semaphore = remote_semaphore or semaphore.Semaphore(
             CONF.cluster_remote_threshold)
         self.roles = roles
-        if auth_uri:
-            self.auth_uri = auth_uri
-        else:
-            self.auth_uri = _get_auth_uri()
         if overwrite or not hasattr(context._request_store, 'context'):
             self.update_store()
 
@@ -85,9 +84,9 @@ class Context(context.RequestContext):
             self.roles,
             self.is_admin,
             self.remote_semaphore,
-            self.auth_uri,
             self.resource_uuid,
             self.current_instance_info,
+            self.request_id,
             overwrite=False)
 
     def to_dict(self):
@@ -98,10 +97,12 @@ class Context(context.RequestContext):
             'service_catalog': self.service_catalog,
             'username': self.username,
             'tenant_name': self.tenant_name,
+            'user_name': self.username,
+            'project_name': self.tenant_name,
             'is_admin': self.is_admin,
             'roles': self.roles,
-            'auth_uri': self.auth_uri,
             'resource_uuid': self.resource_uuid,
+            'request_id': self.request_id,
         }
 
     def is_auth_capable(self):
@@ -109,7 +110,7 @@ class Context(context.RequestContext):
                 self.user_id)
 
     # NOTE(adrienverge): The Context class uses the 'user' and 'tenant'
-    # properties internally (inherited from oslo.context), but Sahara code
+    # properties internally (inherited from oslo_context), but Sahara code
     # often uses 'user_id' and 'tenant_id'.
     @property
     def user_id(self):
@@ -161,28 +162,6 @@ def set_ctx(new_ctx):
         setattr(context._request_store, 'context', new_ctx)
 
 
-def _get_auth_uri():
-    if CONF.keystone_authtoken.auth_uri is not None:
-        auth_uri = CONF.keystone_authtoken.auth_uri
-    else:
-        if CONF.keystone_authtoken.identity_uri is not None:
-            identity_uri = CONF.keystone_authtoken.identity_uri
-        else:
-            host = CONF.keystone_authtoken.auth_host
-            port = CONF.keystone_authtoken.auth_port
-            protocol = CONF.keystone_authtoken.auth_protocol
-            identity_uri = '%s://%s:%s' % (protocol, host, port)
-
-        if CONF.use_identity_api_v3 is False:
-            auth_version = 'v2.0'
-        else:
-            auth_version = 'v3'
-
-        auth_uri = '%s/%s' % (identity_uri, auth_version)
-
-    return auth_uri
-
-
 def _wrapper(ctx, thread_description, thread_group, func, *args, **kwargs):
     try:
         set_ctx(ctx)
@@ -193,6 +172,7 @@ def _wrapper(ctx, thread_description, thread_group, func, *args, **kwargs):
                 thread=thread_description, exception=e))
         if thread_group and not thread_group.exc:
             thread_group.exc = e
+            thread_group.exc_stacktrace = traceback.format_exc()
             thread_group.failed_thread = thread_description
     finally:
         if thread_group:
@@ -218,6 +198,7 @@ class ThreadGroup(object):
     def __init__(self, thread_pool_size=1000):
         self.tg = greenpool.GreenPool(size=thread_pool_size)
         self.exc = None
+        self.exc_stacktrace = None
         self.failed_thread = None
         self.threads = 0
         self.cv = threading.Condition()
@@ -250,7 +231,8 @@ class ThreadGroup(object):
                 self.cv.wait()
 
         if self.exc:
-            raise ex.ThreadException(self.failed_thread, self.exc)
+            raise ex.ThreadException(self.failed_thread, self.exc,
+                                     self.exc_stacktrace)
 
     def __enter__(self):
         return self
@@ -301,3 +283,31 @@ class InstanceInfoManager(object):
 
     def __exit__(self, *args):
         current().current_instance_info = self.prev_instance_info
+
+
+def set_current_cluster_id(cluster_id):
+    current().resource_uuid = 'none, cluster: %s' % cluster_id
+
+
+def set_current_job_execution_id(je_id):
+    current().resource_uuid = 'none, job_execution: %s' % je_id
+
+
+class SetCurrentInstanceId(object):
+    def __init__(self, instance_id):
+        ctx = current()
+        self.prev_uuid = ctx.resource_uuid
+        if ctx.resource_uuid:
+            ctx.resource_uuid = ctx.resource_uuid.replace('none', instance_id)
+            context.get_current().resource_uuid = ctx.resource_uuid
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *ex):
+        current().resource_uuid = self.prev_uuid
+        context.get_current().resource_uuid = self.prev_uuid
+
+
+def set_current_instance_id(instance_id):
+    return SetCurrentInstanceId(instance_id)

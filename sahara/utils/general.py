@@ -74,8 +74,6 @@ def natural_sort_key(s):
 
 
 def change_cluster_status_description(cluster, status_description):
-    if cluster is None:
-        return None
     try:
         ctx = context.ctx()
         return conductor.cluster_update(
@@ -102,8 +100,8 @@ def change_cluster_status(cluster, status, status_description=None):
     cluster = conductor.cluster_update(ctx, cluster, update_dict)
     conductor.cluster_provision_progress_update(ctx, cluster.id)
 
-    LOG.info(_LI("Cluster status has been changed: id={id}, New status="
-                 "{status}").format(id=cluster.id, status=cluster.status))
+    LOG.info(_LI("Cluster status has been changed. New status="
+                 "{status}").format(status=cluster.status))
 
     sender.notify(ctx, cluster.id, cluster.name, cluster.status,
                   "update")

@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
+from oslo_serialization import jsonutils as json
 
 from sahara.plugins import provisioning as p
 from sahara.utils import files as f
@@ -53,7 +53,7 @@ CM5_CENTOS_REPO = ('[cloudera-manager]'
 DEFAULT_SWIFT_LIB_URL = ('https://repository.cloudera.com/artifactory/repo/org'
                          '/apache/hadoop/hadoop-openstack/2.5.0-cdh5.3.0'
                          '/hadoop-openstack-2.5.0-cdh5.3.0.jar')
-DEFAULT_EXTJS_LIB_URL = 'http://extjs.com/deploy/ext-2.2.zip'
+DEFAULT_EXTJS_LIB_URL = 'http://dev.sencha.com/deploy/ext-2.2.zip'
 
 HIVE_SERVER2_SENTRY_SAFETY_VALVE = (
     '<property>'
@@ -142,7 +142,6 @@ SWIFT_LIB_URL = p.Config(
     description=("Library that adds Swift support to CDH. The file will be "
                  "downloaded from VM."))
 
-
 EXTJS_LIB_URL = p.Config(
     "ExtJS library URL", 'general', 'cluster', priority=1,
     default_value=DEFAULT_EXTJS_LIB_URL,
@@ -160,12 +159,23 @@ AWAIT_MANAGER_STARTING_TIMEOUT = p.Config(
     config_type='int', priority=1, default_value=300, is_optional=True,
     description='Timeout for Cloudera Manager starting, in seconds')
 
+_default_executor_classpath = ":".join(
+    ['/usr/lib/hadoop/lib/jackson-core-asl-1.8.8.jar',
+     '/usr/lib/hadoop/hadoop-swift.jar'])
+
+EXECUTOR_EXTRA_CLASSPATH = p.Config(
+    'Executor extra classpath', 'Spark', 'cluster', priority=2,
+    default_value=_default_executor_classpath,
+    description='Value for spark.executor.extraClassPath in '
+                'spark-defaults.conf (default: %s)'
+                % _default_executor_classpath)
+
 
 def _get_cluster_plugin_configs():
     return [CDH5_REPO_URL, CDH5_REPO_KEY_URL, CM5_REPO_URL, CM5_REPO_KEY_URL,
             ENABLE_SWIFT, ENABLE_HBASE_COMMON_LIB, SWIFT_LIB_URL,
             EXTJS_LIB_URL, AWAIT_AGENTS_TIMEOUT,
-            AWAIT_MANAGER_STARTING_TIMEOUT]
+            AWAIT_MANAGER_STARTING_TIMEOUT, EXECUTOR_EXTRA_CLASSPATH]
 
 
 # ng wide configs
@@ -180,11 +190,13 @@ hdfs_confs = _load_json(path_to_config + 'hdfs-service.json')
 namenode_confs = _load_json(path_to_config + 'hdfs-namenode.json')
 datanode_confs = _load_json(path_to_config + 'hdfs-datanode.json')
 secnamenode_confs = _load_json(path_to_config + 'hdfs-secondarynamenode.json')
+hdfs_gateway_confs = _load_json(path_to_config + "hdfs-gateway.json")
 yarn_confs = _load_json(path_to_config + 'yarn-service.json')
 resourcemanager_confs = _load_json(
     path_to_config + 'yarn-resourcemanager.json')
 nodemanager_confs = _load_json(path_to_config + 'yarn-nodemanager.json')
 jobhistory_confs = _load_json(path_to_config + 'yarn-jobhistory.json')
+yarn_gateway = _load_json(path_to_config + "yarn-gateway.json")
 oozie_service_confs = _load_json(path_to_config + 'oozie-service.json')
 oozie_role_confs = _load_json(path_to_config + 'oozie-oozie_server.json')
 hive_service_confs = _load_json(path_to_config + 'hive-service.json')
@@ -252,9 +264,11 @@ def _get_ng_plugin_configs():
     cfg += _init_configs(hdfs_confs, 'HDFS', 'cluster')
     cfg += _init_configs(namenode_confs, 'NAMENODE', 'node')
     cfg += _init_configs(datanode_confs, 'DATANODE', 'node')
+    cfg += _init_configs(hdfs_gateway_confs, 'HDFS_GATEWAY', 'node')
     cfg += _init_configs(secnamenode_confs, 'SECONDARYNAMENODE', 'node')
     cfg += _init_configs(yarn_confs, 'YARN', 'cluster')
     cfg += _init_configs(resourcemanager_confs, 'RESOURCEMANAGER', 'node')
+    cfg += _init_configs(yarn_gateway, 'YARN_GATEWAY', 'node')
     cfg += _init_configs(nodemanager_confs, 'NODEMANAGER', 'node')
     cfg += _init_configs(jobhistory_confs, 'JOBHISTORY', 'node')
     cfg += _init_configs(oozie_service_confs, 'OOZIE', 'cluster')

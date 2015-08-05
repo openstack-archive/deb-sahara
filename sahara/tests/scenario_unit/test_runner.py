@@ -44,6 +44,7 @@ class RunnerUnitTest(testtools.TestCase):
                 "os_username": "admin",
                 "os_auth_url": "http://localhost:5000/v2.0",
                 "sahara_url": None,
+                "sahara_service_type": "data-processing",
                 "os_password": "nova",
                 "os_tenant": "admin"
             }
@@ -67,7 +68,7 @@ class RunnerUnitTest(testtools.TestCase):
                     "plugin_name": "vanilla",
                     "scenario": ['run_jobs', 'scale', 'run_jobs'],
                     "plugin_version": "2.6.0",
-                    "retain_resources": False
+                    "retain_resources": False,
                 }],
         }
 
@@ -143,7 +144,8 @@ class RunnerUnitTest(testtools.TestCase):
                 "os_auth_url": "http://127.0.0.1:5000/v2.0",
                 "sahara_url": "http://127.0.0.1",
                 "os_password": "changed_nova",
-                "os_tenant": "changed_admin"
+                "os_tenant": "changed_admin",
+                "sahara_service_type": "data-processing"
             },
         }
 
@@ -213,4 +215,38 @@ class RunnerUnitTest(testtools.TestCase):
     def test_runner_main(self, mock_os, mock_sys):
         sys.argv = ['sahara/tests/scenario/runner.py',
                     'sahara/tests/scenario_unit/vanilla2_6_0.yaml']
+        runner.main()
+
+    @mock.patch('sys.exit', return_value=None)
+    @mock.patch('os.system', return_value=None)
+    def test_runner_template_missing_varfile(self, mock_os, mock_sys):
+        sys.argv = ['sahara/tests/scenario/runner.py',
+                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml.mako']
+        self.assertRaises(NameError, runner.main)
+
+    @mock.patch('sys.exit', return_value=None)
+    @mock.patch('os.system', return_value=None)
+    def test_runner_template_wrong_varfile(self, mock_os, mock_sys):
+        sys.argv = ['sahara/tests/scenario/runner.py',
+                    '-V',
+                    'sahara/tests/scenario_unit/templatevars_nodefault.ini',
+                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml.mako']
+        self.assertRaises(NameError, runner.main)
+
+    @mock.patch('sys.exit', return_value=None)
+    @mock.patch('os.system', return_value=None)
+    def test_runner_template_incomplete_varfile(self, mock_os, mock_sys):
+        sys.argv = ['sahara/tests/scenario/runner.py',
+                    '-V',
+                    'sahara/tests/scenario_unit/templatevars_incomplete.ini',
+                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml.mako']
+        self.assertRaises(NameError, runner.main)
+
+    @mock.patch('sys.exit', return_value=None)
+    @mock.patch('os.system', return_value=None)
+    def test_runner_template_working(self, mock_os, mock_sys):
+        sys.argv = ['sahara/tests/scenario/runner.py',
+                    '-V',
+                    'sahara/tests/scenario_unit/templatevars_complete.ini',
+                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml.mako']
         runner.main()

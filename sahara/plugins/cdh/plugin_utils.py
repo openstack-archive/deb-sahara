@@ -22,12 +22,14 @@ from oslo_log import log as logging
 
 from sahara.conductor import resource as res
 from sahara import context
+from sahara import exceptions as exc
 from sahara.i18n import _
 from sahara.plugins.cdh import commands as cmd
 from sahara.plugins import utils as u
 from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import edp as edp_u
 from sahara.utils import poll_utils
+from sahara.utils import types
 
 
 PATH_TO_CORE_SITE_XML = '/etc/hadoop/conf/core-site.xml'
@@ -127,7 +129,9 @@ class AbstractPluginUtils(object):
             "SPARK_ON_YARN": ['SPARK_YARN_HISTORY_SERVER'],
             "ZOOKEEPER": ['SERVER'],
             "MASTER": ['MASTER'],
-            "REGIONSERVER": ['REGIONSERVER']
+            "REGIONSERVER": ['REGIONSERVER'],
+            'YARN_GATEWAY': ['YARN_GATEWAY'],
+            'HDFS_GATEWAY': ['HDFS_GATEWAY']
         }
         if isinstance(configs, res.Resource):
             configs = configs.to_dict()
@@ -217,9 +221,12 @@ class AbstractPluginUtils(object):
     @cpo.event_wrapper(True)
     def _configure_swift_to_inst(self, instance):
         cluster = instance.cluster
+        swift_lib_remote_url = self.c_helper.get_swift_lib_url(cluster)
         with instance.remote() as r:
-            r.execute_command('sudo curl %s -o %s/hadoop-openstack.jar' % (
-                self.c_helper.get_swift_lib_url(cluster), HADOOP_LIB_DIR))
+            if r.execute_command('ls %s/hadoop-openstack.jar' % HADOOP_LIB_DIR,
+                                 raise_when_error=False)[0] != 0:
+                r.execute_command('sudo curl %s -o %s/hadoop-openstack.jar' % (
+                    swift_lib_remote_url, HADOOP_LIB_DIR))
 
     def put_hive_hdfs_xml(self, cluster):
         servers = self.get_hive_servers(cluster)
@@ -320,3 +327,15 @@ class AbstractPluginUtils(object):
                 cmd.write_centos_repository(r, cdh5_repo_content, 'cdh')
                 cmd.write_centos_repository(r, cm5_repo_content, 'cm')
                 cmd.update_repository(r)
+
+    def _get_config_value(self, service, name, configs, cluster=None):
+        if cluster:
+            conf = cluster.cluster_configs
+            if service in conf and name in conf[service]:
+                return types.transform_to_num(conf[service][name])
+        for config in configs:
+            if config.applicable_target == service and config.name == name:
+                return types.transform_to_num(config.default_value)
+        raise exc.InvalidDataException(
+            _("Unable to find config: {applicable_target: %(target)s, name: "
+              "%(name)s").format(target=service, name=name))

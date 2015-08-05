@@ -305,6 +305,12 @@ def data_source_destroy(context, data_source):
     IMPL.data_source_destroy(context, data_source)
 
 
+@to_dict
+def data_source_update(context, data_source):
+    """Create a Data Source from the values dictionary."""
+    return IMPL.data_source_update(context, data_source)
+
+
 # JobExecutions ops
 
 @to_dict
@@ -414,6 +420,12 @@ def job_binary_create(context, values):
 def job_binary_destroy(context, job_binary):
     """Destroy the JobBinary or raise if it does not exist."""
     IMPL.job_binary_destroy(context, job_binary)
+
+
+@to_dict
+def job_binary_update(context, values):
+    """Update the JobBinary with the provided values"""
+    return IMPL.job_binary_update(context, values)
 
 
 @to_dict

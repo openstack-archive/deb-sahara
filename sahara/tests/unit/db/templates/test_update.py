@@ -13,12 +13,12 @@
 # limitations under the License.
 
 import copy
-import json
 import tempfile
 import uuid
 
 import jsonschema
 import mock
+from oslo_serialization import jsonutils as json
 from oslo_utils import uuidutils
 
 from sahara import context
@@ -57,7 +57,9 @@ master_json = {
     ],
     "name": "vanilla-260-default-master",
     "floating_ip_pool": "{floating_ip_pool}",
-    "flavor_id": "{flavor_id}"
+    "flavor_id": "{flavor_id}",
+    "auto_security_group": "{auto_security_group}",
+    'security_groups': "{security_groups}"
 }
 
 worker_json = {
@@ -69,7 +71,9 @@ worker_json = {
     ],
     "name": "vanilla-260-default-worker",
     "floating_ip_pool": "{floating_ip_pool}",
-    "flavor_id": "{flavor_id}"
+    "flavor_id": "{flavor_id}",
+    "auto_security_group": "{auto_security_group}",
+    'security_groups': "{security_groups}"
 }
 
 
@@ -133,10 +137,11 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         # Named config section
         template_api.add_config_section("section", opts)
 
-        conf.register_group.assert_called()
+        self.assertEqual(1, conf.register_group.call_count)
         config_group = conf.register_group.call_args[0][0]
         self.assertEqual("section", config_group.name)
-        conf.register_opts.assert_called_with(opts, config_group)
+        self.assertEqual([
+            mock.call(opts, config_group)], conf.register_opts.call_args_list)
 
         conf.register_group.reset_mock()
         conf.register_opts.reset_mock()
@@ -204,7 +209,7 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
                    "floating_ip_pool": None}
         template_api.substitute_config_values(configs, ngt, "/path")
         self.assertEqual("2", ngt["flavor_id"])
-        self.assertNotIn("floating_ip_pool", ngt)
+        self.assertIsNone(ngt["floating_ip_pool"])
 
     def test_substitute_config_values_clt(self):
         clt = copy.copy(c.SAMPLE_CLT)
@@ -216,12 +221,12 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
                    "default_image_id": None}
         template_api.substitute_config_values(configs, clt, "/path")
         self.assertEqual(netid, clt["neutron_management_network"])
-        self.assertNotIn("default_image_id", clt)
+        self.assertIsNone(clt["default_image_id"])
 
     def _write_files(self, tempdir, templates):
         files = []
         for template in templates:
-            fp = tempfile.NamedTemporaryFile(suffix=".json",
+            fp = tempfile.NamedTemporaryFile(suffix=".json", mode="w",
                                              dir=tempdir, delete=False)
             json.dump(template, fp)
             files.append(fp.name)
@@ -241,7 +246,8 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         files = self._write_files(
             tempdir, [cluster_json, master_json, worker_json, some_other_json])
 
-        get_configs.return_value = {"flavor_id": 2}
+        get_configs.return_value = {"flavor_id": '2', 'security_groups': [],
+                                    'auto_security_group': False}
         option_values = {"plugin_name": None,
                          "plugin_version": None}
         template_api.set_conf(Config(option_values))
@@ -286,7 +292,12 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         files = self._write_files(
             tempdir, [cluster_json, master_json, worker_json])
 
-        get_configs.return_value = {"flavor_id": 2}
+        get_configs.return_value = {
+            "flavor_id": '2',
+            'security_groups': [],
+            'auto_security_group': False
+        }
+
         option_values = {"plugin_name": None,
                          "plugin_version": None}
         template_api.set_conf(Config(option_values))
@@ -312,7 +323,8 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         files = self._write_files(
             tempdir, [cluster_json, master_json, worker_json])
 
-        get_configs.return_value = {"flavor_id": 2}
+        get_configs.return_value = {"flavor_id": '2', 'security_groups': [],
+                                    'auto_security_group': False}
         option_values = {"plugin_name": None,
                          "plugin_version": None}
         template_api.set_conf(Config(option_values))
@@ -320,7 +332,7 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         # Invalid JSON should cause all files to be skipped
         fp = tempfile.NamedTemporaryFile(suffix=".json",
                                          dir=tempdir, delete=False)
-        fp.write("not json")
+        fp.write(b"not json")
         files += [fp.name]
         fp.close()
         ng_templates, cl_templates = template_api.process_files(tempdir, files)
@@ -415,12 +427,12 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         ng_info, error = template_api.add_node_group_templates(ctx, ngts)
         new = self.api.node_group_template_get_all(ctx, name=new["name"])[0]
         self.assertTrue(error)
-        reverse_creates.assert_called_once()
+        self.assertEqual(1, reverse_creates.call_count)
 
         # call should have been (ctx, [new])
         self.assertEqual(new["id"], reverse_creates.call_args[0][1][0]["id"])
 
-        reverse_updates.assert_called_once()
+        self.assertEqual(1, reverse_updates.call_count)
         msg = ("Update of node group template {info} failed, mistake".format(
             info=u.name_and_id(existing)))
         self.assertIn(msg, self.logger.warnings)
@@ -459,8 +471,8 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
 
         ng_info, error = template_api.add_node_group_templates(ctx, ngts)
         self.assertTrue(error)
-        reverse_creates.assert_called_once()
-        reverse_updates.assert_called_once()
+        self.assertEqual(1, reverse_creates.call_count)
+        self.assertEqual(1, reverse_updates.call_count)
 
         # call should have been (ctx, [(existing, updated_fields)])
         self.assertEqual({"flavor_id": existing["flavor_id"]},
@@ -540,12 +552,12 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         error = template_api.add_cluster_templates(ctx, clts, {})
         new = self.api.cluster_template_get_all(ctx, name=new["name"])[0]
         self.assertTrue(error)
-        reverse_creates.assert_called_once()
+        self.assertEqual(1, reverse_creates.call_count)
 
         # call should have been (ctx, [new])
         self.assertEqual(new["id"], reverse_creates.call_args[0][1][0]["id"])
 
-        reverse_updates.assert_called_once()
+        self.assertEqual(1, reverse_updates.call_count)
         msg = ("Update of cluster template {info} failed, mistake".format(
             info=u.name_and_id(existing)))
         self.assertIn(msg, self.logger.warnings)
@@ -584,8 +596,8 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
 
         error = template_api.add_cluster_templates(ctx, clts, {})
         self.assertTrue(error)
-        reverse_creates.assert_called_once()
-        reverse_updates.assert_called_once()
+        self.assertEqual(1, reverse_creates.call_count)
+        self.assertEqual(1, reverse_updates.call_count)
 
         # call should have been (ctx, [(existing, updated_fields)])
         # updated fields will contain hadoop_version and node_groups,
@@ -603,7 +615,7 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
 
     @mock.patch("sahara.db.templates.api.get_configs")
     @mock.patch("sahara.db.templates.api.add_config_section_for_template")
-    def test_do_update(self, add_config, get_configs):
+    def test_do_update_trash(self, add_config, get_configs):
         self.logger.clear_log()
         ctx = context.ctx()
 
@@ -611,15 +623,19 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
 
         self._write_files(tempdir, [cluster_json, master_json, worker_json])
 
-        get_configs.return_value = {"flavor_id": 2,
-                                    "neutron_management_network": uuid.uuid4()}
+        get_configs.return_value = {
+            "flavor_id": '2',
+            "neutron_management_network": str(uuid.uuid4()),
+            'auto_security_group': True,
+            'security_groups': [],
+        }
+
         option_values = {"tenant_id": ctx.tenant_id,
                          "directory": tempdir,
                          "norecurse": None,
                          "plugin_name": None,
                          "plugin_version": None}
         template_api.set_conf(Config(option_values))
-
         template_api.do_update()
 
         ngs = self.api.node_group_template_get_all(ctx)
@@ -644,8 +660,11 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
 
         self._write_files(tempdir, [cluster_json, master_json, worker_json])
 
-        get_configs.return_value = {"flavor_id": 2,
-                                    "neutron_management_network": uuid.uuid4()}
+        get_configs.return_value = {
+            "flavor_id": '2',
+            "neutron_management_network": str(uuid.uuid4())
+        }
+
         option_values = {"tenant_id": ctx.tenant_id,
                          "directory": tempdir,
                          "norecurse": None,
@@ -679,8 +698,10 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
 
         self._write_files(tempdir, [cluster_json, master_json, worker_json])
 
-        get_configs.return_value = {"flavor_id": 2,
-                                    "neutron_management_network": uuid.uuid4()}
+        get_configs.return_value = {
+            "flavor_id": '2',
+            "neutron_management_network": str(uuid.uuid4())
+        }
         option_values = {"tenant_id": ctx.tenant_id,
                          "directory": tempdir,
                          "norecurse": None,
@@ -714,8 +735,11 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
 
         self._write_files(tempdir, [cluster_json, master_json, worker_json])
 
-        get_configs.return_value = {"flavor_id": 2,
-                                    "neutron_management_network": uuid.uuid4()}
+        get_configs.return_value = {
+            "flavor_id": '2',
+            "neutron_management_network": str(uuid.uuid4())
+        }
+
         option_values = {"tenant_id": ctx.tenant_id,
                          "directory": tempdir,
                          "norecurse": None,
@@ -738,7 +762,7 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         self.assertIn(msg, self.logger.warnings)
 
     @mock.patch("sahara.db.templates.api.reverse_node_group_template_creates")
-    @mock.patch("sahara.db.templates.api.reverse_node_group_template_creates")
+    @mock.patch("sahara.db.templates.api.reverse_node_group_template_updates")
     @mock.patch("sahara.db.templates.api.add_cluster_templates")
     @mock.patch("sahara.db.templates.api.get_configs")
     @mock.patch("sahara.db.templates.api.add_config_section_for_template")
@@ -746,8 +770,8 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
                                       add_config,
                                       get_configs,
                                       add_clts,
-                                      reverse_ng_creates,
-                                      reverse_ng_updates):
+                                      reverse_ng_updates,
+                                      reverse_ng_creates):
         self.logger.clear_log()
         ctx = context.ctx()
 
@@ -755,8 +779,11 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
 
         self._write_files(tempdir, [cluster_json, master_json, worker_json])
 
-        get_configs.return_value = {"flavor_id": 2,
-                                    "neutron_management_network": uuid.uuid4()}
+        get_configs.return_value = {
+            "flavor_id": '2',
+            "neutron_management_network": str(uuid.uuid4())
+        }
+
         option_values = {"tenant_id": ctx.tenant_id,
                          "directory": tempdir,
                          "norecurse": None,
@@ -767,8 +794,8 @@ class TemplateUpdateTestCase(base.ConductorManagerTestCase):
         add_clts.return_value = True
 
         template_api.do_update()
-        reverse_ng_creates.assert_called_once()
-        reverse_ng_updates.assert_called_once()
+        self.assertEqual(1, reverse_ng_creates.call_count)
+        self.assertEqual(1, reverse_ng_updates.call_count)
 
         clts = self.api.cluster_template_get_all(ctx)
         self.assertEqual([], clts)

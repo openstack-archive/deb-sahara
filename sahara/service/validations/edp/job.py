@@ -16,7 +16,9 @@
 import sahara.exceptions as e
 from sahara.i18n import _
 from sahara.service.edp import api
+from sahara.service.validations.edp import job_interface as j_i
 from sahara.utils import edp
+
 
 JOB_SCHEMA = {
     "type": "object",
@@ -52,7 +54,8 @@ JOB_SCHEMA = {
         },
         "streaming": {
             "type": "boolean"
-        }
+        },
+        "interface": j_i.INTERFACE_ARGUMENT_SCHEMA
     },
     "additionalProperties": False,
     "required": [
@@ -78,14 +81,16 @@ def check_mains_libs(data, **kwargs):
 
     # These types must have a value in mains and may also use libs
     if job_type in [edp.JOB_TYPE_PIG, edp.JOB_TYPE_HIVE,
-                    edp.JOB_TYPE_SHELL, edp.JOB_TYPE_SPARK]:
+                    edp.JOB_TYPE_SHELL, edp.JOB_TYPE_SPARK,
+                    edp.JOB_TYPE_STORM]:
         if not mains:
-            if job_type == edp.JOB_TYPE_SPARK:
+            if job_type in [edp.JOB_TYPE_SPARK, edp.JOB_TYPE_STORM]:
                 msg = _(
                     "%s job requires main application jar") % data.get("type")
             else:
                 msg = _("%s flow requires main script") % data.get("type")
             raise e.InvalidDataException(msg)
+
         # Check for overlap
         if set(mains).intersection(set(libs)):
             raise e.InvalidDataException(_("'mains' and 'libs' overlap"))
@@ -102,3 +107,7 @@ def check_mains_libs(data, **kwargs):
     # Make sure that all referenced binaries exist
     _check_binaries(mains)
     _check_binaries(libs)
+
+
+def check_interface(data, **kwargs):
+    j_i.check_job_interface(data, **kwargs)

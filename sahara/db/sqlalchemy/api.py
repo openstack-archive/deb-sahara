@@ -190,48 +190,6 @@ def drop_db():
     return True
 
 
-# Helpers for building constraints / equality checks
-
-
-def constraint(**conditions):
-    return Constraint(conditions)
-
-
-def equal_any(*values):
-    return EqualityCondition(values)
-
-
-def not_equal(*values):
-    return InequalityCondition(values)
-
-
-class Constraint(object):
-    def __init__(self, conditions):
-        self.conditions = conditions
-
-    def apply(self, model, query):
-        for key, condition in self.conditions.iteritems():
-            for clause in condition.clauses(getattr(model, key)):
-                query = query.filter(clause)
-        return query
-
-
-class EqualityCondition(object):
-    def __init__(self, values):
-        self.values = values
-
-    def clauses(self, field):
-        return sa.or_([field == value for value in self.values])
-
-
-class InequalityCondition(object):
-    def __init__(self, values):
-        self.values = values
-
-    def clauses(self, field):
-        return [field != value for value in self.values]
-
-
 # Cluster ops
 
 def _cluster_get(context, session, cluster_id):
@@ -245,15 +203,7 @@ def cluster_get(context, cluster_id):
 
 def cluster_get_all(context, **kwargs):
     query = model_query(m.Cluster, context)
-    try:
-        return query.filter_by(**kwargs).all()
-    except sa.exc.InvalidRequestError as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    return query.filter_by(**kwargs).all()
 
 
 def cluster_create(context, values):
@@ -263,22 +213,21 @@ def cluster_create(context, values):
     cluster.update(values)
 
     session = get_session()
-    with session.begin():
-        try:
-            cluster.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for Cluster: %s") % e.columns)
+    try:
+        with session.begin():
+            session.add(cluster)
+            session.flush(objects=[cluster])
 
-        try:
             for ng in node_groups:
                 node_group = m.NodeGroup()
-                node_group.update({"cluster_id": cluster.id})
                 node_group.update(ng)
-                node_group.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for NodeGroup: %s") % e.columns)
+                node_group.update({"cluster_id": cluster.id})
+                session.add(node_group)
+
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for object %(object)s. Failed on columns: "
+              "%(columns)s") % {"object": e.value, "columns": e.columns})
 
     return cluster_get(context, cluster.id)
 
@@ -444,15 +393,7 @@ def cluster_template_get(context, cluster_template_id):
 
 def cluster_template_get_all(context, **kwargs):
     query = model_query(m.ClusterTemplate, context)
-    try:
-        return query.filter_by(**kwargs).all()
-    except sa.exc.InvalidRequestError as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    return query.filter_by(**kwargs).all()
 
 
 def cluster_template_create(context, values):
@@ -462,23 +403,21 @@ def cluster_template_create(context, values):
     cluster_template.update(values)
 
     session = get_session()
-    with session.begin():
-        try:
-            cluster_template.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for ClusterTemplate: %s") % e.columns)
+    try:
+        with session.begin():
+            session.add(cluster_template)
+            session.flush(objects=[cluster_template])
 
-        try:
             for ng in node_groups:
                 node_group = m.TemplatesRelation()
                 node_group.update({"cluster_template_id": cluster_template.id})
                 node_group.update(ng)
-                node_group.save(session=session)
+                session.add(node_group)
 
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for TemplatesRelation: %s") % e.columns)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for object %(object)s. Failed on columns: "
+              "%(columns)s") % {"object": e.value, "columns": e.columns})
 
     return cluster_template_get(context, cluster_template.id)
 
@@ -502,55 +441,61 @@ def cluster_template_destroy(context, cluster_template_id,
 
 
 def cluster_template_update(context, values, ignore_default=False):
-    node_groups = values.pop("node_groups", [])
+    explicit_node_groups = "node_groups" in values
+    if explicit_node_groups:
+        node_groups = values.pop("node_groups")
+        if node_groups is None:
+            node_groups = []
 
     session = get_session()
-    with session.begin():
-        cluster_template_id = values['id']
-        cluster_template = (_cluster_template_get(
-            context, session, cluster_template_id))
-        if not cluster_template:
-            raise ex.NotFoundException(
-                cluster_template_id,
-                _("Cluster Template id '%s' not found!"))
+    cluster_template_id = values['id']
+    try:
+        with session.begin():
+            cluster_template = (_cluster_template_get(
+                context, session, cluster_template_id))
+            if not cluster_template:
+                raise ex.NotFoundException(
+                    cluster_template_id,
+                    _("Cluster Template id '%s' not found!"))
 
-        elif not ignore_default and cluster_template.is_default:
-            raise ex.UpdateFailedException(
-                cluster_template_id,
-                _("ClusterTemplate id '%s' can not be updated. "
-                  "It is a default template.")
-            )
-
-        name = values.get('name')
-        if name:
-            same_name_tmpls = model_query(
-                m.ClusterTemplate, context).filter_by(
-                name=name).all()
-            if (len(same_name_tmpls) > 0 and
-                    same_name_tmpls[0].id != cluster_template_id):
-                raise ex.DBDuplicateEntry(
-                    _("Cluster Template can not be updated. "
-                      "Another cluster template with name %s already exists.")
-                    % name
+            elif not ignore_default and cluster_template.is_default:
+                raise ex.UpdateFailedException(
+                    cluster_template_id,
+                    _("ClusterTemplate id '%s' can not be updated. "
+                      "It is a default template.")
                 )
 
-        if len(cluster_template.clusters) > 0:
-            raise ex.UpdateFailedException(
-                cluster_template_id,
-                _("Cluster Template id '%s' can not be updated. "
-                  "It is referenced by at least one cluster.")
-            )
-        cluster_template.update(values)
+            if len(cluster_template.clusters) > 0:
+                raise ex.UpdateFailedException(
+                    cluster_template_id,
+                    _("Cluster Template id '%s' can not be updated. "
+                      "It is referenced by at least one cluster.")
+                )
+            cluster_template.update(values)
+            # The flush here will cause a duplicate entry exception if
+            # unique constraints are violated, before we go ahead and delete
+            # the node group templates
+            session.flush(objects=[cluster_template])
 
-        model_query(m.TemplatesRelation, context).filter_by(
-            cluster_template_id=cluster_template_id).delete()
-        for ng in node_groups:
-            node_group = m.TemplatesRelation()
-            node_group.update(ng)
-            node_group.update({"cluster_template_id": cluster_template_id})
-            node_group.save(session=session)
+            # If node_groups has not been specified, then we are
+            # keeping the old ones so don't delete!
+            if explicit_node_groups:
+                model_query(m.TemplatesRelation,
+                            context, session=session).filter_by(
+                    cluster_template_id=cluster_template_id).delete()
 
-    return cluster_template
+                for ng in node_groups:
+                    node_group = m.TemplatesRelation()
+                    node_group.update(ng)
+                    node_group.update({"cluster_template_id":
+                                       cluster_template_id})
+                    session.add(node_group)
+
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for ClusterTemplate: %s") % e.columns)
+
+    return cluster_template_get(context, cluster_template_id)
 
 
 # Node Group Template ops
@@ -567,15 +512,7 @@ def node_group_template_get(context, node_group_template_id):
 
 def node_group_template_get_all(context, **kwargs):
     query = model_query(m.NodeGroupTemplate, context)
-    try:
-        return query.filter_by(**kwargs).all()
-    except sa.exc.InvalidRequestError as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    return query.filter_by(**kwargs).all()
 
 
 def node_group_template_create(context, values):
@@ -583,12 +520,12 @@ def node_group_template_create(context, values):
     node_group_template.update(values)
 
     session = get_session()
-    with session.begin():
-        try:
-            node_group_template.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for NodeGroupTemplate: %s") % e.columns)
+    try:
+        with session.begin():
+            session.add(node_group_template)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for NodeGroupTemplate: %s") % e.columns)
 
     return node_group_template
 
@@ -613,45 +550,36 @@ def node_group_template_destroy(context, node_group_template_id,
 
 def node_group_template_update(context, values, ignore_default=False):
     session = get_session()
-    with session.begin():
-        ngt_id = values['id']
-        node_group_template = (
-            _node_group_template_get(context, session, ngt_id))
-        if not node_group_template:
-            raise ex.NotFoundException(
-                ngt_id, _("NodeGroupTemplate id '%s' not found"))
-        elif not ignore_default and node_group_template.is_default:
-            raise ex.UpdateFailedException(
-                ngt_id,
-                _("NodeGroupTemplate id '%s' can not be updated. "
-                  "It is a default template.")
-            )
-
-        name = values.get('name')
-        if name and name != node_group_template.name:
-            same_name_tmpls = model_query(
-                m.NodeGroupTemplate, context).filter_by(name=name).all()
-            if (len(same_name_tmpls) > 0 and
-                    same_name_tmpls[0].id != ngt_id):
-                raise ex.DBDuplicateEntry(
-                    _("Node Group Template can not be updated. "
-                      "Another node group template with name %s "
-                      "already exists.")
-                    % name
-                )
-
-        # Check to see that the node group template to be updated is not in
-        # use by an existing cluster.
-        for template_relationship in node_group_template.templates_relations:
-            if len(template_relationship.cluster_template.clusters) > 0:
+    try:
+        with session.begin():
+            ngt_id = values['id']
+            ngt = _node_group_template_get(context, session, ngt_id)
+            if not ngt:
+                raise ex.NotFoundException(
+                    ngt_id, _("NodeGroupTemplate id '%s' not found"))
+            elif not ignore_default and ngt.is_default:
                 raise ex.UpdateFailedException(
                     ngt_id,
                     _("NodeGroupTemplate id '%s' can not be updated. "
-                      "It is referenced by an existing cluster.")
+                      "It is a default template.")
                 )
 
-        node_group_template.update(values)
-    return node_group_template
+            # Check to see that the node group template to be updated is not in
+            # use by an existing cluster.
+            for template_relationship in ngt.templates_relations:
+                if len(template_relationship.cluster_template.clusters) > 0:
+                    raise ex.UpdateFailedException(
+                        ngt_id,
+                        _("NodeGroupTemplate id '%s' can not be updated. "
+                          "It is referenced by an existing cluster.")
+                    )
+
+            ngt.update(values)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for NodeGroupTemplate: %s") % e.columns)
+
+    return ngt
 
 
 # Data Source ops
@@ -685,28 +613,12 @@ def data_source_count(context, **kwargs):
     query, kwargs = like_filter(query, m.DataSource, kwargs)
 
     # Use normal filter_by for remaining keys
-    try:
-        return query.filter_by(**kwargs).count()
-    except Exception as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    return query.filter_by(**kwargs).count()
 
 
 def data_source_get_all(context, **kwargs):
     query = model_query(m.DataSource, context)
-    try:
-        return query.filter_by(**kwargs).all()
-    except sa.exc.InvalidRequestError as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    return query.filter_by(**kwargs).all()
 
 
 def data_source_create(context, values):
@@ -714,12 +626,12 @@ def data_source_create(context, values):
     data_source.update(values)
 
     session = get_session()
-    with session.begin():
-        try:
-            data_source.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for DataSource: %s") % e.columns)
+    try:
+        with session.begin():
+            session.add(data_source)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for DataSource: %s") % e.columns)
 
     return data_source
 
@@ -739,8 +651,35 @@ def data_source_destroy(context, data_source_id):
                _(" on foreign key constraint") or "")
         raise ex.DeletionFailed(_("Data Source deletion failed%s") % msg)
 
-# JobExecution ops
 
+def data_source_update(context, values):
+    session = get_session()
+    try:
+        with session.begin():
+            ds_id = values['id']
+            data_source = _data_source_get(context, session, ds_id)
+            if not data_source:
+                raise ex.NotFoundException(
+                    ds_id, _("DataSource id '%s' not found"))
+            else:
+                jobs = job_execution_get_all(context)
+                pending_jobs = [job for job in jobs if
+                                job.info["status"] == "PENDING"]
+                for job in pending_jobs:
+                    if job.data_source_urls:
+                        if ds_id in job.data_source_urls:
+                            raise ex.UpdateFailedException(
+                                _("DataSource is used in a "
+                                  "PENDING Job and can not be updated."))
+            data_source.update(values)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for DataSource: %s") % e.columns)
+
+    return data_source
+
+
+# JobExecution ops
 
 def _job_execution_get(context, session, job_execution_id):
     query = model_query(m.JobExecution, context, session)
@@ -776,15 +715,7 @@ def job_execution_get_all(context, **kwargs):
     # Filter JobExecution by the remaining kwargs. This has to be done
     # before application of the joins and filters because those
     # change the class that query.filter_by will apply to
-    try:
-        query = query.filter_by(**kwargs)
-    except sa.exc.InvalidRequestError as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    query = query.filter_by(**kwargs)
 
     # Now add the joins and filters for the externals
     if 'cluster.name' in externals:
@@ -816,17 +747,60 @@ def job_execution_count(context, **kwargs):
     return query.filter_by(**kwargs).first()[0]
 
 
+def _get_config_section(configs, mapping_type):
+    if mapping_type not in configs:
+        configs[mapping_type] = [] if mapping_type == "args" else {}
+    return configs[mapping_type]
+
+
+def _merge_execution_interface(job_ex, job, execution_interface):
+    """Merges the interface for a job execution with that of its job."""
+    configs = job_ex.job_configs or {}
+    nonexistent = object()
+    positional_args = {}
+    for arg in job.interface:
+        value = nonexistent
+        typed_configs = _get_config_section(configs, arg.mapping_type)
+        # Interface args are our first choice for the value.
+        if arg.name in execution_interface:
+            value = execution_interface[arg.name]
+        else:
+            # If a default exists, we can use that, but...
+            if arg.default is not None:
+                value = arg.default
+            # We should prefer an argument passed through the
+            # job_configs that maps to the same location.
+            if arg.mapping_type != "args":
+                value = typed_configs.get(arg.location, value)
+        if value is not nonexistent:
+            if arg.mapping_type != "args":
+                typed_configs[arg.location] = value
+            else:
+                positional_args[int(arg.location)] = value
+    if positional_args:
+        positional_args = [positional_args[i] for i
+                           in range(len(positional_args))]
+        configs["args"] = positional_args + configs["args"]
+    if configs and not job_ex.job_configs:
+        job_ex.job_configs = configs
+
+
 def job_execution_create(context, values):
     session = get_session()
+    execution_interface = values.pop('interface', {})
+    job_ex = m.JobExecution()
+    job_ex.update(values)
 
-    with session.begin():
-        job_ex = m.JobExecution()
-        job_ex.update(values)
-        try:
-            job_ex.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for JobExecution: %s") % e.columns)
+    try:
+        with session.begin():
+            job_ex.interface = []
+            job = _job_get(context, session, job_ex.job_id)
+            if job.interface:
+                _merge_execution_interface(job_ex, job, execution_interface)
+            session.add(job_ex)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for JobExecution: %s") % e.columns)
 
     return job_ex
 
@@ -840,6 +814,7 @@ def job_execution_update(context, job_execution_id, values):
             raise ex.NotFoundException(job_execution_id,
                                        _("JobExecution id '%s' not found!"))
         job_ex.update(values)
+        session.add(job_ex)
 
     return job_ex
 
@@ -868,15 +843,7 @@ def job_get(context, job_id):
 
 def job_get_all(context, **kwargs):
     query = model_query(m.Job, context)
-    try:
-        return query.filter_by(**kwargs).all()
-    except sa.exc.InvalidRequestError as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    return query.filter_by(**kwargs).all()
 
 
 def _append_job_binaries(context, session, from_list, to_list):
@@ -887,27 +854,42 @@ def _append_job_binaries(context, session, from_list, to_list):
             to_list.append(job_binary)
 
 
+def _append_interface(context, from_list, to_list):
+    for order, argument_values in enumerate(from_list):
+        argument_values['tenant_id'] = context.tenant_id
+        argument_values['order'] = order
+        argument = m.JobInterfaceArgument()
+        argument.update(argument_values)
+        to_list.append(argument)
+
+
 def job_create(context, values):
     mains = values.pop("mains", [])
     libs = values.pop("libs", [])
+    interface = values.pop("interface", [])
 
     session = get_session()
-    with session.begin():
-        job = m.Job()
-        job.update(values)
-        # libs and mains are 'lazy' objects. The initialization below
-        # is needed here because it provides libs and mains to be initialized
-        # within a session even if the lists are empty
-        job.mains = []
-        job.libs = []
-        try:
+    try:
+        with session.begin():
+            job = m.Job()
+            job.update(values)
+            # These are 'lazy' objects. The initialization below
+            # is needed here because it provides libs, mains, and
+            # interface to be initialized within a session even if
+            # the lists are empty
+            job.mains = []
+            job.libs = []
+            job.interface = []
+
             _append_job_binaries(context, session, mains, job.mains)
             _append_job_binaries(context, session, libs, job.libs)
+            _append_interface(context, interface, job.interface)
 
-            job.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for Job: %s") % e.columns)
+            session.add(job)
+
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for Job: %s") % e.columns)
 
     return job
 
@@ -921,6 +903,7 @@ def job_update(context, job_id, values):
             raise ex.NotFoundException(job_id,
                                        _("Job id '%s' not found!"))
         job.update(values)
+        session.add(job)
 
     return job
 
@@ -953,15 +936,7 @@ def job_binary_get_all(context, **kwargs):
     The data column uses deferred loading.
     """
     query = model_query(m.JobBinary, context)
-    try:
-        return query.filter_by(**kwargs).all()
-    except sa.exc.InvalidRequestError as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    return query.filter_by(**kwargs).all()
 
 
 def job_binary_get(context, job_binary_id):
@@ -981,18 +956,57 @@ def job_binary_create(context, values):
     job_binary.update(values)
 
     session = get_session()
-    with session.begin():
-        try:
-            job_binary.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for JobBinary: %s") % e.columns)
+    try:
+        with session.begin():
+            session.add(job_binary)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for JobBinary: %s") % e.columns)
 
     return job_binary
 
 
-def _check_job_binary_referenced(ctx, session, job_binary_id):
+def job_binary_update(context, values):
+    """Returns a JobBinary updated with the provided values."""
+    jb_id = values["id"]
+    session = get_session()
+    try:
+        with session.begin():
+            jb = _job_binary_get(context, session, jb_id)
+            if not jb:
+                raise ex.NotFoundException(
+                    jb_id, _("JobBinary id '%s' not found"))
+            # We do not want to update the url for internal binaries
+            new_url = values.get("url", None)
+            if new_url and "internal-db://" in jb["url"]:
+                if jb["url"] != new_url:
+                    raise ex.UpdateFailedException(
+                        jb_id,
+                        _("The url for JobBinary Id '%s' can not "
+                          "be updated because it is an internal-db url."))
+            jobs = job_execution_get_all(context)
+            pending_jobs = [job for job in jobs if
+                            job.info["status"] == "PENDING"]
+            if len(pending_jobs) > 0:
+                for job in pending_jobs:
+                    if _check_job_binary_referenced(
+                            context, session, jb_id, job.job_id):
+                        raise ex.UpdateFailedException(
+                            jb_id,
+                            _("JobBinary Id '%s' is used in a PENDING job "
+                              "and can not be updated."))
+            jb.update(values)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for JobBinary: %s") % e.columns)
+
+    return jb
+
+
+def _check_job_binary_referenced(ctx, session, job_binary_id, job_id=None):
     args = {"JobBinary_id": job_binary_id}
+    if job_id:
+        args["Job_id"] = job_id
     mains = model_query(m.mains_association, ctx, session,
                         project_only=False).filter_by(**args)
     libs = model_query(m.libs_association, ctx, session,
@@ -1029,15 +1043,7 @@ def job_binary_internal_get_all(context, **kwargs):
     The data column uses deferred loading.
     """
     query = model_query(m.JobBinaryInternal, context)
-    try:
-        return query.filter_by(**kwargs).all()
-    except sa.exc.InvalidRequestError as e:
-        if kwargs:
-            # If kwargs is non-empty then we assume this
-            # is a bad field reference. User asked for something
-            # that doesn't exist, so return empty list
-            return []
-        raise e
+    return query.filter_by(**kwargs).all()
 
 
 def job_binary_internal_get(context, job_binary_internal_id):
@@ -1084,12 +1090,12 @@ def job_binary_internal_create(context, values):
     job_binary_int.update(values)
 
     session = get_session()
-    with session.begin():
-        try:
-            job_binary_int.save(session=session)
-        except db_exc.DBDuplicateEntry as e:
-            raise ex.DBDuplicateEntry(
-                _("Duplicate entry for JobBinaryInternal: %s") % e.columns)
+    try:
+        with session.begin():
+            session.add(job_binary_int)
+    except db_exc.DBDuplicateEntry as e:
+        raise ex.DBDuplicateEntry(
+            _("Duplicate entry for JobBinaryInternal: %s") % e.columns)
 
     return job_binary_internal_get(context, job_binary_int.id)
 

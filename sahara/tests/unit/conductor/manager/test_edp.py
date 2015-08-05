@@ -16,6 +16,7 @@
 import copy
 import datetime
 
+from sqlalchemy import exc as sa_exc
 import testtools
 
 from sahara import context
@@ -26,7 +27,7 @@ from sahara.utils import edp
 
 
 SAMPLE_DATA_SOURCE = {
-    "tenant_id": "test_tenant",
+    "tenant_id": "tenant_1",
     "name": "ngt_test",
     "description": "test_desc",
     "type": "Cassandra",
@@ -38,7 +39,7 @@ SAMPLE_DATA_SOURCE = {
 }
 
 SAMPLE_JOB = {
-    "tenant_id": "test_tenant",
+    "tenant_id": "tenant_1",
     "name": "job_test",
     "description": "test_desc",
     "type": edp.JOB_TYPE_PIG,
@@ -46,7 +47,7 @@ SAMPLE_JOB = {
 }
 
 SAMPLE_JOB_EXECUTION = {
-    "tenant_id": "tenant_id",
+    "tenant_id": "tenant_1",
     "return_code": "1",
     "job_id": "undefined",
     "input_id": "undefined",
@@ -56,7 +57,7 @@ SAMPLE_JOB_EXECUTION = {
 }
 
 SAMPLE_CONF_JOB_EXECUTION = {
-    "tenant_id": "tenant_id",
+    "tenant_id": "tenant_1",
     "progress": "0.1",
     "return_code": "1",
     "job_id": "undefined",
@@ -69,7 +70,7 @@ SAMPLE_CONF_JOB_EXECUTION = {
     }
 }
 
-BINARY_DATA = "vU}\x97\x1c\xdf\xa686\x08\xf2\tf\x0b\xb1}"
+BINARY_DATA = b"vU}\x97\x1c\xdf\xa686\x08\xf2\tf\x0b\xb1}"
 
 SAMPLE_JOB_BINARY_INTERNAL = {
     "tenant_id": "test_tenant",
@@ -83,6 +84,23 @@ SAMPLE_JOB_BINARY = {
     "name": "job_binary_test",
     "description": "test_dec",
     "url": "internal-db://test_binary",
+}
+
+SAMPLE_JOB_BINARY_UPDATE = {
+    "name": "updatedName",
+    "url": "internal-db://updated-fake-url"
+}
+
+SAMPLE_JOB_BINARY_SWIFT = {
+    "tenant_id": "test_tenant",
+    "name": "job_binary_test_swift",
+    "description": "the description",
+    "url": "swift://test_swift_url",
+}
+
+SAMPLE_JOB_BINARY_SWIFT_UPDATE = {
+    "name": "SwifterName",
+    "url": "swift://updated-swift"
 }
 
 
@@ -154,8 +172,9 @@ class DataSourceTest(test_base.ConductorManagerTestCase):
         self.assertEqual(0, len(lst))
 
         # Invalid field
-        lst = self.api.data_source_get_all(ctx, **{'badfield': 'somevalue'})
-        self.assertEqual(0, len(lst))
+        self.assertRaises(sa_exc.InvalidRequestError,
+                          self.api.data_source_get_all,
+                          ctx, **{'badfield': 'somevalue'})
 
     def test_data_source_count_in(self):
         ctx = context.ctx()
@@ -207,6 +226,40 @@ class DataSourceTest(test_base.ConductorManagerTestCase):
                                          name=('ngt_test',),
                                          url='localhost')
         self.assertEqual(0, cnt)
+
+    def test_data_source_update(self):
+        ctx = context.ctx()
+        orig = self.api.data_source_create(ctx, SAMPLE_DATA_SOURCE)
+        update_json = {"name": "updatedName",
+                       "url": "swift://updatedFakeUrl"}
+        updated = self.api.data_source_update(ctx, orig["id"], update_json)
+        self.assertEqual("updatedName", updated["name"])
+        self.assertEqual("swift://updatedFakeUrl", updated["url"])
+
+        self._create_job_execution_ref_data_source(ctx, updated["id"])
+        update_json = {"name": "FailsToupdatedName",
+                       "url": "swift://FailsupdatedFakeUrl"}
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.data_source_update(ctx, updated["id"], update_json)
+
+    def _create_job_execution_ref_data_source(self, context, ds_id):
+        job = self.api.job_create(context, SAMPLE_JOB)
+        ds_input = self.api.data_source_create(context, SAMPLE_DATA_SOURCE)
+        SAMPLE_DATA_OUTPUT = copy.copy(SAMPLE_DATA_SOURCE)
+        SAMPLE_DATA_OUTPUT['name'] = 'output'
+
+        SAMPLE_JOB_EXECUTION['job_id'] = job['id']
+        SAMPLE_JOB_EXECUTION['input_id'] = ds_input['id']
+        SAMPLE_JOB_EXECUTION['output_id'] = ds_id
+        SAMPLE_JOB_EXECUTION['data_source_urls'] = {ds_id: "fakeurl"}
+
+        self.api.job_execution_create(context, SAMPLE_JOB_EXECUTION)
+
+        lst = self.api.job_execution_get_all(context)
+        job_ex_id = lst[0]['id']
+
+        new_info = {"status": edp.JOB_STATUS_PENDING}
+        self.api.job_execution_update(context, job_ex_id, {'info': new_info})
 
 
 class JobExecutionTest(test_base.ConductorManagerTestCase):
@@ -324,8 +377,9 @@ class JobExecutionTest(test_base.ConductorManagerTestCase):
         self.assertEqual(0, len(lst))
 
         # Invalid field
-        lst = self.api.job_execution_get_all(ctx, **{'badfield': 'somevalue'})
-        self.assertEqual(0, len(lst))
+        self.assertRaises(sa_exc.InvalidRequestError,
+                          self.api.job_execution_get_all,
+                          ctx, **{'badfield': 'somevalue'})
 
     def test_job_execution_advanced_search(self):
         ctx = context.ctx()
@@ -467,8 +521,9 @@ class JobTest(test_base.ConductorManagerTestCase):
         self.assertEqual(0, len(lst))
 
         # Invalid field
-        lst = self.api.job_get_all(ctx, **{'badfield': 'somevalue'})
-        self.assertEqual(0, len(lst))
+        self.assertRaises(sa_exc.InvalidRequestError,
+                          self.api.job_get_all,
+                          ctx, **{'badfield': 'somevalue'})
 
 
 class JobBinaryInternalTest(test_base.ConductorManagerTestCase):
@@ -554,8 +609,9 @@ class JobBinaryInternalTest(test_base.ConductorManagerTestCase):
         self.assertEqual(0, len(lst))
 
         # Invalid field
-        lst = self.api.job_binary_internal_get_all(ctx, **{'badfield': 'junk'})
-        self.assertEqual(0, len(lst))
+        self.assertRaises(sa_exc.InvalidRequestError,
+                          self.api.job_binary_internal_get_all,
+                          ctx, **{'badfield': 'junk'})
 
 
 class JobBinaryTest(test_base.ConductorManagerTestCase):
@@ -646,5 +702,47 @@ class JobBinaryTest(test_base.ConductorManagerTestCase):
         self.assertEqual(0, len(lst))
 
         # Invalid field
-        lst = self.api.job_binary_get_all(ctx, **{'badfield': 'somevalue'})
-        self.assertEqual(0, len(lst))
+        self.assertRaises(sa_exc.InvalidRequestError,
+                          self.api.job_binary_get_all,
+                          ctx, **{'badfield': 'somevalue'})
+
+    def test_job_binary_update(self):
+        ctx = context.ctx()
+
+        original = self.api.job_binary_create(ctx, SAMPLE_JOB_BINARY_SWIFT)
+        updated = self.api.job_binary_update(
+            ctx, original["id"], SAMPLE_JOB_BINARY_SWIFT_UPDATE)
+        # Make sure that the update did indeed succeed
+        self.assertEqual(
+            SAMPLE_JOB_BINARY_SWIFT_UPDATE["name"], updated["name"])
+        self.assertEqual(SAMPLE_JOB_BINARY_SWIFT_UPDATE["url"], updated["url"])
+
+        # Make sure we do NOT update a binary in use by a PENDING job
+        self._create_job_execution_ref_job_binary(ctx, original["id"])
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.job_binary_update(
+                ctx, original["id"], SAMPLE_JOB_BINARY_SWIFT_UPDATE)
+
+        original = self.api.job_binary_create(ctx, SAMPLE_JOB_BINARY)
+        # Make sure that internal URL update fails
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.job_binary_update(
+                ctx, original["id"], SAMPLE_JOB_BINARY_UPDATE)
+
+    def _create_job_execution_ref_job_binary(self, ctx, jb_id):
+        JOB_REF_BINARY = copy.copy(SAMPLE_JOB)
+        JOB_REF_BINARY["mains"] = [jb_id]
+        job = self.api.job_create(ctx, JOB_REF_BINARY)
+        ds_input = self.api.data_source_create(ctx, SAMPLE_DATA_SOURCE)
+        SAMPLE_DATA_OUTPUT = copy.copy(SAMPLE_DATA_SOURCE)
+        SAMPLE_DATA_OUTPUT['name'] = 'output'
+        ds_output = self.api.data_source_create(ctx, SAMPLE_DATA_OUTPUT)
+        SAMPLE_JOB_EXECUTION['job_id'] = job['id']
+        SAMPLE_JOB_EXECUTION['input_id'] = ds_input['id']
+        SAMPLE_JOB_EXECUTION['output_id'] = ds_output['id']
+
+        self.api.job_execution_create(ctx, SAMPLE_JOB_EXECUTION)
+        lst = self.api.job_execution_get_all(ctx)
+        job_ex_id = lst[0]["id"]
+        new_info = {"status": edp.JOB_STATUS_PENDING}
+        self.api.job_execution_update(ctx, job_ex_id, {"info": new_info})

@@ -17,6 +17,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
+from sahara import context
 from sahara.i18n import _
 from sahara.i18n import _LW
 from sahara.plugins.vanilla.hadoop2 import config_helper as c_helper
@@ -25,6 +26,7 @@ from sahara.plugins.vanilla import utils as vu
 from sahara.swift import swift_helper as swift
 from sahara.topology import topology_helper as th
 from sahara.utils import cluster_progress_ops as cpo
+from sahara.utils import configs as s_cfg
 from sahara.utils import files as f
 from sahara.utils import proxy
 from sahara.utils import xmlutils as x
@@ -40,7 +42,7 @@ HADOOP_GROUP = 'hadoop'
 
 
 def configure_cluster(pctx, cluster):
-    LOG.debug("Configuring cluster {cluster}".format(cluster=cluster.name))
+    LOG.debug("Configuring cluster")
     if (CONF.use_identity_api_v3 and CONF.use_domain_for_proxy_users and
             vu.get_hiveserver(cluster) and
             c_helper.is_swift_enabled(pctx, cluster)):
@@ -63,7 +65,8 @@ def configure_instances(pctx, instances):
         instances[0].cluster_id, _("Configure instances"), len(instances))
 
     for instance in instances:
-        _configure_instance(pctx, instance)
+        with context.set_current_instance_id(instance.instance_id):
+            _configure_instance(pctx, instance)
 
 
 @cpo.event_wrapper(True)
@@ -81,8 +84,8 @@ def _provisioning_configs(pctx, instance):
 def _generate_configs(pctx, node_group):
     hadoop_xml_confs = _get_hadoop_configs(pctx, node_group)
     user_xml_confs, user_env_confs = _get_user_configs(pctx, node_group)
-    xml_confs = _merge_configs(user_xml_confs, hadoop_xml_confs)
-    env_confs = _merge_configs(pctx['env_confs'], user_env_confs)
+    xml_confs = s_cfg.merge_configs(user_xml_confs, hadoop_xml_confs)
+    env_confs = s_cfg.merge_configs(pctx['env_confs'], user_env_confs)
 
     return xml_confs, env_confs
 
@@ -97,7 +100,7 @@ def _get_hadoop_configs(pctx, node_group):
         },
         'HDFS': {
             'dfs.namenode.name.dir': ','.join(dirs['hadoop_name_dirs']),
-            'dfs.namenode.data.dir': ','.join(dirs['hadoop_data_dirs']),
+            'dfs.datanode.data.dir': ','.join(dirs['hadoop_data_dirs']),
             'dfs.hosts': '%s/dn-include' % HADOOP_CONF_DIR,
             'dfs.hosts.exclude': '%s/dn-exclude' % HADOOP_CONF_DIR
         }
@@ -188,8 +191,8 @@ def _get_user_configs(pctx, node_group):
     cl_xml_confs, cl_env_confs = _separate_configs(
         node_group.cluster.cluster_configs, pctx['env_confs'])
 
-    xml_confs = _merge_configs(cl_xml_confs, ng_xml_confs)
-    env_confs = _merge_configs(cl_env_confs, ng_env_confs)
+    xml_confs = s_cfg.merge_configs(cl_xml_confs, ng_xml_confs)
+    env_confs = s_cfg.merge_configs(cl_env_confs, ng_env_confs)
     return xml_confs, env_confs
 
 
@@ -332,21 +335,6 @@ def _get_hadoop_dirs(node_group):
 
 def _make_hadoop_paths(paths, hadoop_dir):
     return [path + hadoop_dir for path in paths]
-
-
-def _merge_configs(a, b):
-    res = {}
-
-    def update(cfg):
-        for service, configs in six.iteritems(cfg):
-            if not res.get(service):
-                res[service] = {}
-
-            res[service].update(configs)
-
-    update(a)
-    update(b)
-    return res
 
 
 @cpo.event_wrapper(

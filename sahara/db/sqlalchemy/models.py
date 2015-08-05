@@ -67,6 +67,7 @@ class Cluster(mb.SaharaBase):
     extra = sa.Column(st.JsonDictType())
     rollback_info = sa.Column(st.JsonDictType())
     sahara_info = sa.Column(st.JsonDictType())
+    use_autoconfig = sa.Column(sa.Boolean(), default=True)
     provision_progress = relationship('ClusterProvisionStep',
                                       cascade="all,delete",
                                       backref='cluster',
@@ -109,6 +110,8 @@ class NodeGroup(mb.SaharaBase):
     volume_mount_prefix = sa.Column(sa.String(80))
     volume_type = sa.Column(sa.String(255))
     count = sa.Column(sa.Integer, nullable=False)
+    use_autoconfig = sa.Column(sa.Boolean(), default=True)
+
     instances = relationship('Instance', cascade="all,delete",
                              backref='node_group',
                              order_by="Instance.instance_name", lazy='joined')
@@ -176,6 +179,7 @@ class ClusterTemplate(mb.SaharaBase):
     node_groups = relationship('TemplatesRelation', cascade="all,delete",
                                backref='cluster_template', lazy='joined')
     is_default = sa.Column(sa.Boolean(), default=False)
+    use_autoconfig = sa.Column(sa.Boolean(), default=True)
 
     def to_dict(self):
         d = super(ClusterTemplate, self).to_dict()
@@ -215,6 +219,7 @@ class NodeGroupTemplate(mb.SaharaBase):
     is_proxy_gateway = sa.Column(sa.Boolean())
     volume_local_to_instance = sa.Column(sa.Boolean())
     is_default = sa.Column(sa.Boolean(), default=False)
+    use_autoconfig = sa.Column(sa.Boolean(), default=True)
 
 
 class TemplatesRelation(mb.SaharaBase):
@@ -238,6 +243,7 @@ class TemplatesRelation(mb.SaharaBase):
     volume_mount_prefix = sa.Column(sa.String(80))
     volume_type = sa.Column(sa.String(255))
     count = sa.Column(sa.Integer, nullable=False)
+    use_autoconfig = sa.Column(sa.Boolean(), default=True)
     cluster_template_id = sa.Column(sa.String(36),
                                     sa.ForeignKey('cluster_templates.id'))
     node_group_template_id = sa.Column(sa.String(36),
@@ -299,6 +305,8 @@ class JobExecution(mb.SaharaBase):
     return_code = sa.Column(sa.String(80))
     job_configs = sa.Column(st.JsonDictType())
     extra = sa.Column(st.JsonDictType())
+    data_source_urls = sa.Column(st.JsonDictType())
+
 
 mains_association = sa.Table("mains_association",
                              mb.SaharaBase.metadata,
@@ -343,11 +351,42 @@ class Job(mb.SaharaBase):
     libs = relationship("JobBinary",
                         secondary=libs_association, lazy="joined")
 
+    interface = relationship('JobInterfaceArgument',
+                             cascade="all,delete",
+                             order_by="JobInterfaceArgument.order",
+                             backref='job',
+                             lazy='joined')
+
     def to_dict(self):
         d = super(Job, self).to_dict()
         d['mains'] = [jb.to_dict() for jb in self.mains]
         d['libs'] = [jb.to_dict() for jb in self.libs]
+        d['interface'] = [arg.to_dict() for arg in self.interface]
         return d
+
+
+class JobInterfaceArgument(mb.SaharaBase):
+    """JobInterfaceArgument - Configuration setting for a specific job."""
+
+    __tablename__ = 'job_interface_arguments'
+
+    __table_args__ = (
+        sa.UniqueConstraint('job_id', 'name'),
+        sa.UniqueConstraint('job_id', 'order')
+    )
+
+    id = _id_column()
+    job_id = sa.Column(sa.String(36), sa.ForeignKey('jobs.id'),
+                       nullable=False)
+    tenant_id = sa.Column(sa.String(36))
+    name = sa.Column(sa.String(80), nullable=False)
+    description = sa.Column(sa.Text())
+    mapping_type = sa.Column(sa.String(80), nullable=False)
+    location = sa.Column(sa.Text(), nullable=False)
+    value_type = sa.Column(sa.String(80), nullable=False)
+    required = sa.Column(sa.Boolean(), nullable=False)
+    order = sa.Column(sa.SmallInteger(), nullable=False)
+    default = sa.Column(sa.Text())
 
 
 class JobBinaryInternal(mb.SaharaBase):

@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 # The contents of this file are mainly copied from cm_api sources,
-# released by Cloudrea. Codes not used by Sahara CDH plugin are removed.
+# released by Cloudera. Codes not used by Sahara CDH plugin are removed.
 # You can find the original codes at
 #
 #     https://github.com/cloudera/cm_api/tree/master/python/src/cm_api
@@ -24,9 +24,9 @@
 
 import copy
 import datetime
-import json
 import time
 
+from oslo_serialization import jsonutils as json
 import six
 
 from sahara import context

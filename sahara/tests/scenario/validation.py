@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+
 import jsonschema
 import rfc3986
 
@@ -42,6 +44,10 @@ SCHEMA = {
                 "os_auth_url": {
                     "type": "string",
                     "format": "uri"
+                },
+                "sahara_service_type": {
+                    "type": "string",
+                    "minLength": 1
                 },
                 "sahara_url": {
                     "type": "string",
@@ -97,7 +103,8 @@ SCHEMA = {
                             "properties": {
                                 "name": {
                                     "type": "string",
-                                    "minLength": 1
+                                    "minLength": 1,
+                                    "format": "valid_name"
                                 },
                                 "node_processes": {
                                     "type": "array",
@@ -107,7 +114,7 @@ SCHEMA = {
                                         "minLength": 1
                                     }
                                 },
-                                "flavor_id": {
+                                "flavor": {
                                     "type": "string",
                                     "minLength": 1
                                 },
@@ -151,8 +158,7 @@ SCHEMA = {
                                     "type": "boolean"
                                 }
                             },
-                            "required": ["name", "flavor_id",
-                                         "node_processes"],
+                            "required": ["name", "flavor", "node_processes"],
                             "additionalProperties": False
                         }
                     },
@@ -161,7 +167,8 @@ SCHEMA = {
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "minLength": 1
+                                "minLength": 1,
+                                "format": "valid_name"
                             },
                             "description": {
                                 "type": "string"
@@ -190,7 +197,8 @@ SCHEMA = {
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "minLength": 1
+                                "minLength": 1,
+                                "format": "valid_name"
                             },
                             "description": {
                                 "type": "string"
@@ -201,6 +209,22 @@ SCHEMA = {
                         },
                         "required": ["name"],
                         "additionalProperties": False,
+                    },
+                    "timeout_check_transient": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "timeout_delete_resource": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "timeout_poll_cluster_status": {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    "timeout_poll_jobs_status": {
+                        "type": "integer",
+                        "minimum": 1
                     },
                     "scaling": {
                         "type": "array",
@@ -229,7 +253,7 @@ SCHEMA = {
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["run_jobs", "scale", "transient"]
+                            "minLength": 1
                         }
                     },
                     "edp_jobs_flow": {
@@ -264,7 +288,7 @@ SCHEMA = {
                                 "properties": {
                                     "type": {
                                         "type": "string",
-                                        "enum": ["swift", "hdfs"]
+                                        "enum": ["swift", "hdfs", "maprfs"]
                                     },
                                     "source": {
                                         "type": "string"
@@ -278,7 +302,7 @@ SCHEMA = {
                                 "properties": {
                                     "type": {
                                         "type": "string",
-                                        "enum": ["swift", "hdfs"]
+                                        "enum": ["swift", "hdfs", "maprfs"]
                                     },
                                     "destination": {
                                         "type": "string"
@@ -340,6 +364,14 @@ SCHEMA = {
 @jsonschema.FormatChecker.cls_checks("uri")
 def validate_uri_format(entry):
     return rfc3986.is_valid_uri(entry)
+
+
+@jsonschema.FormatChecker.cls_checks('valid_name')
+def validate_name_hostname_format(entry):
+    res = re.match(r"^(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]"
+                   r"*[a-zA-Z0-9])\.)*([A-Za-z]|[A-Za-z]"
+                   r"[A-Za-z0-9\-]*[A-Za-z0-9])$", entry)
+    return res is not None
 
 
 class Validator(jsonschema.Draft4Validator):

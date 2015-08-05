@@ -53,7 +53,9 @@ class PluginUtilsV530(pu.AbstractPluginUtils):
             'SPARK_YARN_HISTORY_SERVER': 'SHS',
             'SQOOP_SERVER': 'S2S',
             'STATESTORE': 'ISS',
-            'WEBHCAT': 'WHC'
+            'WEBHCAT': 'WHC',
+            'HDFS_GATEWAY': 'HG',
+            'YARN_GATEWAY': 'YG'
         }
         return '%s_%s' % (shortcuts.get(service, service),
                           instance.hostname().replace('-', '_'))
@@ -107,7 +109,9 @@ class PluginUtilsV530(pu.AbstractPluginUtils):
             "KS_INDEXER": ['HBASE_INDEXER'],
             "SENTRY": ['SENTRY_SERVER'],
             "SOLR": ['SOLR_SERVER'],
-            "SQOOP": ['SQOOP_SERVER']
+            "SQOOP": ['SQOOP_SERVER'],
+            'YARN_GATEWAY': ['YARN_GATEWAY'],
+            'HDFS_GATEWAY': ['HDFS_GATEWAY']
         }
         if isinstance(configs, res.Resource):
             configs = configs.to_dict()
@@ -127,3 +131,7 @@ class PluginUtilsV530(pu.AbstractPluginUtils):
     def start_cloudera_manager(self, cluster):
         self._start_cloudera_manager(
             cluster, c_helper.AWAIT_MANAGER_STARTING_TIMEOUT)
+
+    def get_config_value(self, service, name, cluster=None):
+        configs = c_helper.get_plugin_configs()
+        return self._get_config_value(service, name, configs, cluster)

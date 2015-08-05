@@ -35,7 +35,6 @@ class JsonEncoded(sa.TypeDecorator):
         return value
 
 
-# TODO(slukjanov): verify this implementation
 class MutableDict(mutable.Mutable, dict):
     @classmethod
     def coerce(cls, key, value):
@@ -65,7 +64,6 @@ class MutableDict(mutable.Mutable, dict):
         self.changed()
 
 
-# TODO(slukjanov): verify this implementation
 class MutableList(mutable.Mutable, list):
     @classmethod
     def coerce(cls, key, value):
@@ -79,14 +77,14 @@ class MutableList(mutable.Mutable, list):
         else:
             return value
 
-    def __add__(self, value):
-        """Detect list add events and emit change events."""
-        list.__add__(self, value)
-        self.changed()
-
     def append(self, value):
         """Detect list add events and emit change events."""
         list.append(self, value)
+        self.changed()
+
+    def remove(self, value):
+        """Removes an item by value and emit change events."""
+        list.remove(self, value)
         self.changed()
 
     def __setitem__(self, key, value):

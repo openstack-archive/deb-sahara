@@ -296,6 +296,7 @@ VANILLA_TWO_CONFIG_OPTS = [
     cfg.BoolOpt('SKIP_SCALING_TEST', default=False)
 ]
 
+
 CDH_CONFIG_GROUP = cfg.OptGroup(name='CDH')
 CDH_CONFIG_OPTS = [
     cfg.StrOpt('PLUGIN_NAME',
@@ -389,7 +390,6 @@ CDH_CONFIG_OPTS = [
     cfg.BoolOpt('SKIP_SCALING_TEST', default=False),
     cfg.BoolOpt('SKIP_CHECK_SERVICES_TEST', default=True)
 ]
-
 
 HDP_CONFIG_GROUP = cfg.OptGroup(name='HDP')
 HDP_CONFIG_OPTS = [
@@ -594,7 +594,7 @@ SPARK_CONFIG_OPTS = [
                 help='A list of processes that will be launched '
                      'on worker nodes'),
     cfg.StrOpt('HADOOP_VERSION',
-               default='1.0.0',
+               default='1.3.1',
                help='Version of Spark (even though it says "HADOOP".'),
     cfg.StrOpt('HADOOP_USER',
                default='hdfs',

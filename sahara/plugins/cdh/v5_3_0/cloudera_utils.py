@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import six
-
 from sahara.i18n import _
 from sahara.plugins.cdh import cloudera_utils as cu
 from sahara.plugins.cdh.v5_3_0 import config_helper as c_helper
@@ -22,6 +20,7 @@ from sahara.plugins.cdh.v5_3_0 import plugin_utils as pu
 from sahara.plugins.cdh.v5_3_0 import validation as v
 from sahara.swift import swift_helper
 from sahara.utils import cluster_progress_ops as cpo
+from sahara.utils import configs as s_cfg
 from sahara.utils import xmlutils
 
 
@@ -41,21 +40,6 @@ KS_INDEXER_SERVICE_TYPE = 'KS_INDEXER'
 IMPALA_SERVICE_TYPE = 'IMPALA'
 
 
-def _merge_dicts(a, b):
-    res = {}
-
-    def update(cfg):
-        for service, configs in six.iteritems(cfg):
-            if not res.get(service):
-                res[service] = {}
-
-            res[service].update(configs)
-
-    update(a)
-    update(b)
-    return res
-
-
 class ClouderaUtilsV530(cu.ClouderaUtils):
     FLUME_SERVICE_NAME = 'flume01'
     SOLR_SERVICE_NAME = 'solr01'
@@ -69,7 +53,7 @@ class ClouderaUtilsV530(cu.ClouderaUtils):
         cu.ClouderaUtils.__init__(self)
         self.pu = pu.PluginUtilsV530()
 
-    def get_service_by_role(self, process, cluster=None, instance=None):
+    def get_service_by_role(self, role, cluster=None, instance=None):
         cm_cluster = None
         if cluster:
             cm_cluster = self.get_cloudera_cluster(cluster)
@@ -78,21 +62,21 @@ class ClouderaUtilsV530(cu.ClouderaUtils):
         else:
             raise ValueError(_("'cluster' or 'instance' argument missed"))
 
-        if process in ['AGENT']:
+        if role in ['AGENT']:
             return cm_cluster.get_service(self.FLUME_SERVICE_NAME)
-        elif process in ['SENTRY_SERVER']:
+        elif role in ['SENTRY_SERVER']:
             return cm_cluster.get_service(self.SENTRY_SERVICE_NAME)
-        elif process in ['SQOOP_SERVER']:
+        elif role in ['SQOOP_SERVER']:
             return cm_cluster.get_service(self.SQOOP_SERVICE_NAME)
-        elif process in ['SOLR_SERVER']:
+        elif role in ['SOLR_SERVER']:
             return cm_cluster.get_service(self.SOLR_SERVICE_NAME)
-        elif process in ['HBASE_INDEXER']:
+        elif role in ['HBASE_INDEXER']:
             return cm_cluster.get_service(self.KS_INDEXER_SERVICE_NAME)
-        elif process in ['CATALOGSERVER', 'STATESTORE', 'IMPALAD', 'LLAMA']:
+        elif role in ['CATALOGSERVER', 'STATESTORE', 'IMPALAD', 'LLAMA']:
             return cm_cluster.get_service(self.IMPALA_SERVICE_NAME)
         else:
             return super(ClouderaUtilsV530, self).get_service_by_role(
-                process, cluster, instance)
+                role, cluster, instance)
 
     @cpo.event_wrapper(
         True, step=_("First run cluster"), param=('cluster', 1))
@@ -355,10 +339,10 @@ class ClouderaUtilsV530(cu.ClouderaUtils):
                 }
             }
 
-            all_confs = _merge_dicts(all_confs, hue_confs)
-            all_confs = _merge_dicts(all_confs, hive_confs)
-            all_confs = _merge_dicts(all_confs, sentry_confs)
-            all_confs = _merge_dicts(all_confs, cluster.cluster_configs)
+            all_confs = s_cfg.merge_configs(all_confs, hue_confs)
+            all_confs = s_cfg.merge_configs(all_confs, hive_confs)
+            all_confs = s_cfg.merge_configs(all_confs, sentry_confs)
+            all_confs = s_cfg.merge_configs(all_confs, cluster.cluster_configs)
 
         if node_group:
             paths = node_group.storage_paths()
@@ -399,7 +383,7 @@ class ClouderaUtilsV530(cu.ClouderaUtils):
 
             ng_user_confs = self.pu.convert_process_configs(
                 node_group.node_configs)
-            all_confs = _merge_dicts(all_confs, ng_user_confs)
-            all_confs = _merge_dicts(all_confs, ng_default_confs)
+            all_confs = s_cfg.merge_configs(all_confs, ng_user_confs)
+            all_confs = s_cfg.merge_configs(all_confs, ng_default_confs)
 
         return all_confs.get(service, {})

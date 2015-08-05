@@ -13,7 +13,7 @@
 # under the License.
 
 
-import json
+from oslo_serialization import jsonutils as json
 
 from sahara import context
 import sahara.exceptions as e
@@ -213,6 +213,9 @@ class Service(object):
 
     def conf_dir(self, cluster_context):
         return '%s/conf' % self.home_dir(cluster_context)
+
+    def post_configure_sh(self, cluster_context, instances):
+        pass
 
 
 class Single(type):

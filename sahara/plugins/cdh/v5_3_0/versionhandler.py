@@ -1,4 +1,5 @@
 # Copyright (c) 2014 Mirantis Inc.
+# Copyright (c) 2015 ISPRAS
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -63,7 +64,9 @@ class VersionHandler(avm.AbstractVersionHandler):
             "KS_INDEXER": ['KEY_VALUE_STORE_INDEXER'],
             "SOLR": ['SOLR_SERVER'],
             "SQOOP": ['SQOOP_SERVER'],
-            "SENTRY": ['SENTRY_SERVER']
+            "SENTRY": ['SENTRY_SERVER'],
+            "YARN_GATEWAY": [],
+            "HDFS_GATEWAY": []
         }
 
     def validate(self, cluster):
@@ -108,10 +111,13 @@ class VersionHandler(avm.AbstractVersionHandler):
     def get_edp_engine(self, cluster, job_type):
         if job_type in edp_engine.EdpOozieEngine.get_supported_job_types():
             return edp_engine.EdpOozieEngine(cluster)
+        if job_type in edp_engine.EdpSparkEngine.get_supported_job_types():
+            return edp_engine.EdpSparkEngine(cluster)
         return None
 
     def get_edp_job_types(self):
-        return edp_engine.EdpOozieEngine.get_supported_job_types()
+        return (edp_engine.EdpOozieEngine.get_supported_job_types() +
+                edp_engine.EdpSparkEngine.get_supported_job_types())
 
     def get_edp_config_hints(self, job_type):
         return edp_engine.EdpOozieEngine.get_possible_job_config(job_type)

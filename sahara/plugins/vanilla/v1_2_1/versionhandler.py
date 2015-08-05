@@ -64,17 +64,24 @@ class VersionHandler(avm.AbstractVersionHandler):
         if nn_count != 1:
             raise ex.InvalidComponentCountException("namenode", 1, nn_count)
 
+        snn_count = sum(
+            [ng.count for ng
+             in utils.get_node_groups(cluster, 'secondarynamenode')])
+        if snn_count > 1:
+            raise ex.InvalidComponentCountException('secondarynamenode',
+                                                    _('0 or 1'), snn_count)
+
         jt_count = sum([ng.count for ng
                         in utils.get_node_groups(cluster, "jobtracker")])
 
-        if jt_count not in [0, 1]:
+        if jt_count > 1:
             raise ex.InvalidComponentCountException("jobtracker", _('0 or 1'),
                                                     jt_count)
 
         oozie_count = sum([ng.count for ng
                            in utils.get_node_groups(cluster, "oozie")])
 
-        if oozie_count not in [0, 1]:
+        if oozie_count > 1:
             raise ex.InvalidComponentCountException("oozie", _('0 or 1'),
                                                     oozie_count)
 
@@ -96,7 +103,7 @@ class VersionHandler(avm.AbstractVersionHandler):
                 raise ex.RequiredServiceMissingException(
                     "jobtracker", required_by="hive")
 
-        if hive_count not in [0, 1]:
+        if hive_count > 1:
             raise ex.InvalidComponentCountException("hive", _('0 or 1'),
                                                     hive_count)
 
@@ -152,13 +159,14 @@ class VersionHandler(avm.AbstractVersionHandler):
         nn_instance = vu.get_namenode(cluster)
 
         with remote.get_remote(oozie) as r:
-            if c_helper.is_mysql_enable(cluster):
-                run.mysql_start(r, oozie)
-                run.oozie_create_db(r)
-            run.oozie_share_lib(r, nn_instance.hostname())
-            run.start_oozie(r)
-            LOG.info(_LI("Oozie service at {host} has been started").format(
-                     host=nn_instance.hostname()))
+            with context.set_current_instance_id(oozie.instance_id):
+                if c_helper.is_mysql_enable(cluster):
+                    run.mysql_start(r)
+                    run.oozie_create_db(r)
+                run.oozie_share_lib(r, nn_instance.hostname())
+                run.start_oozie(r)
+                LOG.info(
+                    _LI("Oozie service has been started"))
 
     def start_hiveserver(self, cluster):
         hs = vu.get_hiveserver(cluster)
@@ -171,18 +179,17 @@ class VersionHandler(avm.AbstractVersionHandler):
         oozie = vu.get_oozie(cluster)
 
         with remote.get_remote(hive_server) as r:
-            run.hive_create_warehouse_dir(r)
-            run.hive_copy_shared_conf(
-                r, edp.get_hive_shared_conf_path('hadoop'))
+            with context.set_current_instance_id(hive_server.instance_id):
+                run.hive_create_warehouse_dir(r)
+                run.hive_copy_shared_conf(
+                    r, edp.get_hive_shared_conf_path('hadoop'))
 
-            if c_helper.is_mysql_enable(cluster):
-                if not oozie or hive_server.hostname() != oozie.hostname():
-                    run.mysql_start(r, hive_server)
-                run.hive_create_db(r, cluster.extra['hive_mysql_passwd'])
-                run.hive_metastore_start(r)
-                LOG.info(_LI("Hive Metastore server at {host} has been "
-                             "started").format(
-                                 host=hive_server.hostname()))
+                if c_helper.is_mysql_enable(cluster):
+                    if not oozie or hive_server.hostname() != oozie.hostname():
+                        run.mysql_start(r)
+                    run.hive_create_db(r, cluster.extra['hive_mysql_passwd'])
+                    run.hive_metastore_start(r)
+                    LOG.info(_LI("Hive Metastore server has been started"))
 
     def start_cluster(self, cluster):
         self.start_namenode(cluster)
@@ -195,15 +202,13 @@ class VersionHandler(avm.AbstractVersionHandler):
 
         self._await_datanodes(cluster)
 
-        LOG.info(_LI("Hadoop services in cluster {cluster} have been started")
-                 .format(cluster=cluster.name))
+        LOG.info(_LI("Hadoop services in cluster have been started"))
 
         self.start_oozie(cluster)
 
         self.start_hiveserver(cluster)
 
-        LOG.info(_LI('Cluster {cluster} has been started successfully')
-                 .format(cluster=cluster.name))
+        LOG.info(_LI('Cluster has been started successfully'))
         self._set_cluster_info(cluster)
 
     @cpo.event_wrapper(
@@ -589,3 +594,7 @@ class VersionHandler(avm.AbstractVersionHandler):
 
     def on_terminate_cluster(self, cluster):
         proxy.delete_proxy_user_for_cluster(cluster)
+
+    def recommend_configs(self, cluster):
+        # We don't support any recommendations in Vanilla 1 plugin
+        pass

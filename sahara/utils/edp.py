@@ -44,6 +44,7 @@ JOB_TYPE_HIVE = 'Hive'
 JOB_TYPE_JAVA = 'Java'
 JOB_TYPE_MAPREDUCE = 'MapReduce'
 JOB_TYPE_SPARK = 'Spark'
+JOB_TYPE_STORM = 'Storm'
 JOB_TYPE_MAPREDUCE_STREAMING = (JOB_TYPE_MAPREDUCE + JOB_TYPE_SEP +
                                 JOB_SUBTYPE_STREAMING)
 JOB_TYPE_PIG = 'Pig'
@@ -57,8 +58,20 @@ JOB_TYPES_ALL = [
     JOB_TYPE_MAPREDUCE_STREAMING,
     JOB_TYPE_PIG,
     JOB_TYPE_SHELL,
-    JOB_TYPE_SPARK
+    JOB_TYPE_SPARK,
+    JOB_TYPE_STORM
 ]
+
+JOB_TYPES_ACCEPTABLE_CONFIGS = {
+    JOB_TYPE_HIVE: {"configs", "params"},
+    JOB_TYPE_PIG: {"configs", "params", "args"},
+    JOB_TYPE_MAPREDUCE: {"configs"},
+    JOB_TYPE_MAPREDUCE_STREAMING: {"configs"},
+    JOB_TYPE_JAVA: {"configs", "args"},
+    JOB_TYPE_SHELL: {"configs", "params", "args"},
+    JOB_TYPE_SPARK: {"configs", "args"},
+    JOB_TYPE_STORM: {"args"}
+}
 
 ADAPT_FOR_OOZIE = 'edp.java.adapt_for_oozie'
 
@@ -113,6 +126,6 @@ def get_builtin_binaries(job, configs):
         if is_adapt_for_oozie_enabled(configs):
             path = 'service/edp/resources/edp-main-wrapper.jar'
             name = 'builtin-%s.jar' % six.text_type(uuid.uuid4())
-            return [{'raw': files.get_file_text(path),
+            return [{'raw': files.get_file_binary(path),
                      'name': name}]
     return []

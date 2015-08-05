@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import collections
-import operator
 
 import novaclient.exceptions as nova_ex
 from oslo_config import cfg
@@ -52,7 +51,7 @@ def _get_plugin_configs(plugin_name, hadoop_version, scope=None):
 def _check_duplicates(lst, message):
     invalid = []
     lst = collections.Counter(lst)
-    for (key, value) in lst.iteritems():
+    for key, value in six.iteritems(lst):
         if value > 1:
             invalid.append(key)
 
@@ -170,9 +169,11 @@ def check_flavor_exists(flavor_id):
 
 def check_security_groups_exist(security_groups):
     security_group_list = nova.client().security_groups.list()
-    allowed_groups = set(reduce(
-        operator.add, [[six.text_type(sg.id), sg.name]
-                       for sg in security_group_list], []))
+    allowed_groups = set()
+    for sg in security_group_list:
+        allowed_groups.add(six.text_type(sg.id))
+        allowed_groups.add(sg.name)
+
     for sg in security_groups:
         if sg not in allowed_groups:
             raise ex.NotFoundException(
@@ -239,7 +240,7 @@ def check_volume_availability_zone_exist(az):
 def check_volume_type_exists(volume_type):
     volume_types = cinder.client().volume_types.list(search_opts={'name':
                                                                   volume_type})
-    if len(volume_types) == 1 and volume_types[0] == volume_type:
+    if len(volume_types) == 1 and volume_types[0].name == volume_type:
         return
     raise ex.NotFoundException(volume_type, _("Volume type '%s' not found"))
 
@@ -255,11 +256,10 @@ def check_cluster_unique_name(name):
 
 def check_heat_stack_name(cluster_name):
     if CONF.infrastructure_engine == 'heat':
-        for stack in heat.client().stacks.list():
-            if stack.stack_name == cluster_name:
-                raise ex.NameAlreadyExistsException(
-                    _("Cluster name '%s' is already used as Heat stack name")
-                    % cluster_name)
+        if heat.get_stack(cluster_name, raise_on_missing=False):
+            raise ex.NameAlreadyExistsException(
+                _("Cluster name '%s' is already used as Heat stack name")
+                % cluster_name)
 
 
 def check_cluster_hostnames_lengths(cluster_name, node_groups):
@@ -395,9 +395,9 @@ def check_required_image_tags(plugin_name, hadoop_version, image_id):
     image = api.get_image(id=image_id)
     plugin = plugin_base.PLUGINS.get_plugin(plugin_name)
     req_tags = set(plugin.get_required_image_tags(hadoop_version))
-    if not req_tags.issubset(set(image.tags)):
-            raise ex.InvalidReferenceException(
-                _("Tags of requested image '%(image)s' don't contain required"
-                  " tags ['%(name)s', '%(version)s']")
-                % {'image': image_id, 'name': plugin_name,
-                   'version': hadoop_version})
+    req_tags = list(req_tags.difference(set(image.tags)))
+    if req_tags:
+        raise ex.InvalidReferenceException(
+            _("Requested image '%(image)s' doesn't contain required"
+              " tags: %(tags)s")
+            % {'image': image_id, 'tags': req_tags})

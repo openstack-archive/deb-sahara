@@ -17,6 +17,7 @@ import traceback
 
 import flask
 from oslo_log import log as logging
+from oslo_middleware import request_id as oslo_req_id
 from werkzeug import datastructures
 
 from sahara import context
@@ -73,6 +74,7 @@ class Rest(flask.Blueprint):
                     flask.request.status_code = status
 
                 kwargs.pop("tenant_id")
+                req_id = flask.request.environ.get(oslo_req_id.ENV_REQUEST_ID)
                 ctx = context.Context(
                     flask.request.headers['X-User-Id'],
                     flask.request.headers['X-Tenant-Id'],
@@ -80,9 +82,9 @@ class Rest(flask.Blueprint):
                     flask.request.headers['X-Service-Catalog'],
                     flask.request.headers['X-User-Name'],
                     flask.request.headers['X-Tenant-Name'],
-                    flask.request.headers['X-Roles'].split(','))
+                    flask.request.headers['X-Roles'].split(','),
+                    request_id=req_id)
                 context.set_ctx(ctx)
-
                 if flask.request.method in ['POST', 'PUT']:
                     kwargs['data'] = request_data()
 
@@ -98,7 +100,6 @@ class Rest(flask.Blueprint):
             f_rule = "/<tenant_id>" + rule
             self.add_url_rule(f_rule, endpoint, handler, **options)
             self.add_url_rule(f_rule + '.json', endpoint, handler, **options)
-            self.add_url_rule(f_rule + '.xml', endpoint, handler, **options)
 
             return func
 
@@ -106,7 +107,6 @@ class Rest(flask.Blueprint):
 
 
 RT_JSON = datastructures.MIMEAccept([("application/json", 1)])
-RT_XML = datastructures.MIMEAccept([("application/xml", 1)])
 
 
 def _init_resp_type(file_upload):
@@ -114,10 +114,6 @@ def _init_resp_type(file_upload):
 
     # get content type from Accept header
     resp_type = flask.request.accept_mimetypes
-
-    # url /foo.xml
-    if flask.request.path.endswith('.xml'):
-        resp_type = RT_XML
 
     # url /foo.json
     if flask.request.path.endswith('.json'):
@@ -155,9 +151,6 @@ def render(res=None, resp_type=None, status=None, **kwargs):
     if "application/json" in resp_type:
         resp_type = RT_JSON
         serializer = wsgi.JSONDictSerializer()
-    elif "application/xml" in resp_type:
-        resp_type = RT_XML
-        serializer = wsgi.XMLDictSerializer()
     else:
         abort_and_log(400, _("Content type '%s' isn't supported") % resp_type)
 
@@ -183,9 +176,6 @@ def request_data():
     content_type = flask.request.mimetype
     if not content_type or content_type in RT_JSON:
         deserializer = wsgi.JSONDeserializer()
-    elif content_type in RT_XML:
-        abort_and_log(400, _("XML requests are not supported yet"))
-        # deserializer = XMLDeserializer()
     else:
         abort_and_log(400,
                       _("Content type '%s' isn't supported") % content_type)
@@ -274,3 +264,13 @@ def not_found(error):
                                               name=error.code))
 
     return render_error_message(error_code, error.message, error.code)
+
+
+def to_wrapped_dict(func, id, *args, **kwargs):
+    obj = func(id, *args, **kwargs)
+    if obj is None:
+        e = ex.NotFoundException(
+            {'id': id}, _('Object with %s not found'))
+
+        return not_found(e)
+    return render(obj.to_wrapped_dict())

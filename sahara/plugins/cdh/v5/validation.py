@@ -36,14 +36,20 @@ def validate_cluster_creating(cluster):
     if snn_count != 1:
         raise ex.InvalidComponentCountException('HDFS_SECONDARYNAMENODE', 1,
                                                 snn_count)
+    dn_count = _get_inst_count(cluster, 'HDFS_DATANODE')
+    replicas = PU.get_config_value('HDFS', 'dfs_replication', cluster)
+    if dn_count < replicas:
+        raise ex.InvalidComponentCountException(
+            'HDFS_DATANODE', replicas, dn_count,
+            _('Number of datanodes must be not less than dfs_replication.'))
 
     rm_count = _get_inst_count(cluster, 'YARN_RESOURCEMANAGER')
-    if rm_count not in [0, 1]:
+    if rm_count > 1:
         raise ex.InvalidComponentCountException('YARN_RESOURCEMANAGER',
                                                 _('0 or 1'), rm_count)
 
     hs_count = _get_inst_count(cluster, 'YARN_JOBHISTORY')
-    if hs_count not in [0, 1]:
+    if hs_count > 1:
         raise ex.InvalidComponentCountException('YARN_JOBHISTORY', _('0 or 1'),
                                                 hs_count)
 
@@ -58,8 +64,7 @@ def validate_cluster_creating(cluster):
                 'YARN_RESOURCEMANAGER', required_by='YARN_NODEMANAGER')
 
     oo_count = _get_inst_count(cluster, 'OOZIE_SERVER')
-    dn_count = _get_inst_count(cluster, 'HDFS_DATANODE')
-    if oo_count not in [0, 1]:
+    if oo_count > 1:
         raise ex.InvalidComponentCountException('OOZIE_SERVER', _('0 or 1'),
                                                 oo_count)
 
@@ -97,12 +102,12 @@ def validate_cluster_creating(cluster):
             'HIVE_METASTORE', required_by='WEBHCAT')
 
     hue_count = _get_inst_count(cluster, 'HUE_SERVER')
-    if hue_count not in [0, 1]:
+    if hue_count > 1:
         raise ex.InvalidComponentCountException('HUE_SERVER', _('0 or 1'),
                                                 hue_count)
 
     shs_count = _get_inst_count(cluster, 'SPARK_YARN_HISTORY_SERVER')
-    if shs_count not in [0, 1]:
+    if shs_count > 1:
         raise ex.InvalidComponentCountException('SPARK_YARN_HISTORY_SERVER',
                                                 _('0 or 1'), shs_count)
     if shs_count and not rm_count:
@@ -156,7 +161,8 @@ def validate_existing_ng_scaling(cluster, existing):
     dn_to_delete = 0
     for ng in cluster.node_groups:
         if ng.id in existing:
-            if ng.count > existing[ng.id] and "datanode" in ng.node_processes:
+            if (ng.count > existing[ng.id] and
+                    "HDFS_DATANODE" in ng.node_processes):
                 dn_to_delete += ng.count - existing[ng.id]
 
             if not set(ng.node_processes).issubset(scalable_processes):
@@ -164,6 +170,13 @@ def validate_existing_ng_scaling(cluster, existing):
                         "%(processes)s")
                 raise ex.NodeGroupCannotBeScaled(
                     ng.name, msg % {'processes': ' '.join(ng.node_processes)})
+
+    dn_count = _get_inst_count(cluster, 'HDFS_DATANODE') - dn_to_delete
+    replicas = PU.get_config_value('HDFS', 'dfs_replication', cluster)
+    if dn_count < replicas:
+        raise ex.ClusterCannotBeScaled(
+            cluster,
+            _('Number of datanodes must be not less than dfs_replication.'))
 
 
 def _get_scalable_processes():

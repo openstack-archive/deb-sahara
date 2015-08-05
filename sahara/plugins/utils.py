@@ -13,10 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
+
 from oslo_utils import netutils
 from six.moves.urllib import parse as urlparse
 
 from sahara.i18n import _
+from sahara.plugins import base as plugins_base
 from sahara.plugins import exceptions as ex
 
 
@@ -32,7 +35,7 @@ def get_instances_count(cluster, node_process=None):
 
 def get_instances(cluster, node_process=None):
     nodes = get_node_groups(cluster, node_process)
-    return reduce(lambda a, b: a + b.instances, nodes, [])
+    return list(itertools.chain(*[node.instances for node in nodes]))
 
 
 def get_instance(cluster, node_process):
@@ -64,11 +67,32 @@ def get_port_from_address(address):
 
 def instances_with_services(instances, node_processes):
     node_processes = set(node_processes)
-    return filter(
+    return list(filter(
         lambda x: node_processes.intersection(
-            x.node_group.node_processes), instances)
+            x.node_group.node_processes), instances))
 
 
 def start_process_event_message(process):
     return _("Start the following process(es): {process}").format(
         process=process)
+
+
+def get_config_value_or_default(service, name, cluster):
+    # Try getting config from the cluster.
+    for ng in cluster.node_groups:
+        if (ng.configuration().get(service) and
+                ng.configuration()[service].get(name)):
+            return ng.configuration()[service][name]
+
+    # Find and return the default
+
+    plugin = plugins_base.PLUGINS.get_plugin(cluster.plugin_name)
+    configs = plugin.get_configs(cluster.hadoop_version)
+
+    for config in configs:
+        if config.applicable_target == service and config.name == name:
+            return config.default_value
+
+    raise RuntimeError(_("Unable to get parameter '%(param_name)s' from "
+                         "service %(service)s"),
+                       {'param_name': name, 'service': service})

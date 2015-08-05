@@ -83,6 +83,7 @@ class BaseConfigurer(ac.AbstractConfigurer):
         self._configure_topology(cluster_context, existing)
         if cluster_context.has_control_nodes(instances):
             self._configure_sh_cluster(cluster_context, existing)
+            self._post_configure_sh(cluster_context, existing)
         self._write_config_files(cluster_context, existing)
         self._update_services(cluster_context, existing)
         self._restart_services(cluster_context)
@@ -205,13 +206,14 @@ class BaseConfigurer(ac.AbstractConfigurer):
 
     def _update_cluster_info(self, cluster_context):
         LOG.debug('Updating UI information.')
-        info = dict()
+        info = {}
         for service in cluster_context.cluster_services:
             for uri_info in service.ui_info:
                 title, process, url = uri_info
+                instance = cluster_context.get_instance(process)
                 info.update({
                     title: {
-                        'WebUI': url % cluster_context.get_instance_ip(process)
+                        'WebUI': url % instance.management_ip
                     }
                 })
 
@@ -257,7 +259,7 @@ class BaseConfigurer(ac.AbstractConfigurer):
 
         db_specs = dict(mysql.MySQL.METRICS_SPECS._asdict())
         db_specs.update({
-            'host': mysql.MySQL.get_db_instance(cluster_context).fqdn(),
+            'host': mysql.MySQL.get_db_instance(cluster_context).internal_ip,
             'port': mysql.MySQL.MYSQL_SERVER_PORT,
         })
 
@@ -300,7 +302,7 @@ class BaseConfigurer(ac.AbstractConfigurer):
         for service in c_context.cluster_services:
             updated = c_context.filter_instances(instances, service=service)
             service.post_start(c_context, updated)
-        LOG.debug('Post start hooks execution successfully executed')
+        LOG.info(_LI('Post start hooks successfully executed'))
 
     def _set_cluster_mode(self, cluster_context):
         cluster_mode = cluster_context.cluster_mode
@@ -324,3 +326,9 @@ class BaseConfigurer(ac.AbstractConfigurer):
         restart = cluster_context.should_be_restarted
         for service, instances in six.iteritems(restart):
             service.restart(util.unique_list(instances))
+
+    def _post_configure_sh(self, cluster_context, instances):
+        LOG.debug('Executing post configure.sh hooks')
+        for service in cluster_context.cluster_services:
+            service.post_configure_sh(cluster_context, instances)
+        LOG.info(_LI('Post configure.sh hooks successfully executed'))

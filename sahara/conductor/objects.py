@@ -61,6 +61,7 @@ class Cluster(object):
     node_groups - list of NodeGroup objects
     cluster_template_id
     cluster_template - ClusterTemplate object
+    use_autoconfig
     """
 
     def has_proxy_gateway(self):
@@ -241,6 +242,10 @@ class JobExecution(object):
     info
     oozie_job_id
     return_code
+    job_configs
+    interface
+    extra
+    data_source_urls
     """
 
 
@@ -254,6 +259,7 @@ class Job(object):
     type
     mains
     libs
+    interface
     """
 
 

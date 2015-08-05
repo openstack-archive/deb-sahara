@@ -44,17 +44,21 @@ def client():
     heat_url = base.url_for(ctx.service_catalog, 'orchestration')
     return heat_client.Client('1', heat_url, token=ctx.auth_token,
                               cert_file=CONF.heat.ca_file,
-                              insecure=CONF.heat.api_insecure)
+                              insecure=CONF.heat.api_insecure,
+                              username=ctx.username,
+                              include_pass=True)
 
 
-def get_stack(stack_name):
-    heat = client()
-    for stack in heat.stacks.list():
-        if stack.stack_name == stack_name:
-            return stack
+def get_stack(stack_name, raise_on_missing=True):
+    for stack in base.execute_with_retries(
+            client().stacks.list, filters={'name': stack_name}):
+        return stack
 
-    raise ex.NotFoundException(_('Failed to find stack %(stack)s')
-                               % {'stack': stack_name})
+    if not raise_on_missing:
+        return None
+
+    raise ex.NotFoundException({'stack': stack_name},
+                               _('Failed to find stack %(stack)s'))
 
 
 def wait_stack_completion(stack):
@@ -62,7 +66,12 @@ def wait_stack_completion(stack):
     # maybe is not set in heat database
     while stack.status in ['IN_PROGRESS', '']:
         context.sleep(1)
-        stack.get()
+        base.execute_with_retries(stack.get)
 
     if stack.status != 'COMPLETE':
         raise ex.HeatStackException(stack.stack_status)
+
+
+def get_resource(stack, resource):
+    return base.execute_with_retries(
+        client().resources.get, stack, resource)

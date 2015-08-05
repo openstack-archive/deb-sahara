@@ -28,6 +28,7 @@ from tempest_lib import exceptions as exc
 import testtools
 
 from sahara.tests.scenario import base
+from sahara.tests.scenario import timeouts
 
 
 class FakeSaharaClient(object):
@@ -47,10 +48,17 @@ class FakeSaharaClient(object):
             job_binary_internals.JobBinaryInternalsManager(None))
 
 
+class FakeCluster(object):
+    def __init__(self, is_transient, provision_progress):
+        self.is_transient = is_transient
+        self.provision_progress = provision_progress
+
+
 class FakeResponse(object):
-    def __init__(self, set_id=None, set_status=None):
+    def __init__(self, set_id=None, set_status=None, node_groups=None):
         self.id = set_id
         self.status = set_status
+        self.node_groups = node_groups
 
 
 class TestBase(testtools.TestCase):
@@ -66,6 +74,8 @@ class TestBase(testtools.TestCase):
                                           'os_tenant': 'admin',
                                           'os_auth_url':
                                               'http://localhost:5000/v2.0',
+                                          'sahara_service_type':
+                                              'data-processing-local',
                                           'sahara_url':
                                               'http://sahara_host:8386/v1.1'}
         self.base_scenario.plugin_opts = {'plugin_name': 'vanilla',
@@ -79,12 +89,12 @@ class TestBase(testtools.TestCase):
                 {
                     'name': 'master',
                     'node_processes': ['namenode', 'oozie', 'resourcemanager'],
-                    'flavor_id': '2'
+                    'flavor': '2'
                 },
                 {
                     'name': 'worker',
                     'node_processes': ['datanode', 'nodemanager'],
-                    'flavor_id': '2'
+                    'flavor': '2'
                 }],
             'cluster_template':
                 {
@@ -95,6 +105,10 @@ class TestBase(testtools.TestCase):
                             'worker': 3
                         }
                 },
+            'timeout_poll_cluster_status': 300,
+            'timeout_delete_resource': 300,
+            'timeout_poll_jobs_status': 2,
+            'timeout_check_transient': 3,
             'retain_resources': True,
             'image': 'image_name',
             "edp_jobs_flow":
@@ -124,39 +138,50 @@ class TestBase(testtools.TestCase):
         }
         self.base_scenario.ng_id_map = {'worker': 'set_id', 'master': 'set_id'}
         self.base_scenario.ng_name_map = {}
+        self.base_scenario.key_name = 'test_key'
         self.base_scenario.template_path = ('sahara/tests/scenario/templates/'
                                             'vanilla/2.6.0')
         self.job = self.base_scenario.testcase["edp_jobs_flow"].get(
             'test_flow')[0]
+        self.base_scenario.cluster_id = 'some_id'
         self.base_scenario.setUpClass()
+        timeouts.Defaults.init_defaults(self.base_scenario.testcase)
 
+    @mock.patch('keystoneclient.auth.identity.v3.Password')
+    @mock.patch('keystoneclient.session.Session')
     @mock.patch('saharaclient.client.Client', return_value=None)
     @mock.patch('novaclient.client.Client', return_value=None)
     @mock.patch('neutronclient.neutron.client.Client', return_value=None)
     @mock.patch('swiftclient.client.Connection', return_value=None)
-    def test__init_clients(self, swift, neutron, nova, sahara):
+    def test__init_clients(self, swift, neutron, nova, sahara, m_session,
+                           m_auth):
+        fake_session = mock.Mock()
+        fake_auth = mock.Mock()
+        m_session.return_value = fake_session
+        m_auth.return_value = fake_auth
+
         self.base_scenario._init_clients()
+
         sahara.assert_called_with('1.1',
-                                  username='admin',
-                                  api_key='nova',
-                                  project_name='admin',
-                                  auth_url='http://localhost:5000/v2.0',
+                                  session=fake_session,
+                                  service_type='data-processing-local',
                                   sahara_url='http://sahara_host:8386/v1.1')
-        nova.assert_called_with('2',
-                                username='admin',
-                                api_key='nova',
-                                project_id='admin',
-                                auth_url='http://localhost:5000/v2.0')
-        neutron.assert_called_with('2.0',
-                                   username='admin',
-                                   password='nova',
-                                   tenant_name='admin',
-                                   auth_url='http://localhost:5000/v2.0')
         swift.assert_called_with(auth_version='2.0',
                                  user='admin',
                                  key='nova',
                                  tenant_name='admin',
                                  authurl='http://localhost:5000/v2.0')
+
+        nova.assert_called_with('2', session=fake_session)
+        neutron.assert_called_with('2.0', session=fake_session)
+
+        m_auth.assert_called_with(auth_url='http://localhost:5000/v3',
+                                  username='admin',
+                                  password='nova',
+                                  project_name='admin',
+                                  user_domain_name='default',
+                                  project_domain_name='default')
+        m_session.assert_called_with(auth=fake_auth)
 
     @mock.patch('sahara.tests.scenario.clients.NeutronClient.get_network_id',
                 return_value='mock_net')
@@ -199,11 +224,30 @@ class TestBase(testtools.TestCase):
                 return_value='mock_net')
     @mock.patch('saharaclient.api.base.ResourceManager._get',
                 return_value=FakeResponse(set_status='Active'))
+    @mock.patch('sahara.tests.scenario.base.BaseTestCase._check_event_logs')
     def test__poll_cluster_status(self, mock_status, mock_neutron,
-                                  mock_saharaclient):
+                                  mock_saharaclient, mock_check_event_logs):
         self.base_scenario._init_clients()
         self.assertIsNone(
             self.base_scenario._poll_cluster_status('id_cluster'))
+
+    @mock.patch('saharaclient.client.Client', return_value=FakeSaharaClient())
+    @mock.patch('saharaclient.api.base.ResourceManager._get')
+    def test_check_event_log_feature(self, mock_resp, mock_saharaclient):
+        self.base_scenario._init_clients()
+
+        self.assertIsNone(self.base_scenario._check_event_logs(
+            FakeCluster(True, [])))
+        self.assertIsNone(self.base_scenario._check_event_logs(
+            FakeCluster(False, [{'successful': True}])))
+
+        with testtools.ExpectedException(exc.TempestException):
+            self.base_scenario._check_event_logs(
+                FakeCluster(False, [{'successful': False}]))
+
+        with testtools.ExpectedException(exc.TempestException):
+            self.base_scenario._check_event_logs(
+                FakeCluster(False, [{'successful': None}]))
 
     @mock.patch('saharaclient.api.base.ResourceManager._update',
                 return_value=FakeResponse(set_id='id_internal_db_data'))
@@ -288,6 +332,8 @@ class TestBase(testtools.TestCase):
                              ['id_for_job_binaries'],
                              []))
 
+    @mock.patch('sahara.tests.scenario.base.BaseTestCase.check_cinder',
+                return_value=None)
     @mock.patch('sahara.tests.scenario.clients.SaharaClient.get_job_status',
                 return_value='SUCCEEDED')
     @mock.patch('saharaclient.api.base.ResourceManager._get',
@@ -316,7 +362,7 @@ class TestBase(testtools.TestCase):
                             mock_job_binaries, mock_job,
                             mock_node_group_template, mock_cluster_template,
                             mock_cluster, mock_cluster_status, mock_create,
-                            mock_get, mock_client):
+                            mock_get, mock_client, mock_cinder):
         self.base_scenario._init_clients()
         self.base_scenario.create_cluster()
         self.base_scenario.testcase["edp_jobs_flow"] = [
@@ -338,7 +384,8 @@ class TestBase(testtools.TestCase):
                 }
             }
         ]
-        self.assertIsNone(self.base_scenario.check_run_jobs())
+        with mock.patch('time.sleep'):
+            self.assertIsNone(self.base_scenario.check_run_jobs())
 
     @mock.patch('sahara.tests.scenario.base.BaseTestCase.'
                 '_poll_cluster_status',
@@ -367,3 +414,55 @@ class TestBase(testtools.TestCase):
         self.base_scenario._init_clients()
         with testtools.ExpectedException(exc.TempestException):
             self.base_scenario._poll_cluster_status('id_cluster')
+
+    @mock.patch('sahara.tests.scenario.clients.SaharaClient.__init__',
+                return_value=None)
+    def test_get_nodes_with_process(self, mock_init):
+        self.base_scenario._init_clients()
+        with mock.patch(
+                'sahara.tests.scenario.clients.SaharaClient.get_cluster',
+                return_value=FakeResponse(node_groups=[
+                    {
+                        'node_processes': 'test',
+                        'instances': ['test_instance']
+                    }
+                ])):
+            self.assertEqual(
+                ['test_instance'],
+                self.base_scenario._get_nodes_with_process('test')
+            )
+
+        with mock.patch(
+                'sahara.tests.scenario.clients.SaharaClient.get_cluster',
+                return_value=FakeResponse(node_groups=[
+                    {
+                        'node_processes': 'test',
+                        'instances': []
+                    }
+                ])):
+            self.assertEqual(
+                [], self.base_scenario._get_nodes_with_process('test'))
+
+    @mock.patch('keystoneclient.session.Session')
+    def test_get_node_list_with_volumes(self, mock_keystone):
+        self.base_scenario._init_clients()
+        with mock.patch(
+                'sahara.tests.scenario.clients.SaharaClient.get_cluster',
+                return_value=FakeResponse(node_groups=[
+                    {
+                        'node_processes': 'test',
+                        'volumes_per_node': 2,
+                        'volume_mount_prefix': 2,
+                        'instances': [
+                            {
+                                'management_ip': 'test_ip'
+                            }
+                        ]
+                    }
+                ])):
+            self.assertEqual(
+                [{
+                    'node_ip': 'test_ip',
+                    'volume_count': 2,
+                    'volume_mount_prefix': 2
+                }], self.base_scenario._get_node_list_with_volumes())

@@ -19,6 +19,7 @@ import six
 from sahara import context
 from sahara import exceptions as ex
 from sahara.i18n import _
+from sahara.utils.openstack import base as b
 from sahara.utils.openstack import cinder as cinder_client
 from sahara.utils.openstack import neutron as neutron_client
 from sahara.utils.openstack import nova as nova_client
@@ -99,7 +100,7 @@ def _update_limits_for_ng(limits, ng, count):
     sign = lambda x: (1, -1)[x < 0]
     nova = nova_client.client()
     limits['instances'] += count
-    flavor = nova.flavors.get(ng.flavor_id)
+    flavor = b.execute_with_retries(nova.flavors.get, ng.flavor_id)
     limits['ram'] += flavor.ram * count
     limits['cpu'] += flavor.vcpus * count
     if ng.floating_ip_pool:
@@ -138,7 +139,7 @@ def _sub_limit(total, used):
 def _get_nova_limits():
     limits = {}
     nova = nova_client.client()
-    lim = nova.limits.get().to_dict()['absolute']
+    lim = b.execute_with_retries(nova.limits.get).to_dict()['absolute']
     limits['ram'] = _sub_limit(lim['maxTotalRAMSize'], lim['totalRAMUsed'])
     limits['cpu'] = _sub_limit(lim['maxTotalCores'], lim['totalCoresUsed'])
     limits['instances'] = _sub_limit(lim['maxTotalInstances'],
@@ -161,25 +162,28 @@ def _get_neutron_limits():
         return limits
     neutron = neutron_client.client()
     tenant_id = context.ctx().tenant_id
-    total_lim = neutron.show_quota(tenant_id)['quota']
+    total_lim = b.execute_with_retries(neutron.show_quota, tenant_id)['quota']
 
     if CONF.use_floating_ips:
-        usage_fip = neutron.list_floatingips(
-            tenant_id=tenant_id)['floatingips']
+        usage_fip = b.execute_with_retries(
+            neutron.list_floatingips,  tenant_id=tenant_id)['floatingips']
         limits['floatingips'] = _sub_limit(total_lim['floatingip'],
                                            len(usage_fip))
 
-    usage_sg = neutron.list_security_groups(
-        tenant_id=tenant_id)['security_groups']
+    usage_sg = b.execute_with_retries(
+        neutron.list_security_groups, tenant_id=tenant_id).get(
+        'security_groups', [])
     limits['security_groups'] = _sub_limit(total_lim['security_group'],
                                            len(usage_sg))
 
-    usage_sg_rules = (neutron.list_security_group_rules(
-        tenant_id=tenant_id)['security_group_rules'])
+    usage_sg_rules = b.execute_with_retries(
+        neutron.list_security_group_rules, tenant_id=tenant_id).get(
+        'security_group_rules', [])
     limits['security_group_rules'] = _sub_limit(
         total_lim['security_group_rule'], len(usage_sg_rules))
 
-    usage_ports = neutron.list_ports(tenant_id=tenant_id)['ports']
+    usage_ports = b.execute_with_retries(
+        neutron.list_ports, tenant_id=tenant_id)['ports']
     limits['ports'] = _sub_limit(total_lim['port'], len(usage_ports))
 
     return limits
@@ -189,7 +193,7 @@ def _get_cinder_limits():
     avail_limits = {}
     cinder = cinder_client.client()
     lim = {}
-    for l in cinder.limits.get().absolute:
+    for l in b.execute_with_retries(cinder.limits.get).absolute:
         lim[l.name] = l.value
 
     avail_limits['volumes'] = _sub_limit(lim['maxTotalVolumes'],

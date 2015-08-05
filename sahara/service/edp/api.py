@@ -22,7 +22,6 @@ from sahara import context
 from sahara import exceptions as ex
 from sahara.i18n import _LE
 from sahara.plugins import base as plugin_base
-from sahara.plugins import provisioning
 from sahara.service.edp.binary_retrievers import dispatch
 from sahara.service.edp import job_manager as manager
 from sahara.utils import edp
@@ -54,8 +53,7 @@ def get_job_types(**kwargs):
     hints = kwargs.get("hints", ["false"])[0].lower() == "true"
 
     plugin_names = kwargs.get("plugin", [])
-    all_plugins = plugin_base.PLUGINS.get_plugins(
-        base=provisioning.ProvisioningPluginBase)
+    all_plugins = plugin_base.PLUGINS.get_plugins()
     if plugin_names:
         plugins = filter(lambda x: x.name in plugin_names, all_plugins)
     else:
@@ -111,6 +109,7 @@ def execute_job(job_id, data):
     # Elements common to all job types
     cluster_id = data['cluster_id']
     configs = data.get('job_configs', {})
+    interface = data.get('interface', {})
 
     # Not in Java job types but present for all others
     input_id = data.get('input_id', None)
@@ -121,17 +120,18 @@ def execute_job(job_id, data):
     job_ex_dict = {'input_id': input_id, 'output_id': output_id,
                    'job_id': job_id, 'cluster_id': cluster_id,
                    'info': {'status': edp.JOB_STATUS_PENDING},
-                   'job_configs': configs, 'extra': {}}
+                   'job_configs': configs, 'extra': {},
+                   'interface': interface}
     job_execution = conductor.job_execution_create(context.ctx(), job_ex_dict)
+    context.set_current_job_execution_id(job_execution.id)
 
     # check to use proxy user
     if p.job_execution_requires_proxy_user(job_execution):
         try:
             p.create_proxy_user_for_job_execution(job_execution)
         except ex.SaharaException as e:
-            LOG.error(_LE("Can't run job execution {job} "
-                          "(reasons: {reason})").format(job=job_execution.id,
-                                                        reason=e))
+            LOG.error(_LE("Can't run job execution. "
+                          "(Reasons: {reason})").format(reason=e))
             conductor.job_execution_destroy(context.ctx(), job_execution)
             raise e
 
@@ -153,6 +153,7 @@ def get_job_execution(id):
 
 
 def cancel_job_execution(id):
+    context.set_current_job_execution_id(id)
     job_execution = conductor.job_execution_get(context.ctx(), id)
     OPS.cancel_job_execution(id)
 
@@ -160,6 +161,7 @@ def cancel_job_execution(id):
 
 
 def delete_job_execution(id):
+    context.set_current_job_execution_id(id)
     OPS.delete_job_execution(id)
 
 
@@ -177,6 +179,10 @@ def delete_data_source(id):
 
 def register_data_source(values):
     return conductor.data_source_create(context.ctx(), values)
+
+
+def data_source_update(id, values):
+    return conductor.data_source_update(context.ctx(), id, values)
 
 
 def get_jobs(**kwargs):
@@ -205,6 +211,10 @@ def get_job_binaries(**kwargs):
 
 def get_job_binary(id):
     return conductor.job_binary_get(context.ctx(), id)
+
+
+def update_job_binary(id, values):
+    return conductor.job_binary_update(context.ctx(), id, values)
 
 
 def delete_job_binary(id):

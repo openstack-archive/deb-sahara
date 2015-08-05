@@ -91,7 +91,7 @@ Anti affinity implementation changed
 ++++++++++++++++++++++++++++++++++++
 
 Starting with the Juno release the anti affinity feature is implemented
-using server groups. From the user prespective there will be no
+using server groups. From the user perspective there will be no
 noticeable changes with this feature. Internally this change has
 introduced the following behavior:
 
@@ -119,3 +119,24 @@ should be placed in the same directory as the sahara configuration file or
 specified using the ``policy_file`` parameter. For more details about the
 policy file please see the
 :ref:`policy section in the configuration guide <policy-configuration-label>`.
+
+Kilo -> Liberty
+---------------
+
+Direct engine deprecation
++++++++++++++++++++++++++
+
+In the Liberty release the direct infrastructure engine has been deprecated
+and the heat infrastructure engine is now default. This means, that it is preferable
+to use heat engine instead now. In the Liberty release you can continue to
+operate clusters with the direct engine (create, delete, scale). Using heat engine only
+the delete operation is available on clusters that were created by the direct engine.
+After the Liberty release the direct engine will be removed, this means that you will
+only be able to delete clusters created with the direct engine.
+
+Policy namespace changed (policy.json)
+++++++++++++++++++++++++++++++++++++++
+
+The "data-processing:" namespace has been added to the beginning of the all
+Sahara's policy based actions, so, you need to update the policy.json file by
+prepending all actions with "data-processing:".

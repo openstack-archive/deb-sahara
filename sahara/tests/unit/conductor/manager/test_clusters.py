@@ -15,6 +15,7 @@
 
 import copy
 
+from sqlalchemy import exc as sa_exc
 import testtools
 
 from sahara.conductor import manager
@@ -27,7 +28,6 @@ SAMPLE_CLUSTER = {
     "plugin_name": "test_plugin",
     "hadoop_version": "test_version",
     "tenant_id": "tenant_1",
-    "is_transient": True,
     "name": "test_cluster",
     "user_keypair_id": "my_keypair",
     "node_groups": [
@@ -36,14 +36,16 @@ SAMPLE_CLUSTER = {
             "flavor_id": "42",
             "node_processes": ["p1", "p2"],
             "count": 1,
-            "security_groups": None
+            "security_groups": None,
+            'use_autoconfig': True,
         },
         {
             "name": "ng_2",
             "flavor_id": "42",
             "node_processes": ["p3", "p4"],
             "count": 3,
-            "security_groups": ["group1", "group2"]
+            "security_groups": ["group1", "group2"],
+            'use_autoconfig': True,
         }
     ],
     "cluster_configs": {
@@ -311,5 +313,6 @@ class ClusterTest(test_base.ConductorManagerTestCase):
         self.assertEqual(0, len(lst))
 
         # Invalid field
-        lst = self.api.cluster_get_all(ctx, **{'badfield': 'somevalue'})
-        self.assertEqual(0, len(lst))
+        self.assertRaises(sa_exc.InvalidRequestError,
+                          self.api.cluster_get_all,
+                          ctx, **{'badfield': 'somevalue'})

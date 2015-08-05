@@ -13,13 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 
 from oslo_config import cfg
 from oslo_log import log as logging
 import six
+import yaml
 
 from sahara.utils import general as g
+from sahara.utils.openstack import base as b
 from sahara.utils.openstack import heat as h
 from sahara.utils.openstack import neutron
 
@@ -30,38 +31,69 @@ LOG = logging.getLogger(__name__)
 SSH_PORT = 22
 
 
-def _get_inst_name(cluster_name, ng_name, index):
-    return g.generate_instance_name(cluster_name, ng_name, index + 1)
+def _get_inst_name(ng):
+    return {
+        "list_join": [
+            '-',
+            [ng.cluster.name.lower(), ng.name.lower(),
+             {"get_param": "instance_index"}]
+        ]
+    }
 
 
-def _get_aa_group_name(cluster_name):
-    return g.generate_aa_group_name(cluster_name)
+def _get_aa_group_name(cluster):
+    return g.generate_aa_group_name(cluster.name)
 
 
-def _get_port_name(inst_name):
-    return '%s-port' % inst_name
+def _get_port_name(ng):
+    return {
+        "list_join": [
+            '-',
+            [ng.cluster.name.lower(), ng.name.lower(),
+             {"get_param": "instance_index"},
+             "port"]
+        ]
+    }
 
 
-def _get_floating_name(inst_name):
-    return '%s-floating' % inst_name
+def _get_floating_name(ng):
+    return {
+        "list_join": [
+            '-',
+            [ng.cluster.name.lower(), ng.name.lower(),
+             {"get_param": "instance_index"},
+             "floating"]
+        ]
+    }
 
 
-def _get_floating_assoc_name(inst_name):
-    return '%s-floating-assoc' % inst_name
+def _get_floating_assoc_name(ng):
+    return {
+        "list_join": [
+            '-',
+            [ng.cluster.name.lower(), ng.name.lower(),
+             {"get_param": "instance_index"},
+             "floating", "assoc"]
+        ]
+    }
 
 
-def _get_volume_name(inst_name, volume_idx):
-    return '%s-volume-%i' % (inst_name, volume_idx)
+def _get_volume_name(ng):
+    return {
+        "list_join": [
+            '-',
+            [ng.cluster.name.lower(), ng.name.lower(),
+             {"get_param": "instance_index"},
+             "volume", {"get_param": "volume_index"}]
+        ]
+    }
 
 
-def _get_volume_attach_name(inst_name, volume_idx):
-    return '%s-volume-attachment-%i' % (inst_name, volume_idx)
-
-
-class ClusterTemplate(object):
+class ClusterStack(object):
     def __init__(self, cluster):
         self.cluster = cluster
         self.node_groups_extra = {}
+        self.heat_stack = None
 
     def add_node_group_extra(self, node_group_id, node_count,
                              gen_userdata_func):
@@ -70,16 +102,19 @@ class ClusterTemplate(object):
             'gen_userdata_func': gen_userdata_func
         }
 
-    def _get_main_template(self):
-        return json.dumps({
-            "AWSTemplateFormatVersion": "2010-09-09",
-            "Description": "Data Processing Cluster by Sahara",
-            "Resources": self._serialize_resources(),
-            "Outputs": {}
+    def _get_main_template(self, files):
+        outputs = {}
+        resources = self._serialize_resources(files, outputs)
+        return yaml.safe_dump({
+            "heat_template_version": "2013-05-23",
+            "description": "Data Processing Cluster by Sahara",
+            "resources": resources,
+            "outputs": outputs
         })
 
     def instantiate(self, update_existing, disable_rollback=True):
-        main_tmpl = self._get_main_template()
+        files = {}
+        main_tmpl = self._get_main_template(files)
 
         heat = h.client()
 
@@ -88,17 +123,16 @@ class ClusterTemplate(object):
             'timeout_mins': 180,
             'disable_rollback': disable_rollback,
             'parameters': {},
-            'template': main_tmpl}
+            'template': main_tmpl,
+            'files': files}
 
         if not update_existing:
-            heat.stacks.create(**kwargs)
+            b.execute_with_retries(heat.stacks.create, **kwargs)
         else:
-            for stack in heat.stacks.list():
-                if stack.stack_name == self.cluster.name:
-                    stack.update(**kwargs)
-                    break
+            stack = h.get_stack(self.cluster.name)
+            b.execute_with_retries(stack.update, **kwargs)
 
-        return ClusterStack(self, h.get_stack(self.cluster.name))
+        self.heat_stack = h.get_stack(self.cluster.name)
 
     def _need_aa_server_group(self, node_group):
         for node_process in node_group.node_processes:
@@ -111,21 +145,56 @@ class ClusterTemplate(object):
             return {}
 
         return {"scheduler_hints": {"group": {"Ref": _get_aa_group_name(
-            self.cluster.name)}}}
+            self.cluster)}}}
 
-    def _serialize_resources(self):
+    def _serialize_resources(self, files, outputs):
         resources = {}
 
         if self.cluster.anti_affinity:
             resources.update(self._serialize_aa_server_group())
 
         for ng in self.cluster.node_groups:
-            if ng.auto_security_group:
-                resources.update(self._serialize_auto_security_group(ng))
-            for idx in range(0, self.node_groups_extra[ng.id]['node_count']):
-                resources.update(self._serialize_instance(ng, idx))
+            resources.update(self._serialize_ng_group(ng, files, outputs))
 
         return resources
+
+    def _serialize_ng_group(self, ng, files, outputs):
+        ng_file_name = "file://" + ng.name + ".yaml"
+        files[ng_file_name] = self._serialize_ng_file(ng, files)
+
+        outputs[ng.name + "-instances"] = {
+            "value": {"get_attr": [ng.name, "instance"]}}
+
+        return {
+            ng.name: {
+                "type": "OS::Heat::ResourceGroup",
+                "properties": {
+                    "count": self.node_groups_extra[ng.id]['node_count'],
+                    "resource_def": {
+                        "type": ng_file_name,
+                        "properties": {"instance_index": "%index%"}
+                    }
+                }
+            }
+        }
+
+    def _serialize_ng_file(self, ng, files):
+        return yaml.safe_dump({
+            "heat_template_version": "2013-05-23",
+            "description": "Node Group {node_group} of "
+                           "cluster {cluster}".format(node_group=ng.name,
+                                                      cluster=ng.cluster.name),
+            "parameters": {
+                "instance_index": {
+                    "type": "string"
+                }},
+            "resources": self._serialize_instance(ng, files),
+            "outputs": {
+                "instance": {"value": {
+                    "physical_id": {"Ref": "inst"},
+                    "name": {"get_attr": ["inst", "name"]}
+                }}}
+        })
 
     def _serialize_auto_security_group(self, ng):
         security_group_name = g.generate_auto_security_group_name(ng)
@@ -136,8 +205,8 @@ class ClusterTemplate(object):
 
         return {
             security_group_name: {
-                "Type": "AWS::EC2::SecurityGroup",
-                "Properties": {
+                "type": "AWS::EC2::SecurityGroup",
+                "properties": {
                     "GroupDescription": security_group_description,
                     "SecurityGroupIngress": rules
                 }
@@ -166,27 +235,28 @@ class ClusterTemplate(object):
 
         return rules
 
-    def _serialize_instance(self, ng, idx):
+    def _serialize_instance(self, ng, files):
         resources = {}
         properties = {}
 
-        inst_name = _get_inst_name(self.cluster.name, ng.name, idx)
+        inst_name = _get_inst_name(ng)
+
+        if ng.auto_security_group:
+            resources.update(self._serialize_auto_security_group(ng))
 
         if CONF.use_neutron:
-            port_name = _get_port_name(inst_name)
+            port_name = _get_port_name(ng)
             resources.update(self._serialize_port(
                 port_name, self.cluster.neutron_management_network,
                 self._get_security_groups(ng)))
 
-            properties["networks"] = [{"port": {"Ref": port_name}}]
+            properties["networks"] = [{"port": {"Ref": "port"}}]
 
             if ng.floating_ip_pool:
-                resources.update(self._serialize_neutron_floating(
-                    inst_name, port_name, ng.floating_ip_pool))
+                resources.update(self._serialize_neutron_floating(ng))
         else:
             if ng.floating_ip_pool:
-                resources.update(self._serialize_nova_floating(
-                    inst_name, ng.floating_ip_pool))
+                resources.update(self._serialize_nova_floating(ng))
 
             if ng.security_groups:
                 properties["security_groups"] = self._get_security_groups(ng)
@@ -212,98 +282,126 @@ class ClusterTemplate(object):
         })
 
         resources.update({
-            inst_name: {
-                "Type": "OS::Nova::Server",
-                "Properties": properties
+            "inst": {
+                "type": "OS::Nova::Server",
+                "properties": properties
             }
         })
 
-        for idx in range(0, ng.volumes_per_node):
-            resources.update(self._serialize_volume(
-                inst_name, idx, ng.volumes_size, ng.volumes_availability_zone,
-                ng.volume_type, ng.volume_local_to_instance))
+        resources.update(self._serialize_volume(ng, files))
 
         return resources
 
     def _serialize_port(self, port_name, fixed_net_id, security_groups):
         properties = {
             "network_id": fixed_net_id,
-            "replacement_policy": "AUTO"
+            "replacement_policy": "AUTO",
+            "name": port_name
         }
         if security_groups:
             properties["security_groups"] = security_groups
 
         return {
-            port_name: {
-                "Type": "OS::Neutron::Port",
-                "Properties": properties
+            "port": {
+                "type": "OS::Neutron::Port",
+                "properties": properties,
             }
         }
 
-    def _serialize_neutron_floating(self, inst_name, port_name,
-                                    floating_net_id):
-        floating_ip_name = _get_floating_name(inst_name)
-
+    def _serialize_neutron_floating(self, ng):
         return {
-            floating_ip_name: {
-                "Type": "OS::Neutron::FloatingIP",
-                "Properties": {
-                    "floating_network_id": floating_net_id,
-                    "port_id": {"Ref": port_name}
+            "floating_ip": {
+                "type": "OS::Neutron::FloatingIP",
+                "properties": {
+                    "floating_network_id": ng.floating_ip_pool,
+                    "port_id": {"Ref": "port"}
                 }
             }
         }
 
-    def _serialize_nova_floating(self, inst_name, floating_pool_name):
-        floating_ip_name = _get_floating_name(inst_name)
-        floating_ip_assoc_name = _get_floating_assoc_name(inst_name)
+    def _serialize_nova_floating(self, ng):
         return {
-            floating_ip_name: {
-                "Type": "OS::Nova::FloatingIP",
-                "Properties": {
-                    "pool": floating_pool_name
+            "floating_ip": {
+                "type": "OS::Nova::FloatingIP",
+                "properties": {
+                    "pool": ng.floating_ip_pool
                 }
             },
-            floating_ip_assoc_name: {
-                "Type": "OS::Nova::FloatingIPAssociation",
-                "Properties": {
-                    "floating_ip": {"Ref": floating_ip_name},
-                    "server_id": {"Ref": inst_name}
+            "floating_ip_assoc": {
+                "type": "OS::Nova::FloatingIPAssociation",
+                "properties": {
+                    "floating_ip": {"Ref": "floating_ip"},
+                    "server_id": {"Ref": "inst"}
                 }
             }
         }
 
-    def _serialize_volume(self, inst_name, volume_idx, volumes_size,
-                          volumes_availability_zone, volume_type,
-                          volume_local_to_instance):
-        volume_name = _get_volume_name(inst_name, volume_idx)
-        volume_attach_name = _get_volume_attach_name(inst_name, volume_idx)
+    def _serialize_volume(self, ng, files):
+        volume_file_name = "file://" + ng.name + "-volume.yaml"
+        files[volume_file_name] = self._serialize_volume_file(ng)
+
+        return {
+            ng.name: {
+                "type": "OS::Heat::ResourceGroup",
+                "properties": {
+                    "count": ng.volumes_per_node,
+                    "resource_def": {
+                        "type": volume_file_name,
+                        "properties": {
+                            "volume_index": "%index%",
+                            "instance_index": {"get_param": "instance_index"},
+                            "instance": {"Ref": "inst"}}
+                    }
+                }
+            }
+        }
+
+    def _serialize_volume_file(self, ng):
+        volume_name = _get_volume_name(ng)
         properties = {
             "name": volume_name,
-            "size": six.text_type(volumes_size),
-            "volume_type": volume_type
+            "size": six.text_type(ng.volumes_size)
         }
-        if volumes_availability_zone:
-            properties["availability_zone"] = volumes_availability_zone
+        if ng.volume_type:
+            properties["volume_type"] = ng.volume_type
 
-        if volume_local_to_instance:
+        if ng.volumes_availability_zone:
+            properties["availability_zone"] = ng.volumes_availability_zone
+
+        if ng.volume_local_to_instance:
             properties["scheduler_hints"] = {
-                "local_to_instance": {"Ref": inst_name}}
+                "local_to_instance": {"get_param": "instance"}}
 
-        return {
-            volume_name: {
-                "Type": "OS::Cinder::Volume",
-                "Properties": properties
-            },
-            volume_attach_name: {
-                "Type": "OS::Cinder::VolumeAttachment",
-                "Properties": {
-                    "instance_uuid": {"Ref": inst_name},
-                    "volume_id": {"Ref": volume_name},
-                    "mountpoint": None
-                }
-            }
-        }
+        return yaml.safe_dump({
+            "heat_template_version": "2013-05-23",
+            "description": "Volume for node Group {node_group} of "
+                           "cluster {cluster}".format(node_group=ng.name,
+                                                      cluster=ng.cluster.name),
+            "parameters": {
+                "volume_index": {
+                    "type": "string"
+                },
+                "instance_index": {
+                    "type": "string"
+                },
+                "instance": {
+                    "type": "string"
+                }},
+            "resources": {
+                "volume": {
+                    "type": "OS::Cinder::Volume",
+                    "properties": properties
+                },
+                "volume-attachment": {
+                    "type": "OS::Cinder::VolumeAttachment",
+                    "properties": {
+                        "instance_uuid": {"get_param": "instance"},
+                        "volume_id": {"Ref": "volume"},
+                        "mountpoint": None
+                    }
+                }},
+            "outputs": {}
+        })
 
     def _get_security_groups(self, node_group):
         if not node_group.auto_security_group:
@@ -313,32 +411,20 @@ class ClusterTemplate(object):
                 [{"Ref": g.generate_auto_security_group_name(node_group)}])
 
     def _serialize_aa_server_group(self):
-        server_group_name = _get_aa_group_name(self.cluster.name)
+        server_group_name = _get_aa_group_name(self.cluster)
         return {
             server_group_name: {
-                "Type": "OS::Nova::ServerGroup",
-                "Properties": {
+                "type": "OS::Nova::ServerGroup",
+                "properties": {
                     "name": server_group_name,
                     "policies": ["anti-affinity"]
                 }
             }
         }
 
-
-class ClusterStack(object):
-    def __init__(self, tmpl, heat_stack):
-        self.tmpl = tmpl
-        self.heat_stack = heat_stack
-
     def get_node_group_instances(self, node_group):
-        insts = []
+        for output in self.heat_stack.outputs:
+            if output['output_key'] == node_group.name + "-instances":
+                return output["output_value"]
 
-        count = self.tmpl.node_groups_extra[node_group.id]['node_count']
-
-        heat = h.client()
-        for i in range(0, count):
-            name = _get_inst_name(self.tmpl.cluster.name, node_group.name, i)
-            res = heat.resources.get(self.heat_stack.id, name)
-            insts.append((name, res.physical_resource_id))
-
-        return insts
+        return []

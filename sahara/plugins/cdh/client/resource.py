@@ -14,7 +14,7 @@
 # limitations under the License.
 #
 # The contents of this file are mainly copied from cm_api sources,
-# released by Cloudrea. Codes not used by Sahara CDH plugin are removed.
+# released by Cloudera. Codes not used by Sahara CDH plugin are removed.
 # You can find the original codes at
 #
 #     https://github.com/cloudera/cm_api/tree/master/python/src/cm_api
@@ -22,13 +22,13 @@
 # To satisfy the pep8 and python3 tests, we did some changes to the codes.
 # We also change some importings to use Sahara inherited classes.
 
-import json
 import posixpath
 import socket
-import urllib2
 
 from oslo_log import log as logging
+from oslo_serialization import jsonutils as json
 import six
+from six.moves import urllib
 
 from sahara import context
 from sahara.i18n import _
@@ -111,7 +111,7 @@ class Resource(object):
                 context.sleep(self.retry_sleep)
             try:
                 return self.invoke("GET", relpath, params)
-            except (socket.error, urllib2.URLError) as e:
+            except (socket.error, urllib.error.URLError) as e:
                 if "timed out" in six.text_type(e).lower():
                     if retry < self.retries:
                         LOG.warning(_LW("Timeout issuing GET request for "

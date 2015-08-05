@@ -16,7 +16,6 @@
 from __future__ import print_function
 import functools
 import glob
-import json
 import logging
 import os
 import sys
@@ -24,14 +23,18 @@ import time
 import traceback
 
 import fixtures
+from oslo_serialization import jsonutils as json
 from oslo_utils import timeutils
 import prettytable
 import six
 from tempest_lib import base
+from tempest_lib.common import ssh as connection
 from tempest_lib import exceptions as exc
 
 from sahara.tests.scenario import clients
+from sahara.tests.scenario import timeouts
 from sahara.tests.scenario import utils
+from sahara.utils import crypto as ssh
 
 
 logger = logging.getLogger('swiftclient')
@@ -82,6 +85,11 @@ class BaseTestCase(base.BaseTestCase):
     def setUp(self):
         super(BaseTestCase, self).setUp()
         self._init_clients()
+        timeouts.Defaults.init_defaults(self.testcase)
+        self.testcase['ssh_username'] = self.sahara.sahara_client.images.get(
+            self.nova.get_image_id(self.testcase['image'])).username
+        self.private_key, self.public_key = ssh.generate_key_pair()
+        self.key_name = self.__create_keypair()
         self.plugin_opts = {
             'plugin_name': self.testcase['plugin_name'],
             'hadoop_version': self.testcase['plugin_version']
@@ -93,22 +101,18 @@ class BaseTestCase(base.BaseTestCase):
         password = self.credentials['os_password']
         tenant_name = self.credentials['os_tenant']
         auth_url = self.credentials['os_auth_url']
+        sahara_service_type = self.credentials['sahara_service_type']
         sahara_url = self.credentials['sahara_url']
 
-        self.sahara = clients.SaharaClient(username=username,
-                                           api_key=password,
-                                           project_name=tenant_name,
-                                           auth_url=auth_url,
-                                           sahara_url=sahara_url)
-        self.nova = clients.NovaClient(username=username,
-                                       api_key=password,
-                                       project_id=tenant_name,
-                                       auth_url=auth_url)
-        self.neutron = clients.NeutronClient(username=username,
-                                             password=password,
-                                             tenant_name=tenant_name,
-                                             auth_url=auth_url)
+        session = clients.get_session(
+            auth_url, username, password, tenant_name)
 
+        self.sahara = clients.SaharaClient(session=session,
+                                           service_type=sahara_service_type,
+                                           sahara_url=sahara_url)
+        self.nova = clients.NovaClient(session=session)
+        self.neutron = clients.NeutronClient(session=session)
+        # swiftclient doesn't support keystone sessions
         self.swift = clients.SwiftClient(authurl=auth_url,
                                          user=username,
                                          key=password,
@@ -119,11 +123,17 @@ class BaseTestCase(base.BaseTestCase):
         cl_tmpl_id = self._create_cluster_template()
         self.cluster_id = self._create_cluster(cl_tmpl_id)
         self._poll_cluster_status_tracked(self.cluster_id)
+        cluster = self.sahara.get_cluster(self.cluster_id, show_progress=True)
+        self.check_cinder()
+        if not getattr(cluster, "provision_progress", None):
+            return
+        self._check_event_logs(cluster)
 
     @track_result("Check transient")
     def check_transient(self):
-        # TODO(sreshetniak): make timeout configurable
-        with fixtures.Timeout(300, gentle=True):
+        with fixtures.Timeout(
+                timeouts.Defaults.instance.timeout_check_transient,
+                gentle=True):
             while True:
                 if self.sahara.is_resource_deleted(
                         self.sahara.get_cluster_status, self.cluster_id):
@@ -159,7 +169,7 @@ class BaseTestCase(base.BaseTestCase):
                 location = utils.rand_name(ds['destination'])
             if ds['type'] == 'swift':
                 url = self._create_swift_data(location)
-            if ds['type'] == 'hdfs':
+            if ds['type'] == 'hdfs' or ds['type'] == 'maprfs':
                 url = location
             return self.__create_datasource(
                 name=utils.rand_name(name),
@@ -223,8 +233,9 @@ class BaseTestCase(base.BaseTestCase):
                               configs)
 
     def _poll_jobs_status(self, exec_ids):
-        # TODO(sreshetniak): make timeout configurable
-        with fixtures.Timeout(1800, gentle=True):
+        with fixtures.Timeout(
+                timeouts.Defaults.instance.timeout_poll_jobs_status,
+                gentle=True):
             success = False
             while not success:
                 success = True
@@ -262,6 +273,7 @@ class BaseTestCase(base.BaseTestCase):
     @track_result("Cluster scaling", False)
     def check_scale(self):
         scale_ops = []
+        ng_before_scale = self.sahara.get_cluster(self.cluster_id).node_groups
         if self.testcase.get('scaling'):
             scale_ops = self.testcase['scaling']
         else:
@@ -292,6 +304,64 @@ class BaseTestCase(base.BaseTestCase):
         if body:
             self.sahara.scale_cluster(self.cluster_id, body)
             self._poll_cluster_status(self.cluster_id)
+            ng_after_scale = self.sahara.get_cluster(
+                self.cluster_id).node_groups
+            self._validate_scaling(ng_after_scale,
+                                   self._get_expected_count_of_nodes(
+                                       ng_before_scale, body))
+        self.check_cinder()
+
+    def _validate_scaling(self, after, expected_count):
+        for (key, value) in six.iteritems(expected_count):
+            ng = {}
+            for after_ng in after:
+                if after_ng['name'] == key:
+                    ng = after_ng
+                    break
+            self.assertEqual(value, ng.get('count', 0))
+
+    def _get_expected_count_of_nodes(self, before, body):
+        expected_mapper = {}
+        for ng in before:
+            expected_mapper[ng['name']] = ng['count']
+        for ng in body.get('add_node_groups', []):
+            expected_mapper[ng['name']] = ng['count']
+        for ng in body.get('resize_node_groups', []):
+            expected_mapper[ng['name']] = ng['count']
+        return expected_mapper
+
+    @track_result("Check cinder volumes")
+    def check_cinder(self):
+        if not self._get_node_list_with_volumes():
+            print("All tests for Cinder were skipped")
+            return
+        for node_with_volumes in self._get_node_list_with_volumes():
+            volume_count_on_node = int(self._run_command_on_node(
+                node_with_volumes['node_ip'],
+                'mount | grep %s | wc -l' %
+                node_with_volumes['volume_mount_prefix']
+            ))
+            self.assertEqual(
+                node_with_volumes['volume_count'], volume_count_on_node,
+                'Some volumes were not mounted to node.\n'
+                'Expected count of mounted volumes to node is %s.\n'
+                'Actual count of mounted volumes to node is %s.'
+                % (node_with_volumes['volume_count'], volume_count_on_node)
+            )
+
+    def _get_node_list_with_volumes(self):
+        node_groups = self.sahara.get_cluster(self.cluster_id).node_groups
+        node_list_with_volumes = []
+        for node_group in node_groups:
+            if node_group['volumes_per_node'] != 0:
+                for instance in node_group['instances']:
+                    node_list_with_volumes.append({
+                        'node_ip': instance['management_ip'],
+                        'volume_count': node_group['volumes_per_node'],
+                        'volume_mount_prefix':
+                            node_group['volume_mount_prefix']
+                    })
+        return node_list_with_volumes
 
     @track_result("Create node group templates")
     def _create_node_group_templates(self):
@@ -317,11 +387,12 @@ class BaseTestCase(base.BaseTestCase):
         for ng in node_groups:
             kwargs = dict(ng)
             kwargs.update(self.plugin_opts)
+            kwargs['flavor_id'] = self.nova.get_flavor_id(kwargs['flavor'])
+            del kwargs['flavor']
             kwargs['name'] = utils.rand_name(kwargs['name'])
             kwargs['floating_ip_pool'] = floating_ip_pool
             ng_id = self.__create_node_group_template(**kwargs)
             ng_id_map[ng['name']] = ng_id
-
         return ng_id_map
 
     @track_result("Create cluster template")
@@ -356,6 +427,29 @@ class BaseTestCase(base.BaseTestCase):
 
         return self.__create_cluster_template(**kwargs)
 
+    @track_result("Check event logs")
+    def _check_event_logs(self, cluster):
+        invalid_steps = []
+        if cluster.is_transient:
+            # skip event log testing
+            return
+
+        for step in cluster.provision_progress:
+            if not step['successful']:
+                invalid_steps.append(step)
+
+        if len(invalid_steps) > 0:
+            invalid_steps_info = "\n".join(six.text_type(e)
+                                           for e in invalid_steps)
+            steps_info = "\n".join(six.text_type(e)
+                                   for e in cluster.provision_progress)
+            raise exc.TempestException(
+                "Issues with event log work: "
+                "\n Incomplete steps: \n\n {invalid_steps}"
+                "\n All steps: \n\n {steps}".format(
+                    steps=steps_info,
+                    invalid_steps=invalid_steps_info))
+
     @track_result("Create cluster")
     def _create_cluster(self, cluster_template_id):
         if self.testcase.get('cluster'):
@@ -368,6 +462,7 @@ class BaseTestCase(base.BaseTestCase):
         kwargs['cluster_template_id'] = cluster_template_id
         kwargs['default_image_id'] = self.nova.get_image_id(
             self.testcase['image'])
+        kwargs['user_keypair_id'] = self.key_name
 
         return self.__create_cluster(**kwargs)
 
@@ -376,8 +471,9 @@ class BaseTestCase(base.BaseTestCase):
         self._poll_cluster_status(cluster_id)
 
     def _poll_cluster_status(self, cluster_id):
-        # TODO(sreshetniak): make timeout configurable
-        with fixtures.Timeout(1800, gentle=True):
+        with fixtures.Timeout(
+                timeouts.Defaults.instance.timeout_poll_cluster_status,
+                gentle=True):
             while True:
                 status = self.sahara.get_cluster_status(cluster_id)
                 if status == 'Active':
@@ -385,6 +481,19 @@ class BaseTestCase(base.BaseTestCase):
                 if status == 'Error':
                     raise exc.TempestException("Cluster in %s state" % status)
                 time.sleep(3)
+
+    def _run_command_on_node(self, node_ip, command):
+        ssh_session = connection.Client(node_ip, self.testcase['ssh_username'],
+                                        pkey=self.private_key)
+        return ssh_session.exec_command(command)
+
+    def _get_nodes_with_process(self, process):
+        nodegroups = self.sahara.get_cluster(self.cluster_id).node_groups
+        nodes_with_process = []
+        for nodegroup in nodegroups:
+            if process in nodegroup['node_processes']:
+                nodes_with_process.extend(nodegroup['instances'])
+        return nodes_with_process
 
     # client ops
 
@@ -448,6 +557,14 @@ class BaseTestCase(base.BaseTestCase):
         if not self.testcase['retain_resources']:
             self.addCleanup(self.swift.delete_object, container_name,
                             object_name)
+
+    def __create_keypair(self):
+        key = utils.rand_name('scenario_key')
+        self.nova.nova_client.keypairs.create(key,
+                                              public_key=self.public_key)
+        if not self.testcase['retain_resources']:
+            self.addCleanup(self.nova.delete_keypair, key)
+        return key
 
     def tearDown(self):
         tbs = []

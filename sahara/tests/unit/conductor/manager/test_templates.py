@@ -14,25 +14,28 @@
 # limitations under the License.
 
 import copy
+import uuid
 
+import six
+from sqlalchemy import exc as sa_ex
 import testtools
 
 from sahara.conductor import manager
 from sahara import context
 from sahara import exceptions as ex
+from sahara.service.validations import cluster_template_schema as cl_schema
+from sahara.service.validations import node_group_template_schema as ngt_schema
 import sahara.tests.unit.conductor.base as test_base
 import sahara.tests.unit.conductor.manager.test_clusters as cluster_tests
 
 
 SAMPLE_NGT = {
-    "plugin_name": "test_plugin",
-    "flavor_id": "42",
-    "tenant_id": "tenant_1",
-    "hadoop_version": "test_version",
     "name": "ngt_test",
+    "flavor_id": "42",
+    "plugin_name": "test_plugin",
+    "hadoop_version": "test_version",
     "node_processes": ["p1", "p2"],
-    "floating_ip_pool": None,
-    "availability_zone": None,
+    "image_id": str(uuid.uuid4()),
     "node_configs": {
         "service_1": {
             "config_1": "value_1"
@@ -40,14 +43,27 @@ SAMPLE_NGT = {
         "service_2": {
             "config_1": "value_1"
         }
-    }
+    },
+    "volumes_per_node": 1,
+    "volumes_size": 1,
+    "volume_type": "big",
+    "volumes_availability_zone": "here",
+    "volume_mount_prefix": "/tmp",
+    "description": "my template",
+    "floating_ip_pool": "public",
+    "security_groups": ["cat", "dog"],
+    "auto_security_group": False,
+    "availability_zone": "here",
+    "is_proxy_gateway": False,
+    "volume_local_to_instance": False,
+    'use_autoconfig': True,
 }
 
 SAMPLE_CLT = {
-    "plugin_name": "test_plugin",
-    "tenant_id": "tenant_1",
-    "hadoop_version": "test_version",
     "name": "clt_test",
+    "plugin_name": "test_plugin",
+    "hadoop_version": "test_version",
+    "default_image_id": str(uuid.uuid4()),
     "cluster_configs": {
         "service_1": {
             "config_1": "value_1"
@@ -65,6 +81,7 @@ SAMPLE_CLT = {
             "floating_ip_pool": None,
             "security_groups": None,
             "availability_zone": None,
+            'use_autoconfig': True,
         },
         {
             "name": "ng_2",
@@ -74,9 +91,13 @@ SAMPLE_CLT = {
             "floating_ip_pool": None,
             "security_groups": ["group1", "group2"],
             "availability_zone": None,
+            'use_autoconfig': True,
         }
 
-    ]
+    ],
+    "anti_affinity": ["datanode"],
+    "description": "my template",
+    "neutron_management_network": str(uuid.uuid4())
 }
 
 
@@ -165,8 +186,9 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
         self.assertEqual(0, len(lst))
 
         # Invalid field
-        lst = self.api.node_group_template_get_all(ctx, **{'badfield': 'junk'})
-        self.assertEqual(0, len(lst))
+        self.assertRaises(sa_ex.InvalidRequestError,
+                          self.api.node_group_template_get_all,
+                          ctx, **{'badfield': 'junk'})
 
     def test_ngt_update(self):
         ctx = context.ctx()
@@ -210,6 +232,28 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
                                                           update_values,
                                                           ignore_default=True)
         self.assertEqual(UPDATE_NAME, updated_ngt["name"])
+
+    def test_ngt_update_with_nulls(self):
+        ctx = context.ctx()
+        ngt = self.api.node_group_template_create(ctx, SAMPLE_NGT)
+        ngt_id = ngt["id"]
+
+        updated_values = copy.deepcopy(SAMPLE_NGT)
+        for prop, value in six.iteritems(
+                ngt_schema.NODE_GROUP_TEMPLATE_SCHEMA["properties"]):
+            if type(value["type"]) is list and "null" in value["type"]:
+                updated_values[prop] = None
+
+        # Prove that we can call update on these fields with null values
+        # without an exception
+        self.api.node_group_template_update(ctx,
+                                            ngt_id,
+                                            updated_values)
+
+        updated_ngt = self.api.node_group_template_get(ctx, ngt_id)
+        for prop, value in six.iteritems(updated_values):
+            if value is None:
+                self.assertIsNone(updated_ngt[prop])
 
 
 class ClusterTemplates(test_base.ConductorManagerTestCase):
@@ -323,8 +367,9 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
         self.assertEqual(0, len(lst))
 
         # Invalid field
-        lst = self.api.cluster_template_get_all(ctx, **{'badfield': 'junk'})
-        self.assertEqual(0, len(lst))
+        self.assertRaises(sa_ex.InvalidRequestError,
+                          self.api.cluster_template_get_all,
+                          ctx, **{'badfield': 'junk'})
 
     def test_clt_update(self):
         ctx = context.ctx()
@@ -340,6 +385,7 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
 
         updated_clt = self.api.cluster_template_get(ctx, clt_id)
         self.assertEqual(UPDATE_NAME, updated_clt["name"])
+        self.assertEqual(clt["node_groups"], updated_clt["node_groups"])
 
         # check duplicate name handling
         clt = self.api.cluster_template_create(ctx, SAMPLE_CLT)
@@ -379,3 +425,30 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
                                                        update_values,
                                                        ignore_default=True)
         self.assertEqual(UPDATE_NAME, updated_clt["name"])
+
+    def test_clt_update_with_nulls(self):
+        ctx = context.ctx()
+        clt = self.api.cluster_template_create(ctx, SAMPLE_CLT)
+        clt_id = clt["id"]
+
+        updated_values = copy.deepcopy(SAMPLE_CLT)
+        for prop, value in six.iteritems(
+                cl_schema.CLUSTER_TEMPLATE_SCHEMA["properties"]):
+            if type(value["type"]) is list and "null" in value["type"]:
+                updated_values[prop] = None
+
+        # Prove that we can call update on these fields with null values
+        # without an exception
+        self.api.cluster_template_update(ctx,
+                                         clt_id,
+                                         updated_values)
+
+        updated_clt = self.api.cluster_template_get(ctx, clt_id)
+        for prop, value in six.iteritems(updated_values):
+            if value is None:
+                # Conductor populates node groups with [] when
+                # the value given is null
+                if prop == "node_groups":
+                    self.assertEqual([], updated_clt[prop])
+                else:
+                    self.assertIsNone(updated_clt[prop])

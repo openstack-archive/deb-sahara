@@ -13,6 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
+from cinderclient import exceptions as cinder_exc
+from heatclient import exc as heat_exc
+from keystoneclient import exceptions as keystone_exc
+import mock
+from neutronclient.common import exceptions as neutron_exc
+from novaclient import exceptions as nova_exc
+
+from sahara import exceptions as sahara_exc
 from sahara.tests.unit import base as testbase
 from sahara.utils.openstack import base
 
@@ -49,10 +58,10 @@ class AuthUrlTest(testbase.SaharaTestCase):
 
     def test_retrieve_auth_url_api_v3(self):
         self.override_config('use_identity_api_v3', True)
-        correct = "https://127.0.0.1:8080/v3/"
+        correct = "https://127.0.0.1:8080/v3"
 
         def _assert(uri):
-            self.setup_context(auth_uri=uri)
+            self.override_config('auth_uri', uri, 'keystone_authtoken')
             self.assertEqual(correct, base.retrieve_auth_url())
 
         _assert("%s/" % correct)
@@ -64,13 +73,33 @@ class AuthUrlTest(testbase.SaharaTestCase):
         _assert("https://127.0.0.1:8080/v3/")
         _assert("https://127.0.0.1:8080/v42")
         _assert("https://127.0.0.1:8080/v42/")
+
+    @mock.patch("sahara.utils.openstack.base.url_for")
+    def test_retrieve_auth_url_api_v3_without_port(self, mock_url_for):
+        self.override_config('use_identity_api_v3', True)
+        self.setup_context(service_catalog=True)
+        correct = "https://127.0.0.1/v3"
+
+        def _assert(uri):
+            mock_url_for.return_value = uri
+            self.assertEqual(correct, base.retrieve_auth_url())
+
+        _assert("%s/" % correct)
+        _assert("https://127.0.0.1")
+        _assert("https://127.0.0.1/")
+        _assert("https://127.0.0.1/v2.0")
+        _assert("https://127.0.0.1/v2.0/")
+        _assert("https://127.0.0.1/v3")
+        _assert("https://127.0.0.1/v3/")
+        _assert("https://127.0.0.1/v42")
+        _assert("https://127.0.0.1/v42/")
 
     def test_retrieve_auth_url_api_v20(self):
         self.override_config('use_identity_api_v3', False)
-        correct = "https://127.0.0.1:8080/v2.0/"
+        correct = "https://127.0.0.1:8080/v2.0"
 
         def _assert(uri):
-            self.setup_context(auth_uri=uri)
+            self.override_config('auth_uri', uri, 'keystone_authtoken')
             self.assertEqual(correct, base.retrieve_auth_url())
 
         _assert("%s/" % correct)
@@ -82,3 +111,127 @@ class AuthUrlTest(testbase.SaharaTestCase):
         _assert("https://127.0.0.1:8080/v3/")
         _assert("https://127.0.0.1:8080/v42")
         _assert("https://127.0.0.1:8080/v42/")
+
+    @mock.patch("sahara.utils.openstack.base.url_for")
+    def test_retrieve_auth_url_api_v20_without_port(self, mock_url_for):
+        self.override_config('use_identity_api_v3', False)
+        self.setup_context(service_catalog=True)
+        correct = "https://127.0.0.1/v2.0"
+
+        def _assert(uri):
+            mock_url_for.return_value = uri
+            self.assertEqual(correct, base.retrieve_auth_url())
+
+        _assert("%s/" % correct)
+        _assert("https://127.0.0.1")
+        _assert("https://127.0.0.1/")
+        _assert("https://127.0.0.1/v2.0")
+        _assert("https://127.0.0.1/v2.0/")
+        _assert("https://127.0.0.1/v3")
+        _assert("https://127.0.0.1/v3/")
+        _assert("https://127.0.0.1/v42")
+        _assert("https://127.0.0.1/v42/")
+
+
+class ExecuteWithRetryTest(testbase.SaharaTestCase):
+
+    def setUp(self):
+        super(ExecuteWithRetryTest, self).setUp()
+        self.fake_client_call = mock.MagicMock()
+        self.fake_client_call.__name__ = 'fake_client_call'
+        self.override_config('retries_number', 2, 'retries')
+
+    @mock.patch('sahara.context.sleep')
+    def _check_error_without_retry(self, error, code, m_sleep):
+        self.fake_client_call.side_effect = error(code)
+
+        self.assertRaises(error, base.execute_with_retries,
+                          self.fake_client_call)
+        self.assertEqual(1, self.fake_client_call.call_count)
+        self.fake_client_call.reset_mock()
+
+    @mock.patch('sahara.context.sleep')
+    def _check_error_with_retry(self, error, code, m_sleep):
+        self.fake_client_call.side_effect = error(code)
+
+        self.assertRaises(sahara_exc.MaxRetriesExceeded,
+                          base.execute_with_retries, self.fake_client_call)
+        self.assertEqual(3, self.fake_client_call.call_count)
+        self.fake_client_call.reset_mock()
+
+    def test_novaclient_calls_without_retry(self):
+        # check that following errors will not be retried
+        self._check_error_without_retry(nova_exc.BadRequest, 400)
+        self._check_error_without_retry(nova_exc.Unauthorized, 401)
+        self._check_error_without_retry(nova_exc.Forbidden, 403)
+        self._check_error_without_retry(nova_exc.NotFound, 404)
+        self._check_error_without_retry(nova_exc.MethodNotAllowed, 405)
+        self._check_error_without_retry(nova_exc.Conflict, 409)
+        self._check_error_without_retry(nova_exc.HTTPNotImplemented, 501)
+
+    def test_novaclient_calls_with_retry(self):
+        # check that following errors will be retried
+        self._check_error_with_retry(nova_exc.OverLimit, 413)
+        self._check_error_with_retry(nova_exc.RateLimit, 429)
+
+    def test_cinderclient_calls_without_retry(self):
+        # check that following errors will not be retried
+        self._check_error_without_retry(cinder_exc.BadRequest, 400)
+        self._check_error_without_retry(cinder_exc.Unauthorized, 401)
+        self._check_error_without_retry(cinder_exc.Forbidden, 403)
+        self._check_error_without_retry(cinder_exc.NotFound, 404)
+        self._check_error_without_retry(nova_exc.HTTPNotImplemented, 501)
+
+    def test_cinderclient_calls_with_retry(self):
+        # check that following error will be retried
+        self._check_error_with_retry(cinder_exc.OverLimit, 413)
+
+    def test_neutronclient_calls_without_retry(self):
+        # check that following errors will not be retried
+        # neutron exception expects string in constructor
+        self._check_error_without_retry(neutron_exc.BadRequest, "400")
+        self._check_error_without_retry(neutron_exc.Forbidden, "403")
+        self._check_error_without_retry(neutron_exc.NotFound, "404")
+        self._check_error_without_retry(neutron_exc.Conflict, "409")
+
+    def test_neutronclient_calls_with_retry(self):
+        # check that following errors will be retried
+        # neutron exception expects string in constructor
+        self._check_error_with_retry(neutron_exc.InternalServerError, "500")
+        self._check_error_with_retry(neutron_exc.ServiceUnavailable, "503")
+
+    def test_heatclient_calls_without_retry(self):
+        # check that following errors will not be retried
+        self._check_error_without_retry(heat_exc.HTTPBadRequest, 400)
+        self._check_error_without_retry(heat_exc.HTTPUnauthorized, 401)
+        self._check_error_without_retry(heat_exc.HTTPForbidden, 403)
+        self._check_error_without_retry(heat_exc.HTTPNotFound, 404)
+        self._check_error_without_retry(heat_exc.HTTPMethodNotAllowed, 405)
+        self._check_error_without_retry(heat_exc.HTTPConflict, 409)
+        self._check_error_without_retry(heat_exc.HTTPUnsupported, 415)
+        self._check_error_without_retry(heat_exc.HTTPNotImplemented, 501)
+
+    def test_heatclient_calls_with_retry(self):
+        # check that following errors will be retried
+        self._check_error_with_retry(heat_exc.HTTPInternalServerError, 500)
+        self._check_error_with_retry(heat_exc.HTTPBadGateway, 502)
+        self._check_error_with_retry(heat_exc.HTTPServiceUnavailable, 503)
+
+    def test_keystoneclient_calls_without_retry(self):
+        # check that following errors will not be retried
+        self._check_error_without_retry(keystone_exc.BadRequest, 400)
+        self._check_error_without_retry(keystone_exc.Unauthorized, 401)
+        self._check_error_without_retry(keystone_exc.Forbidden, 403)
+        self._check_error_without_retry(keystone_exc.NotFound, 404)
+        self._check_error_without_retry(keystone_exc.MethodNotAllowed, 405)
+        self._check_error_without_retry(keystone_exc.Conflict, 409)
+        self._check_error_without_retry(keystone_exc.UnsupportedMediaType, 415)
+        self._check_error_without_retry(keystone_exc.HttpNotImplemented, 501)
+
+    def test_keystoneclient_calls_with_retry(self):
+        # check that following errors will be retried
+        self._check_error_with_retry(keystone_exc.RequestTimeout, 408)
+        self._check_error_with_retry(keystone_exc.InternalServerError, 500)
+        self._check_error_with_retry(keystone_exc.BadGateway, 502)
+        self._check_error_with_retry(keystone_exc.ServiceUnavailable, 503)
+        self._check_error_with_retry(keystone_exc.GatewayTimeout, 504)

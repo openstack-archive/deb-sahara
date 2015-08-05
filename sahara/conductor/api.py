@@ -279,6 +279,11 @@ class LocalApi(object):
         """Destroy the Data Source or raise if it does not exist."""
         self._manager.data_source_destroy(context, _get_id(data_source))
 
+    @r.wrap(r.DataSource)
+    def data_source_update(self, context, id, values):
+        """Update an existing Data Source"""
+        return self._manager.data_source_update(context, id, values)
+
     # JobExecution ops
 
     @r.wrap(r.JobExecution)
@@ -403,6 +408,11 @@ class LocalApi(object):
     def job_binary_destroy(self, context, job_binary):
         """Destroy the JobBinary or raise if it does not exist."""
         self._manager.job_binary_destroy(context, _get_id(job_binary))
+
+    @r.wrap(r.JobBinary)
+    def job_binary_update(self, context, id, values):
+        """Update a JobBinary from the values dictionary."""
+        return self._manager.job_binary_update(context, id, values)
 
     # JobBinaryInternal ops
 

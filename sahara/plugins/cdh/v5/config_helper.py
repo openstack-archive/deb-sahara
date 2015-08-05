@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
+from oslo_serialization import jsonutils as json
 
 from sahara.plugins import provisioning as p
 from sahara.utils import files as f
@@ -53,7 +53,7 @@ CM5_CENTOS_REPO = ('[cloudera-manager]'
 DEFAULT_SWIFT_LIB_URL = ('https://repository.cloudera.com/artifactory/repo/org'
                          '/apache/hadoop/hadoop-openstack/2.3.0-cdh5.0.0'
                          '/hadoop-openstack-2.3.0-cdh5.0.0.jar')
-DEFAULT_EXTJS_LIB_URL = 'http://extjs.com/deploy/ext-2.2.zip'
+DEFAULT_EXTJS_LIB_URL = 'http://dev.sencha.com/deploy/ext-2.2.zip'
 
 CDH5_REPO_URL = p.Config(
     'CDH5 repo list URL', 'general', 'cluster', priority=1,
@@ -123,11 +123,13 @@ hdfs_confs = _load_json(path_to_config + 'hdfs-service.json')
 namenode_confs = _load_json(path_to_config + 'hdfs-namenode.json')
 datanode_confs = _load_json(path_to_config + 'hdfs-datanode.json')
 secnamenode_confs = _load_json(path_to_config + 'hdfs-secondarynamenode.json')
+hdfs_gateway_confs = _load_json(path_to_config + 'hdfs-gateway.json')
 yarn_confs = _load_json(path_to_config + 'yarn-service.json')
 resourcemanager_confs = _load_json(
     path_to_config + 'yarn-resourcemanager.json')
 nodemanager_confs = _load_json(path_to_config + 'yarn-nodemanager.json')
 jobhistory_confs = _load_json(path_to_config + 'yarn-jobhistory.json')
+yarn_gateway = _load_json(path_to_config + 'yarn-gateway.json')
 oozie_service_confs = _load_json(path_to_config + 'oozie-service.json')
 oozie_role_confs = _load_json(path_to_config + 'oozie-oozie.json')
 hive_service_confs = _load_json(path_to_config + 'hive-service.json')
@@ -172,7 +174,9 @@ def _get_ng_plugin_configs():
     cfg += _init_configs(namenode_confs, 'NAMENODE', 'node')
     cfg += _init_configs(datanode_confs, 'DATANODE', 'node')
     cfg += _init_configs(secnamenode_confs, 'SECONDARYNAMENODE', 'node')
+    cfg += _init_configs(hdfs_gateway_confs, 'HDFS_GATEWAY', 'node')
     cfg += _init_configs(yarn_confs, 'YARN', 'cluster')
+    cfg += _init_configs(yarn_gateway, 'YARN_GATEWAY', 'node')
     cfg += _init_configs(resourcemanager_confs, 'RESOURCEMANAGER', 'node')
     cfg += _init_configs(nodemanager_confs, 'NODEMANAGER', 'node')
     cfg += _init_configs(jobhistory_confs, 'JOBHISTORY', 'node')

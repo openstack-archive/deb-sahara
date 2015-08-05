@@ -18,6 +18,8 @@ import os
 import flask
 from oslo_config import cfg
 from oslo_log import log
+from oslo_middleware import request_id
+from oslo_service import systemd
 import six
 import stevedore
 from werkzeug import exceptions as werkzeug_exceptions
@@ -30,7 +32,7 @@ from sahara.api import v11 as api_v11
 from sahara import config
 from sahara import context
 from sahara.i18n import _LI
-from sahara.openstack.common import systemd
+from sahara.i18n import _LW
 from sahara.plugins import base as plugins_base
 from sahara.service import api as service_api
 from sahara.service.edp import api as edp_api
@@ -42,7 +44,6 @@ from sahara.utils import remote
 from sahara.utils import rpc as messaging
 from sahara.utils import wsgi
 
-
 LOG = log.getLogger(__name__)
 
 
@@ -50,7 +51,7 @@ opts = [
     cfg.StrOpt('os_region_name',
                help='Region name used to get services endpoints.'),
     cfg.StrOpt('infrastructure_engine',
-               default='direct',
+               default='heat',
                help='An engine which will be used to provision '
                     'infrastructure for Hadoop cluster.'),
     cfg.StrOpt('remote',
@@ -122,7 +123,8 @@ def make_app():
         context.set_ctx(None)
         return api_utils.render({
             "versions": [
-                {"id": "v1.0", "status": "CURRENT"}
+                {"id": "v1.0", "status": "SUPPORTED"},
+                {"id": "v1.1", "status": "CURRENT"}
             ]
         })
 
@@ -157,6 +159,7 @@ def make_app():
 
     app.wsgi_app = auth_valid.wrap(app.wsgi_app)
     app.wsgi_app = acl.wrap(app.wsgi_app)
+    app.wsgi_app = request_id.RequestId(app.wsgi_app)
 
     return app
 
@@ -177,6 +180,11 @@ def _get_infrastructure_engine():
 
     LOG.debug("Infrastructure engine {engine} is loading".format(
         engine=CONF.infrastructure_engine))
+
+    if CONF.infrastructure_engine == "direct":
+        LOG.warning(_LW("Direct infrastructure engine is deprecated in Liberty"
+                        " release and will be removed after that release."
+                        " Use Heat infrastructure engine instead."))
 
     return _load_driver('sahara.infrastructure.engine',
                         CONF.infrastructure_engine)

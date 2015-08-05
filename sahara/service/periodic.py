@@ -13,18 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
 import random
 
 from oslo_config import cfg
 from oslo_log import log
+from oslo_service import periodic_task
+from oslo_service import threadgroup
 from oslo_utils import timeutils
 import six
 
 from sahara import conductor as c
 from sahara import context
 from sahara.i18n import _LW
-from sahara.openstack.common import periodic_task
-from sahara.openstack.common import threadgroup
 from sahara.service.edp import job_manager
 from sahara.service import ops
 from sahara.service import trusts
@@ -79,26 +80,22 @@ def get_time_since_last_update(cluster):
 
 
 def terminate_cluster(ctx, cluster, description):
-    if CONF.use_identity_api_v3:
+    if CONF.use_identity_api_v3 and cluster.trust_id:
         trusts.use_os_admin_auth_token(cluster)
+        context.set_current_cluster_id(cluster.id)
 
-        LOG.debug('Terminating {description} cluster {cluster} '
-                  'in "{status}" state with id {id}'
-                  .format(cluster=cluster.name,
-                          id=cluster.id,
-                          status=cluster.status,
-                          description=description))
+        LOG.debug('Terminating {description} cluster '
+                  'in "{status}" state'.format(status=cluster.status,
+                                               description=description))
 
         try:
             ops.terminate_cluster(cluster.id)
         except Exception as e:
-            LOG.warning(_LW('Failed to terminate {description} cluster '
-                            '{cluster} in "{status}" state with id {id}: '
-                            '{error}.').format(cluster=cluster.name,
-                                               id=cluster.id,
-                                               error=six.text_type(e),
-                                               status=cluster.status,
-                                               description=description))
+            LOG.warning(_LW(
+                'Failed to terminate {description} cluster in "{status}" '
+                'state: {error}.').format(error=six.text_type(e),
+                                          status=cluster.status,
+                                          description=description))
 
     else:
         if cluster.status != 'AwaitingTermination':
@@ -106,6 +103,16 @@ def terminate_cluster(ctx, cluster, description):
                 ctx,
                 cluster,
                 {'status': 'AwaitingTermination'})
+
+
+def set_context(func):
+    @functools.wraps(func)
+    def handler(self, ctx):
+        ctx = context.get_admin_context()
+        context.set_ctx(ctx)
+        func(self, ctx)
+        context.set_ctx(None)
+    return handler
 
 
 def _make_periodic_tasks():
@@ -118,19 +125,20 @@ def _make_periodic_tasks():
     zombie_task_spacing = 300 if CONF.use_domain_for_proxy_users else -1
 
     class SaharaPeriodicTasks(periodic_task.PeriodicTasks):
+
+        def __init__(self):
+            super(SaharaPeriodicTasks, self).__init__(CONF)
+
         @periodic_task.periodic_task(spacing=45, run_immediately=True)
+        @set_context
         def update_job_statuses(self, ctx):
             LOG.debug('Updating job statuses')
-            ctx = context.get_admin_context()
-            context.set_ctx(ctx)
             job_manager.update_job_statuses()
-            context.set_ctx(None)
 
         @periodic_task.periodic_task(spacing=90)
+        @set_context
         def terminate_unneeded_transient_clusters(self, ctx):
             LOG.debug('Terminating unneeded transient clusters')
-            ctx = context.get_admin_context()
-            context.set_ctx(ctx)
             for cluster in conductor.cluster_get_all(ctx, status='Active'):
                 if not cluster.is_transient:
                     continue
@@ -149,12 +157,10 @@ def _make_periodic_tasks():
                 terminate_cluster(ctx, cluster, description='transient')
                 # Add event log info cleanup
                 context.ctx().current_instance_info = context.InstanceInfo()
-            context.set_ctx(None)
 
         @periodic_task.periodic_task(spacing=zombie_task_spacing)
+        @set_context
         def check_for_zombie_proxy_users(self, ctx):
-            ctx = context.get_admin_context()
-            context.set_ctx(ctx)
             for user in p.proxy_domain_users_list():
                 if user.name.startswith('job_'):
                     je_id = user.name[4:]
@@ -164,17 +170,15 @@ def _make_periodic_tasks():
                         LOG.debug('Found zombie proxy user {username}'.format(
                             username=user.name))
                         p.proxy_user_delete(user_id=user.id)
-            context.set_ctx(None)
 
         @periodic_task.periodic_task(spacing=3600)
+        @set_context
         def terminate_incomplete_clusters(self, ctx):
             if CONF.cleanup_time_for_incomplete_clusters <= 0:
                 return
 
             LOG.debug('Terminating old clusters in non-final state')
-            ctx = context.get_admin_context()
 
-            context.set_ctx(ctx)
             # NOTE(alazarev) Retrieving all clusters once in hour for now.
             # Criteria support need to be implemented in sahara db API to
             # have SQL filtering.
@@ -189,7 +193,6 @@ def _make_periodic_tasks():
                 terminate_cluster(ctx, cluster, description='incomplete')
                 # Add event log info cleanup
                 context.ctx().current_instance_info = context.InstanceInfo()
-            context.set_ctx(None)
 
     return SaharaPeriodicTasks()
 

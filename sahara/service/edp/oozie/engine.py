@@ -102,9 +102,11 @@ class OozieJobEngine(base_engine.JobEngine):
     def run_job(self, job_execution):
         ctx = context.ctx()
 
+        data_source_urls = {}
+
         job = conductor.job_get(ctx, job_execution.job_id)
-        input_source, output_source = job_utils.get_data_sources(job_execution,
-                                                                 job)
+        input_source, output_source = job_utils.get_data_sources(
+            job_execution, job, data_source_urls)
 
         # Updated_job_configs will be a copy of job_execution.job_configs with
         # any name or uuid references to data_sources resolved to paths
@@ -113,8 +115,12 @@ class OozieJobEngine(base_engine.JobEngine):
         # just be a reference to job_execution.job_configs to avoid a copy.
         # Additional_sources will be a list of any data_sources found.
         additional_sources, updated_job_configs = (
-            job_utils.resolve_data_source_references(job_execution.job_configs)
+            job_utils.resolve_data_source_references(
+                job_execution.job_configs, job_execution.id, data_source_urls)
         )
+
+        job_execution = conductor.job_execution_update(
+            ctx, job_execution, {"data_source_urls": data_source_urls})
 
         proxy_configs = updated_job_configs.get('proxy_configs')
         configs = updated_job_configs.get('configs', {})
@@ -130,8 +136,14 @@ class OozieJobEngine(base_engine.JobEngine):
 
         for data_source in [input_source, output_source] + additional_sources:
             if data_source and data_source.type == 'hdfs':
-                h.configure_cluster_for_hdfs(self.cluster, data_source)
+                h.configure_cluster_for_hdfs(
+                    self.cluster, data_source_urls[data_source.id])
                 break
+
+        external_hdfs_urls = self._resolve_external_hdfs_urls(
+            job_execution.job_configs)
+        for url in external_hdfs_urls:
+            h.configure_cluster_for_hdfs(self.cluster, url)
 
         hdfs_user = self.get_hdfs_user()
 
@@ -146,7 +158,7 @@ class OozieJobEngine(base_engine.JobEngine):
         wf_xml = workflow_factory.get_workflow_xml(
             job, self.cluster, updated_job_configs,
             input_source, output_source,
-            hdfs_user)
+            hdfs_user, data_source_urls)
 
         path_to_workflow = self._upload_workflow_file(oozie_server, wf_dir,
                                                       wf_xml, hdfs_user)
@@ -271,3 +283,16 @@ class OozieJobEngine(base_engine.JobEngine):
             constructed_dir = ''.join([str(constructed_dir),
                                        str(CONF.job_workflow_postfix)])
         return _append_slash_if_needed(constructed_dir)
+
+    def _resolve_external_hdfs_urls(self, job_configs):
+        external_hdfs_urls = []
+        for k, v in six.iteritems(job_configs.get('configs', {})):
+            if isinstance(v, six.string_types) and v.startswith("hdfs://"):
+                external_hdfs_urls.append(v)
+        for k, v in six.iteritems(job_configs.get('params', {})):
+            if isinstance(v, six.string_types) and v.startswith("hdfs://"):
+                external_hdfs_urls.append(v)
+        for v in job_configs.get('args', []):
+            if isinstance(v, six.string_types) and v.startswith("hdfs://"):
+                external_hdfs_urls.append(v)
+        return external_hdfs_urls

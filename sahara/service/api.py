@@ -22,10 +22,10 @@ from six.moves.urllib import parse as urlparse
 from sahara import conductor as c
 from sahara import context
 from sahara.plugins import base as plugin_base
-from sahara.plugins import provisioning
 from sahara.service import quotas
 from sahara.utils import general as g
 from sahara.utils.notification import sender
+from sahara.utils.openstack import base as b
 from sahara.utils.openstack import nova
 
 
@@ -54,6 +54,7 @@ def get_cluster(id, show_progress=False):
 
 
 def scale_cluster(id, data):
+    context.set_current_cluster_id(id)
     ctx = context.ctx()
 
     cluster = conductor.cluster_get(ctx, id)
@@ -75,6 +76,7 @@ def scale_cluster(id, data):
     try:
         cluster = g.change_cluster_status(cluster, "Validating")
         quotas.check_scaling(cluster, to_be_enlarged, additional)
+        plugin.recommend_configs(cluster)
         plugin.validate_scaling(cluster, to_be_enlarged, additional)
     except Exception as e:
         with excutils.save_and_reraise_exception():
@@ -94,15 +96,39 @@ def scale_cluster(id, data):
 
 
 def create_cluster(values):
+    plugin = plugin_base.PLUGINS.get_plugin(values['plugin_name'])
+    return _cluster_create(values, plugin)
+
+
+def create_multiple_clusters(values):
+    num_of_clusters = values['count']
+    clusters = []
+    plugin = plugin_base.PLUGINS.get_plugin(values['plugin_name'])
+    for counter in range(num_of_clusters):
+        cluster_dict = values.copy()
+        cluster_name = cluster_dict['name']
+        cluster_dict['name'] = get_multiple_cluster_name(num_of_clusters,
+                                                         cluster_name,
+                                                         counter + 1)
+        cluster = _cluster_create(cluster_dict, plugin)
+
+        clusters.append(cluster.id)
+
+    clusters_dict = {'clusters': clusters}
+    return clusters_dict
+
+
+def _cluster_create(values, plugin):
     ctx = context.ctx()
     cluster = conductor.cluster_create(ctx, values)
+    context.set_current_cluster_id(cluster.id)
     sender.notify(ctx, cluster.id, cluster.name, "New",
                   "create")
-    plugin = plugin_base.PLUGINS.get_plugin(cluster.plugin_name)
     _add_ports_for_auto_sg(ctx, cluster, plugin)
 
     # validating cluster
     try:
+        plugin.recommend_configs(cluster)
         cluster = g.change_cluster_status(cluster, "Validating")
         quotas.check_cluster(cluster)
         plugin.validate(cluster)
@@ -116,6 +142,10 @@ def create_cluster(values):
     return cluster
 
 
+def get_multiple_cluster_name(num_of_clusters, name, counter):
+    return "%%s-%%0%dd" % len(str(num_of_clusters)) % (name, counter)
+
+
 def _add_ports_for_auto_sg(ctx, cluster, plugin):
     for ng in cluster.node_groups:
         if ng.auto_security_group:
@@ -124,7 +154,11 @@ def _add_ports_for_auto_sg(ctx, cluster, plugin):
 
 
 def terminate_cluster(id):
+    context.set_current_cluster_id(id)
     cluster = g.change_cluster_status(id, "Deleting")
+
+    if cluster is None:
+        return
 
     OPS.terminate_cluster(id)
     sender.notify(context.ctx(), cluster.id, cluster.name, cluster.status,
@@ -178,8 +212,7 @@ def update_node_group_template(id, values):
 # Plugins ops
 
 def get_plugins():
-    return plugin_base.PLUGINS.get_plugins(
-        base=provisioning.ProvisioningPluginBase)
+    return plugin_base.PLUGINS.get_plugins()
 
 
 def get_plugin(plugin_name, version=None):
@@ -221,39 +254,42 @@ def construct_ngs_for_scaling(cluster, additional_node_groups):
 
 
 def get_images(name, tags):
-    return nova.client().images.list_registered(name, tags)
+    return b.execute_with_retries(
+        nova.client().images.list_registered, name, tags)
 
 
 def get_image(**kwargs):
     if len(kwargs) == 1 and 'id' in kwargs:
-        return nova.client().images.get(kwargs['id'])
+        return b.execute_with_retries(nova.client().images.get, kwargs['id'])
     else:
-        return nova.client().images.find(**kwargs)
+        return b.execute_with_retries(nova.client().images.find, **kwargs)
 
 
 def get_registered_image(id):
-    return nova.client().images.get_registered_image(id)
+    return b.execute_with_retries(
+        nova.client().images.get_registered_image, id)
 
 
 def register_image(image_id, username, description=None):
     client = nova.client()
-    client.images.set_description(image_id, username, description)
-    return client.images.get(image_id)
+    b.execute_with_retries(
+        client.images.set_description, image_id, username, description)
+    return b.execute_with_retries(client.images.get, image_id)
 
 
 def unregister_image(image_id):
     client = nova.client()
-    client.images.unset_description(image_id)
-    return client.images.get(image_id)
+    b.execute_with_retries(client.images.unset_description, image_id)
+    return b.execute_with_retries(client.images.get, image_id)
 
 
 def add_image_tags(image_id, tags):
     client = nova.client()
-    client.images.tag(image_id, tags)
-    return client.images.get(image_id)
+    b.execute_with_retries(client.images.tag, image_id, tags)
+    return b.execute_with_retries(client.images.get, image_id)
 
 
 def remove_image_tags(image_id, tags):
     client = nova.client()
-    client.images.untag(image_id, tags)
-    return client.images.get(image_id)
+    b.execute_with_retries(client.images.untag, image_id, tags)
+    return b.execute_with_retries(client.images.get, image_id)
