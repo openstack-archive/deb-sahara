@@ -43,13 +43,15 @@ class EdpEngine(edp_engine.SparkJobEngine):
         self.plugin_params["master"] = ('spark://%(host)s:' + port_str)
         driver_cp = plugin_utils.get_config_value_or_default(
             "Spark", "Executor extra classpath", self.cluster)
-        if driver_cp:
-            driver_cp = " --driver-class-path " + driver_cp
         self.plugin_params["driver-class-path"] = driver_cp
 
     @staticmethod
     def edp_supported(version):
         return version >= EdpEngine.edp_base_version
+
+    @staticmethod
+    def job_type_supported(job_type):
+        return job_type in edp_engine.SparkJobEngine.get_supported_job_types()
 
     def validate_job_execution(self, cluster, job, data):
         if not self.edp_supported(cluster.hadoop_version):

@@ -274,7 +274,8 @@ class ClouderaUtils(object):
             self._add_role(instance, role, cluster)
 
     def _add_role(self, instance, process, cluster):
-        if process in ['CLOUDERA_MANAGER']:
+        if process in ['CLOUDERA_MANAGER', 'HDFS_JOURNALNODE',
+                       'YARN_STANDBYRM']:
             return
 
         process = self.pu.convert_role_showname(process)
@@ -284,6 +285,17 @@ class ClouderaUtils(object):
                                    role_type, instance.fqdn())
         role.update_config(self._get_configs(process, cluster,
                                              node_group=instance.node_group))
+
+    def get_cloudera_manager_info(self, cluster):
+        mng = self.pu.get_manager(cluster)
+        info = {
+            'Cloudera Manager': {
+                'Web UI': 'http://%s:7180' % mng.management_ip,
+                'Username': 'admin',
+                'Password': db_helper.get_cm_password(cluster)
+            }
+        }
+        return info
 
     def _get_configs(self, service, cluster=None, node_group=None):
         # Defined in derived class.

@@ -31,9 +31,9 @@ from sahara.service.edp import job_utils
 from sahara.service.validations.edp import job_execution as j
 from sahara.swift import swift_helper as sw
 from sahara.swift import utils as su
+from sahara.utils import cluster as c_u
 from sahara.utils import edp
 from sahara.utils import files
-from sahara.utils import general
 from sahara.utils import remote
 from sahara.utils import xmlutils
 
@@ -50,7 +50,8 @@ class SparkJobEngine(base_engine.JobEngine):
         self.plugin_params = {"master": "",
                               "spark-user": "",
                               "deploy-mode": "",
-                              "spark-submit": ""
+                              "spark-submit": "",
+                              "driver-class-path": "",
                               }
 
     def _get_pid_and_inst_id(self, job_id):
@@ -73,7 +74,7 @@ class SparkJobEngine(base_engine.JobEngine):
         # is gone, we should probably change the status somehow.
         # For now, do nothing.
         try:
-            instance = general.get_instances(self.cluster, [inst_id])[0]
+            instance = c_u.get_instances(self.cluster, [inst_id])[0]
         except Exception:
             instance = None
         return pid, instance
@@ -137,8 +138,12 @@ class SparkJobEngine(base_engine.JobEngine):
 
         def upload(r, dir, job_file, proxy_configs):
             dst = os.path.join(dir, job_file.name)
-            raw_data = dispatch.get_raw_binary(job_file, proxy_configs)
-            r.write_file_to(dst, raw_data)
+            raw_data = dispatch.get_raw_binary(
+                job_file, proxy_configs=proxy_configs, remote=r)
+            if isinstance(raw_data, dict) and raw_data["type"] == "path":
+                dst = raw_data['path']
+            else:
+                r.write_file_to(dst, raw_data)
             return dst
 
         def upload_builtin(r, dir, builtin):
@@ -170,6 +175,12 @@ class SparkJobEngine(base_engine.JobEngine):
 
         return uploaded_paths, builtin_paths
 
+    def _check_driver_class_path(self, param_dict):
+        cp = param_dict['driver-class-path'] or ""
+        if not (cp.startswith(":") or cp.endswith(":")):
+            cp += ":"
+        param_dict['driver-class-path'] = " --driver-class-path " + cp
+
     def cancel_job(self, job_execution):
         pid, instance = self._get_instance_if_running(job_execution)
         if instance is not None:
@@ -187,38 +198,9 @@ class SparkJobEngine(base_engine.JobEngine):
             with remote.get_remote(instance) as r:
                 return self._get_job_status_from_remote(r, pid, job_execution)
 
-    def run_job(self, job_execution):
-        ctx = context.ctx()
-        job = conductor.job_get(ctx, job_execution.job_id)
+    def _build_command(self, wf_dir, paths, builtin_paths,
+                       updated_job_configs):
         indep_params = {}
-        data_source_urls = {}
-        additional_sources, updated_job_configs = (
-            job_utils.resolve_data_source_references(
-                job_execution.job_configs, job_execution.id, data_source_urls)
-        )
-
-        job_execution = conductor.job_execution_update(
-            ctx, job_execution, {"data_source_urls": data_source_urls})
-
-        for data_source in additional_sources:
-            if data_source and data_source.type == 'hdfs':
-                h.configure_cluster_for_hdfs(self.cluster, data_source)
-                break
-
-        # It is needed in case we are working with Spark plugin
-        self.plugin_params['master'] = (
-            self.plugin_params['master'] % {'host': self.master.hostname()})
-
-        # TODO(tmckay): wf_dir should probably be configurable.
-        # The only requirement is that the dir is writable by the image user
-        wf_dir = job_utils.create_workflow_dir(self.master, '/tmp/spark-edp',
-                                               job, job_execution.id, "700")
-        paths, builtin_paths = self._upload_job_files(
-            self.master, wf_dir, job, updated_job_configs)
-
-        # We can shorten the paths in this case since we'll run out of wf_dir
-        paths = [os.path.basename(p) for p in paths]
-        builtin_paths = [os.path.basename(p) for p in builtin_paths]
 
         # TODO(tmckay): for now, paths[0] is always assumed to be the app
         # jar and we generate paths in order (mains, then libs).
@@ -241,8 +223,10 @@ class SparkJobEngine(base_engine.JobEngine):
             indep_params["wrapper_args"] = "%s %s" % (
                 wrapper_xml, indep_params["job_class"])
 
+            indep_params["addnl_files"] = wrapper_xml
+
             indep_params["addnl_jars"] = ",".join(
-                [indep_params["app_jar"]] + paths + builtin_paths)
+                [indep_params["wrapper_jar"]] + paths + builtin_paths)
 
         else:
             indep_params["addnl_jars"] = ",".join(paths)
@@ -263,15 +247,22 @@ class SparkJobEngine(base_engine.JobEngine):
 
         mutual_dict = self.plugin_params.copy()
         mutual_dict.update(indep_params)
+
+        # Handle driver classpath. Because of the way the hadoop
+        # configuration is handled in the wrapper class, using
+        # wrapper_xml, the working directory must be on the classpath
+        self._check_driver_class_path(mutual_dict)
+
         if mutual_dict.get("wrapper_jar"):
             # Substrings which may be empty have spaces
             # embedded if they are non-empty
             cmd = (
                 '%(spark-user)s%(spark-submit)s%(driver-class-path)s'
+                ' --files %(addnl_files)s'
                 ' --class %(wrapper_class)s%(addnl_jars)s'
                 ' --master %(master)s'
                 ' --deploy-mode %(deploy-mode)s'
-                ' %(wrapper_jar)s %(wrapper_args)s%(args)s') % dict(
+                ' %(app_jar)s %(wrapper_args)s%(args)s') % dict(
                 mutual_dict)
         else:
             cmd = (
@@ -281,6 +272,55 @@ class SparkJobEngine(base_engine.JobEngine):
                 ' --deploy-mode %(deploy-mode)s'
                 ' %(app_jar)s%(args)s') % dict(
                 mutual_dict)
+
+        return cmd
+
+    def run_job(self, job_execution):
+        ctx = context.ctx()
+        job = conductor.job_get(ctx, job_execution.job_id)
+        # This will be a dictionary of tuples, (native_url, runtime_url)
+        # keyed by data_source id
+        data_source_urls = {}
+        additional_sources, updated_job_configs = (
+            job_utils.resolve_data_source_references(job_execution.job_configs,
+                                                     job_execution.id,
+                                                     data_source_urls,
+                                                     self.cluster)
+        )
+
+        job_execution = conductor.job_execution_update(
+            ctx, job_execution,
+            {"data_source_urls": job_utils.to_url_dict(data_source_urls)})
+
+        # Now that we've recorded the native urls, we can switch to the
+        # runtime urls
+        data_source_urls = job_utils.to_url_dict(data_source_urls,
+                                                 runtime=True)
+
+        for data_source in additional_sources:
+            if data_source and data_source.type == 'hdfs':
+                h.configure_cluster_for_hdfs(self.cluster, data_source)
+                break
+
+        # It is needed in case we are working with Spark plugin
+        self.plugin_params['master'] = (
+            self.plugin_params['master'] % {'host': self.master.hostname()})
+
+        # TODO(tmckay): wf_dir should probably be configurable.
+        # The only requirement is that the dir is writable by the image user
+        wf_dir = job_utils.create_workflow_dir(self.master, '/tmp/spark-edp',
+                                               job, job_execution.id, "700")
+        paths, builtin_paths = self._upload_job_files(
+            self.master, wf_dir, job, updated_job_configs)
+
+        # We can shorten the paths in this case since we'll run out of wf_dir
+        paths = [os.path.basename(p) if p.startswith(wf_dir) else p
+                 for p in paths]
+        builtin_paths = [os.path.basename(p) for p in builtin_paths]
+
+        cmd = self._build_command(wf_dir, paths, builtin_paths,
+                                  updated_job_configs)
+
         job_execution = conductor.job_execution_get(ctx, job_execution.id)
         if job_execution.info['status'] == edp.JOB_STATUS_TOBEKILLED:
             return (None, edp.JOB_STATUS_KILLED, None)
@@ -301,6 +341,7 @@ class SparkJobEngine(base_engine.JobEngine):
         if ret == 0:
             # Success, we'll add the wf_dir in job_execution.extra and store
             # pid@instance_id as the job id
+
             # We know the job is running so return "RUNNING"
             return (stdout.strip() + "@" + self.master.id,
                     edp.JOB_STATUS_RUNNING,
@@ -322,3 +363,33 @@ class SparkJobEngine(base_engine.JobEngine):
     @staticmethod
     def get_supported_job_types():
         return [edp.JOB_TYPE_SPARK]
+
+
+class SparkShellJobEngine(SparkJobEngine):
+    def _build_command(self, wf_dir, paths, builtin_paths,
+                       updated_job_configs):
+        main_script = paths.pop(0)
+        args = " ".join(updated_job_configs.get('args', []))
+
+        env_params = ""
+        params = updated_job_configs.get('params', {})
+        for key, value in params.items():
+            env_params += "{key}={value} ".format(key=key, value=value)
+
+        cmd = ("{env_params}{cmd} {main_script} {args}".format(
+            cmd='/bin/sh', main_script=main_script, env_params=env_params,
+            args=args))
+
+        return cmd
+
+    def validate_job_execution(self, cluster, job, data):
+        # Shell job doesn't require any special validation
+        pass
+
+    @staticmethod
+    def get_possible_job_config(job_type):
+        return {'job_config': {'configs': {}, 'args': [], 'params': {}}}
+
+    @staticmethod
+    def get_supported_job_types():
+        return [edp.JOB_TYPE_SHELL]

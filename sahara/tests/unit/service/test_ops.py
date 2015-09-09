@@ -76,12 +76,12 @@ class FakeINFRA(object):
 class TestOPS(base.SaharaWithDbTestCase):
     SEQUENCE = []
 
-    @mock.patch('sahara.utils.general.change_cluster_status_description',
+    @mock.patch('sahara.utils.cluster.change_cluster_status_description',
                 return_value=FakeCluster())
     @mock.patch('sahara.service.ops._update_sahara_info')
     @mock.patch('sahara.service.ops._prepare_provisioning',
                 return_value=(mock.Mock(), mock.Mock(), FakePlugin()))
-    @mock.patch('sahara.utils.general.change_cluster_status')
+    @mock.patch('sahara.utils.cluster.change_cluster_status')
     @mock.patch('sahara.conductor.API.cluster_get')
     @mock.patch('sahara.service.ops.CONF')
     @mock.patch('sahara.service.trusts.create_trust_for_cluster')
@@ -99,14 +99,15 @@ class TestOPS(base.SaharaWithDbTestCase):
                           'configure_cluster', 'start_cluster'], self.SEQUENCE,
                          'Order of calls is wrong')
 
+    @mock.patch('sahara.service.ntp_service.configure_ntp')
     @mock.patch('sahara.service.ops.CONF')
     @mock.patch('sahara.service.ops._prepare_provisioning',
                 return_value=(mock.Mock(), mock.Mock(), FakePlugin()))
-    @mock.patch('sahara.utils.general.change_cluster_status',
+    @mock.patch('sahara.utils.cluster.change_cluster_status',
                 return_value=FakePlugin())
-    @mock.patch('sahara.utils.general.get_instances')
+    @mock.patch('sahara.utils.cluster.get_instances')
     def test_provision_scaled_cluster(self, p_get_instances, p_change_status,
-                                      p_prep_provisioning, p_conf):
+                                      p_prep_provisioning, p_conf, p_ntp):
         del self.SEQUENCE[:]
         ops.INFRA = FakeINFRA()
         p_conf.use_identity_api_v3 = True
@@ -131,9 +132,9 @@ class TestOPS(base.SaharaWithDbTestCase):
                          'cluster_destroy'], self.SEQUENCE,
                          'Order of calls is wrong')
 
-    @mock.patch('sahara.utils.general.change_cluster_status_description')
+    @mock.patch('sahara.utils.cluster.change_cluster_status_description')
     @mock.patch('sahara.service.ops._prepare_provisioning')
-    @mock.patch('sahara.utils.general.change_cluster_status')
+    @mock.patch('sahara.utils.cluster.change_cluster_status')
     @mock.patch('sahara.service.ops._rollback_cluster')
     @mock.patch('sahara.conductor.API.cluster_get')
     def test_ops_error_hadler_success_rollback(
@@ -155,9 +156,9 @@ class TestOPS(base.SaharaWithDbTestCase):
         ops._provision_scaled_cluster(fake_cluster.id, {'id': 1})
         self.assertEqual(expected, p_change_cluster_status.call_args_list)
 
-    @mock.patch('sahara.utils.general.change_cluster_status_description')
+    @mock.patch('sahara.utils.cluster.change_cluster_status_description')
     @mock.patch('sahara.service.ops._prepare_provisioning')
-    @mock.patch('sahara.utils.general.change_cluster_status')
+    @mock.patch('sahara.utils.cluster.change_cluster_status')
     @mock.patch('sahara.service.ops._rollback_cluster')
     @mock.patch('sahara.conductor.API.cluster_get')
     def test_ops_error_hadler_failed_rollback(

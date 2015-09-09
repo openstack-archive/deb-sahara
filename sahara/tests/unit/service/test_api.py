@@ -111,6 +111,9 @@ class FakePlugin(object):
     def get_versions(self):
         return ['0.1', '0.2']
 
+    def get_all_configs(self, version):
+        return self.get_configs(version)
+
     def get_required_image_tags(self, version):
         return ['fake']
 
@@ -120,7 +123,7 @@ class FakePlugin(object):
     def get_configs(self, version):
         return {}
 
-    def recommend_configs(self, cluster):
+    def recommend_configs(self, cluster, scaling=False):
         self.calls_order.append('recommend_configs')
 
 
@@ -266,6 +269,13 @@ class TestApi(base.SaharaWithDbTestCase):
             'resource', 'requested', 'available')
         with testtools.ExpectedException(exc.QuotaException):
             api.scale_cluster(cluster.id, {})
+
+    def test_cluster_update(self):
+        with mock.patch('sahara.service.quotas.check_cluster'):
+            cluster = api.create_cluster(SAMPLE_CLUSTER)
+            updated_cluster = api.update_cluster(
+                cluster.id, {'description': 'Cluster'})
+            self.assertEqual('Cluster', updated_cluster.description)
 
     def test_get_plugin(self):
         api.get_plugin('fake', '0.1')

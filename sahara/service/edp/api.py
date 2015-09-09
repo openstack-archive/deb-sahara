@@ -160,6 +160,10 @@ def cancel_job_execution(id):
     return job_execution
 
 
+def update_job_execution(id, values):
+    return conductor.job_execution_update(context.ctx(), id, values)
+
+
 def delete_job_execution(id):
     context.set_current_job_execution_id(id)
     OPS.delete_job_execution(id)
@@ -195,6 +199,10 @@ def get_job(id):
 
 def create_job(values):
     return conductor.job_create(context.ctx(), values)
+
+
+def update_job(id, values):
+    return conductor.job_update(context.ctx(), id, values)
 
 
 def delete_job(job_id):
@@ -239,6 +247,10 @@ def delete_job_binary_internal(id):
 
 def get_job_binary_internal_data(id):
     return conductor.job_binary_internal_get_raw_data(context.ctx(), id)
+
+
+def update_job_binary_internal(id, values):
+    return conductor.job_binary_internal_update(context.ctx(), id, values)
 
 
 def get_job_binary_data(id):

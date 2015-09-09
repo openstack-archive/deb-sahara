@@ -47,6 +47,11 @@ class SaharaMigrationsCheckers(object):
         for column in columns:
             self.assertColumnExists(engine, table, column)
 
+    def assertColumnType(self, engine, table, column, column_type):
+        t = db_utils.get_table(engine, table)
+        column_ref_type = str(t.c[column].type)
+        self.assertEqual(column_ref_type, column_type)
+
     def assertColumnCount(self, engine, table, columns):
         t = db_utils.get_table(engine, table)
         self.assertEqual(len(columns), len(t.columns))
@@ -495,6 +500,39 @@ class SaharaMigrationsCheckers(object):
                                 'use_autoconfig')
         self.assertColumnExists(engine, 'templates_relations',
                                 'use_autoconfig')
+
+    def _check_024(self, engine, data):
+        tables = [
+            'node_group_templates',
+            'node_groups',
+            'templates_relations',
+            'clusters',
+            'cluster_templates'
+        ]
+
+        for table in tables:
+            self.assertColumnExists(engine, table, 'shares')
+
+    def _check_025(self, engine, data):
+        self.assertColumnType(engine, 'instances', 'internal_ip',
+                              'VARCHAR(45)')
+        self.assertColumnType(engine, 'instances', 'management_ip',
+                              'VARCHAR(45)')
+
+    def _check_026(self, engine, data):
+        tables = [
+            'clusters',
+            'cluster_templates',
+            'node_group_templates',
+            'data_sources',
+            'job_executions',
+            'jobs',
+            'job_binary_internal',
+            'job_binaries',
+        ]
+        for table in tables:
+            self.assertColumnExists(engine, table, 'is_public')
+            self.assertColumnExists(engine, table, 'is_protected')
 
 
 class TestMigrationsMySQL(SaharaMigrationsCheckers,

@@ -39,8 +39,11 @@ class EdpOozieEngine(edp_engine.OozieJobEngine):
         return 'http://%s:11000/oozie' % oozie_ip
 
     def get_name_node_uri(self, cluster):
-        namenode_ip = CU.pu.get_namenode(cluster).fqdn()
-        return 'hdfs://%s:8020' % namenode_ip
+        if len(CU.pu.get_jns(cluster)) > 0:
+            return 'hdfs://%s' % CU.NAME_SERVICE
+        else:
+            namenode_ip = CU.pu.get_namenode(cluster).fqdn()
+            return 'hdfs://%s:8020' % namenode_ip
 
     def get_resource_manager_uri(self, cluster):
         resourcemanager_ip = CU.pu.get_resourcemanager(cluster).fqdn()
@@ -86,8 +89,6 @@ class EdpSparkEngine(edp_spark_engine.SparkJobEngine):
         self.plugin_params["master"] = "yarn-cluster"
         driver_cp = u.get_config_value_or_default(
             "Spark", "Executor extra classpath", self.cluster)
-        if driver_cp:
-            driver_cp = " --driver-class-path " + driver_cp
         self.plugin_params["driver-class-path"] = driver_cp
 
     @staticmethod

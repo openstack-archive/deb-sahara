@@ -42,7 +42,7 @@ class TestSpark(base.SaharaTestCase):
         self.spark_pid = "12345"
         self.spark_home = "/opt/spark"
         self.workflow_dir = "/wfdir"
-        self.driver_cp = "/usr/lib/hadoop/hadoop-swift.jar"
+        self.driver_cp = "/usr/lib/hadoop/hadoop-swift.jar:"
 
     def test_get_pid_and_inst_id(self):
         '''Test parsing of job ids
@@ -59,7 +59,7 @@ class TestSpark(base.SaharaTestCase):
         pid, inst_id = eng._get_pid_and_inst_id("pid@instance")
         self.assertEqual(("pid", "instance"), (pid, inst_id))
 
-    @mock.patch('sahara.utils.general.get_instances')
+    @mock.patch('sahara.utils.cluster.get_instances')
     def test_get_instance_if_running(self, get_instances):
         '''Test retrieval of pid and instance object for running job
 
@@ -347,6 +347,8 @@ class TestSpark(base.SaharaTestCase):
 
         # This is to mock "with remote.get_remote(instance) as r"
         remote_instance = mock.Mock()
+        remote_instance.instance.node_group.cluster.shares = []
+        remote_instance.instance.node_group.shares = []
         get_remote.return_value.__enter__ = mock.Mock(
             return_value=remote_instance)
 
@@ -556,11 +558,12 @@ class TestSpark(base.SaharaTestCase):
             'cd %(workflow_dir)s; '
             './launch_command %(spark_user)s%(spark_submit)s '
             '--driver-class-path %(driver_cp)s '
+            '--files spark.xml '
             '--class org.openstack.sahara.edp.SparkWrapper '
-            '--jars app.jar,jar1.jar,jar2.jar '
+            '--jars wrapper.jar,jar1.jar,jar2.jar '
             '--master %(master)s '
             '--deploy-mode %(deploy_mode)s '
-            'wrapper.jar spark.xml org.me.myclass input_arg output_arg '
+            'app.jar spark.xml org.me.myclass input_arg output_arg '
             '> /dev/null 2>&1 & echo $!' % {"workflow_dir": self.workflow_dir,
                                             "spark_user": self.spark_user,
                                             "spark_submit": self.spark_submit,
@@ -593,11 +596,12 @@ class TestSpark(base.SaharaTestCase):
             'cd %(workflow_dir)s; '
             './launch_command %(spark_user)s%(spark_submit)s '
             '--driver-class-path %(driver_cp)s '
+            '--files spark.xml '
             '--class org.openstack.sahara.edp.SparkWrapper '
-            '--jars app.jar '
+            '--jars wrapper.jar '
             '--master %(master)s '
             '--deploy-mode %(deploy_mode)s '
-            'wrapper.jar spark.xml org.me.myclass input_arg output_arg '
+            'app.jar spark.xml org.me.myclass input_arg output_arg '
             '> /dev/null 2>&1 & echo $!' % {"workflow_dir": self.workflow_dir,
                                             "spark_user": self.spark_user,
                                             "spark_submit": self.spark_submit,
@@ -629,11 +633,12 @@ class TestSpark(base.SaharaTestCase):
             'cd %(workflow_dir)s; '
             './launch_command %(spark_user)s%(spark_submit)s '
             '--driver-class-path %(driver_cp)s '
+            '--files spark.xml '
             '--class org.openstack.sahara.edp.SparkWrapper '
-            '--jars app.jar '
+            '--jars wrapper.jar '
             '--master %(master)s '
             '--deploy-mode %(deploy_mode)s '
-            'wrapper.jar spark.xml org.me.myclass '
+            'app.jar spark.xml org.me.myclass '
             '> /dev/null 2>&1 & echo $!' % {"workflow_dir": self.workflow_dir,
                                             "spark_user": self.spark_user,
                                             "spark_submit": self.spark_submit,

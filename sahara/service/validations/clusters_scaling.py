@@ -13,65 +13,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 
+from sahara import context
 import sahara.exceptions as ex
 from sahara.i18n import _
 import sahara.plugins.base as plugin_base
 import sahara.service.api as api
+from sahara.service.validations import acl
 import sahara.service.validations.base as b
-import sahara.service.validations.cluster_template_schema as ct_schema
-
-
-def _build_node_groups_schema():
-    schema = copy.deepcopy(ct_schema.CLUSTER_TEMPLATE_SCHEMA)
-    return schema['properties']['node_groups']
-
-
-CLUSTER_SCALING_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "resize_node_groups": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                    },
-                    "count": {
-                        "type": "integer",
-                        "minimum": 0,
-                    },
-                },
-                "additionalProperties": False,
-                "required": [
-                    "name",
-                    "count",
-                ]
-            },
-            "minItems": 1
-        },
-        "add_node_groups": _build_node_groups_schema(),
-    },
-    "additionalProperties": False,
-    "anyOf": [
-        {
-            "required": ["resize_node_groups"]
-        },
-        {
-            "required": ["add_node_groups"]
-        }
-    ]
-
-}
+from sahara.utils import cluster as c_u
 
 
 def check_cluster_scaling(data, cluster_id, **kwargs):
+    ctx = context.current()
     cluster = api.get_cluster(id=cluster_id)
+
     if cluster is None:
         raise ex.NotFoundException(
             {'id': cluster_id}, _('Object with %s not found'))
+
+    acl.check_tenant_for_update(ctx, cluster)
+    acl.check_protected_from_update(cluster, data)
+
     cluster_engine = cluster.sahara_info.get(
         'infrastructure_engine') if cluster.sahara_info else None
 
@@ -99,7 +62,7 @@ def check_cluster_scaling(data, cluster_id, **kwargs):
             _("Requested plugin '%s' doesn't support cluster scaling feature")
             % cluster.plugin_name)
 
-    if cluster.status != 'Active':
+    if cluster.status != c_u.CLUSTER_STATUS_ACTIVE:
         raise ex.InvalidReferenceException(
             _("Cluster cannot be scaled not in 'Active' status. "
               "Cluster status: %s") % cluster.status)

@@ -28,16 +28,18 @@ from swiftclient import client as swift_client
 from swiftclient import exceptions as swift_exc
 from tempest_lib import exceptions as exc
 
+from sahara.tests.scenario import utils
+
 
 def get_session(auth_url=None, username=None, password=None,
-                project_name=None):
+                project_name=None, verify=True, cert=None):
     auth = identity_v3.Password(auth_url=auth_url.replace('/v2.0', '/v3'),
                                 username=username,
                                 password=password,
                                 project_name=project_name,
                                 user_domain_name='default',
                                 project_domain_name='default')
-    return session.Session(auth=auth)
+    return session.Session(auth=auth, verify=verify, cert=cert)
 
 from sahara.tests.scenario import timeouts
 
@@ -93,6 +95,9 @@ class SaharaClient(Client):
     def create_datasource(self, *args, **kwargs):
         data = self.sahara_client.data_sources.create(*args, **kwargs)
         return data.id
+
+    def get_datasource(self, *args, **kwargs):
+        return self.sahara_client.data_sources.get(*args, **kwargs)
 
     def delete_datasource(self, datasource_id):
         return self.delete_resource(
@@ -176,6 +181,19 @@ class NovaClient(Client):
                 return flavor.id
 
         raise exc.NotFound(flavor_name)
+
+    def create_flavor(self, flavor_object):
+        return self.nova_client.flavors.create(
+            flavor_object.get('name', utils.rand_name('scenario')),
+            flavor_object.get('ram', 1),
+            flavor_object.get('vcpus', 1),
+            flavor_object.get('root_disk', 0),
+            ephemeral=flavor_object.get('ephemeral_disk', 0),
+            swap=flavor_object.get('swap_disk', 0),
+            flavorid=flavor_object.get('id', 'auto'))
+
+    def delete_flavor(self, flavor_id):
+        return self.delete_resource(self.nova_client.flavors.delete, flavor_id)
 
     def delete_keypair(self, key_name):
         return self.delete_resource(

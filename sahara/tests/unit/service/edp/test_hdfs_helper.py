@@ -71,7 +71,7 @@ class HDFSHelperTestCase(base.SaharaTestCase):
         self.cluster.execute_command.assert_called_once_with(
             'sudo su - -c "hadoop dfs -mkdir -p Earth" BigBang')
 
-    @mock.patch('sahara.utils.general.generate_etc_hosts')
+    @mock.patch('sahara.utils.cluster.generate_etc_hosts')
     @mock.patch('sahara.plugins.utils.get_instances')
     @mock.patch('sahara.conductor.api.LocalApi.cluster_get_all')
     def test_get_cluster_hosts_information_smthg_wrong(self, mock_get_all,
@@ -81,7 +81,7 @@ class HDFSHelperTestCase(base.SaharaTestCase):
         self.assertIsNone(res)
 
     @mock.patch('sahara.context.ctx')
-    @mock.patch('sahara.utils.general.generate_etc_hosts')
+    @mock.patch('sahara.utils.cluster.generate_etc_hosts')
     @mock.patch('sahara.plugins.utils.get_instances')
     @mock.patch('sahara.conductor.api.LocalApi.cluster_get_all')
     def test_get_cluster_hosts_information_c_id(self, mock_get_all,
@@ -97,7 +97,7 @@ class HDFSHelperTestCase(base.SaharaTestCase):
         self.assertIsNone(res)
 
     @mock.patch('sahara.context.ctx')
-    @mock.patch('sahara.utils.general.generate_etc_hosts')
+    @mock.patch('sahara.utils.cluster.generate_etc_hosts')
     @mock.patch('sahara.plugins.utils.get_instances')
     @mock.patch('sahara.conductor.api.LocalApi.cluster_get_all')
     def test_get_cluster_hosts_information_i_name(self, mock_get_all,
@@ -132,3 +132,14 @@ class HDFSHelperTestCase(base.SaharaTestCase):
              mock.call().__enter__().write_file_to(str1, mock_helper()),
              mock.call().__enter__().execute_command(str2, run_as_root=True),
              mock.call().__exit__(None, None, None)])
+
+    @mock.patch('six.text_type')
+    @mock.patch('os.open')
+    def test_put_file_to_hdfs(self, open_get, mock_six):
+        open_get.return_value = '/tmp/workflow.xml'
+        mock_six.return_value = 111
+        helper.put_file_to_hdfs(self.cluster, open_get, 'workflow',
+                                '/tmp', 'hdfs')
+        self.cluster.execute_command.assert_called_once_with(
+            'sudo su - -c "hadoop dfs -copyFromLocal /tmp/workflow.111'
+            ' /tmp/workflow" hdfs && sudo rm -f /tmp/workflow.111')

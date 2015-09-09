@@ -18,6 +18,7 @@
 from __future__ import print_function
 import argparse
 import os
+import subprocess
 import sys
 import tempfile
 
@@ -43,6 +44,8 @@ def set_defaults(config):
                                      'http://localhost:5000/v2.0')
     creds.setdefault('sahara_service_type', 'data-processing')
     creds['sahara_url'] = creds.get('sahara_url', None)
+    creds['ssl_verify'] = creds.get('ssl_verify', True)
+    creds['ssl_cert'] = creds.get('ssl_cert', None)
 
     # set up network
     config['network'] = config.get('network', {})
@@ -215,7 +218,7 @@ def main():
     command = 'bash tools/pretty_tox.sh'
     if concurrency:
         command = command + ' -- --concurrency %d' % concurrency
-    return_code = os.system(command)
+    return_code = subprocess.call(command, shell=True)
     sys.exit(return_code)
 
 

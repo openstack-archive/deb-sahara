@@ -77,9 +77,11 @@ class TestBase(testtools.TestCase):
                                           'sahara_service_type':
                                               'data-processing-local',
                                           'sahara_url':
-                                              'http://sahara_host:8386/v1.1'}
+                                              'http://sahara_host:8386/v1.1',
+                                          'ssl_cert': '/etc/tests/cert.crt',
+                                          'ssl_verify': True}
         self.base_scenario.plugin_opts = {'plugin_name': 'vanilla',
-                                          'hadoop_version': '2.6.0'}
+                                          'hadoop_version': '2.7.1'}
         self.base_scenario.network = {'type': 'neutron',
                                       'private_network': 'changed_private',
                                       'public_network': 'changed_public',
@@ -140,7 +142,7 @@ class TestBase(testtools.TestCase):
         self.base_scenario.ng_name_map = {}
         self.base_scenario.key_name = 'test_key'
         self.base_scenario.template_path = ('sahara/tests/scenario/templates/'
-                                            'vanilla/2.6.0')
+                                            'vanilla/2.7.1')
         self.job = self.base_scenario.testcase["edp_jobs_flow"].get(
             'test_flow')[0]
         self.base_scenario.cluster_id = 'some_id'
@@ -181,7 +183,9 @@ class TestBase(testtools.TestCase):
                                   project_name='admin',
                                   user_domain_name='default',
                                   project_domain_name='default')
-        m_session.assert_called_with(auth=fake_auth)
+        m_session.assert_called_with(auth=fake_auth,
+                                     cert='/etc/tests/cert.crt',
+                                     verify=True)
 
     @mock.patch('sahara.tests.scenario.clients.NeutronClient.get_network_id',
                 return_value='mock_net')
@@ -256,7 +260,7 @@ class TestBase(testtools.TestCase):
         self.base_scenario._init_clients()
         self.assertEqual('internal-db://id_internal_db_data',
                          self.base_scenario._create_internal_db_data(
-                             'sahara/tests/scenario_unit/vanilla2_6_0.yaml'))
+                             'sahara/tests/scenario_unit/vanilla2_7_1.yaml'))
 
     @mock.patch('swiftclient.client.Connection.put_container',
                 return_value=None)
@@ -466,3 +470,36 @@ class TestBase(testtools.TestCase):
                     'volume_count': 2,
                     'volume_mount_prefix': 2
                 }], self.base_scenario._get_node_list_with_volumes())
+
+    @mock.patch('sahara.tests.scenario.clients.SaharaClient.__init__',
+                return_value=None)
+    @mock.patch('sahara.tests.scenario.clients.SaharaClient.get_datasource')
+    def test_put_io_data_to_configs(self, get_datasources, sahara_mock):
+        self.base_scenario._init_clients()
+        get_datasources.side_effect = [
+            mock.Mock(id='1', url="swift://cont/input"),
+            mock.Mock(id='2', url="hdfs://cont/output")
+        ]
+        configs = {'args': ['2', "{input_datasource}",
+                            "{output_datasource}"]}
+        self.assertEqual({'args': ['2', 'swift://cont/input',
+                                   'hdfs://cont/output']},
+                         self.base_scenario._put_io_data_to_configs(
+            configs, '1', '2'))
+
+    @mock.patch('sahara.tests.scenario.base.BaseTestCase.addCleanup')
+    @mock.patch('novaclient.v2.flavors.FlavorManager.create',
+                return_value=FakeResponse(set_id='flavor_id'))
+    @mock.patch('keystoneclient.session.Session')
+    def test_get_flavor_id(self, mock_keystone, mock_create_flavor, mock_base):
+        self.base_scenario._init_clients()
+        self.assertEqual('flavor_id',
+                         self.base_scenario._get_flavor_id({
+                             'name': 'test-flavor',
+                             "id": 'created_flavor_id',
+                             "vcpus": 1,
+                             "ram": 512,
+                             "root_disk": 1,
+                             "ephemeral_disk": 1,
+                             "swap_disk": 1
+                         }))

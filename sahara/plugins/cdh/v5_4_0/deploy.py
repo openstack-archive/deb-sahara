@@ -47,7 +47,6 @@ PACKAGES = [
     'impala-catalog',
     'impala-shell',
     'keytrustee-keyprovider',
-    'ntp',
     'oozie',
     'oracle-j2sdk1.7',
     'sentry',
@@ -167,6 +166,12 @@ def start_cluster(cluster):
 
     CU.pu.configure_swift(cluster)
 
+    if len(CU.pu.get_jns(cluster)) > 0:
+        CU.enable_namenode_ha(cluster)
+
+    if CU.pu.get_stdb_rm(cluster):
+        CU.enable_resourcemanager_ha(cluster)
+
     _finish_cluster_starting(cluster)
 
 
@@ -180,6 +185,7 @@ def get_open_ports(node_group):
         'HDFS_SECONDARYNAMENODE': [50090, 50495],
         'HDFS_DATANODE': [50010, 1004, 50075, 1006, 50020],
         'YARN_RESOURCEMANAGER': [8030, 8031, 8032, 8033, 8088],
+        'YARN_STANDBYRM': [8030, 8031, 8032, 8033, 8088],
         'YARN_NODEMANAGER': [8040, 8041, 8042],
         'YARN_JOBHISTORY': [10020, 19888],
         'HIVE_METASTORE': [9083],
@@ -199,6 +205,7 @@ def get_open_ports(node_group):
         'IMPALA_STATESTORE': [25010, 24000],
         'IMPALAD': [21050, 21000, 23000, 25000, 28000, 22000],
         'KMS': [16000, 16001],
+        'JOURNALNODE': [8480, 8481, 8485]
     }
 
     for process in node_group.node_processes:

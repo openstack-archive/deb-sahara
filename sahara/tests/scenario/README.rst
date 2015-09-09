@@ -20,14 +20,14 @@ or, if the file is a YAML Mako template:
 
 .. sourcecode:: console
 
-    $ tox -e scenario -- -V templatevars.ini etc/scenario/sahara-ci/scenario/vanilla-2.6.0.yaml.mako
+    $ tox -e scenario -- -V templatevars.ini etc/scenario/sahara-ci/scenario/vanilla-2.7.1.yaml.mako
 ..
 
 where templatevars.ini contains the values of the variables referenced
-by ``vanilla-2.6.0.yaml.mako``.
+by ``vanilla-2.7.1.yaml.mako``.
 
 For example, you want to run tests for the Vanilla plugin with the Hadoop
-version 2.6.0 In this case you should create ``templatevars.ini`` with
+version 2.7.1 In this case you should create ``templatevars.ini`` with
 the appropriate values (see the section `Variables and sahara-ci templates`_)
 and use the following tox env:
 
@@ -41,20 +41,20 @@ should use the several YAML and/or YAML Mako template files:
 
 .. sourcecode:: console
 
-    $ tox -e scenario -- -V templatevars.ini etc/scenario/sahara-ci/vanilla-1.2.1.yaml.mako etc/scenario/sahara-ci/vanilla-2.6.0.yaml.mako ...
+    $ tox -e scenario -- -V templatevars.ini etc/scenario/sahara-ci/vanilla-1.2.1.yaml.mako etc/scenario/sahara-ci/vanilla-2.7.1.yaml.mako ...
 ..
 
 Here are a few more examples.
 
 .. sourcecode:: console
 
-    $ tox -e scenario -- -V templatevars.ini etc/scenario/sahara-ci/credentials.yaml.mako etc/scenario/sahara-ci/vanilla-2.6.0.yaml.mako
+    $ tox -e scenario -- -V templatevars.ini etc/scenario/sahara-ci/credentials.yaml.mako etc/scenario/sahara-ci/vanilla-2.7.1.yaml.mako
 
 ..
 
-will run tests for Vanilla plugin with the Hadoop version 2.6.0 and credential
+will run tests for Vanilla plugin with the Hadoop version 2.7.1 and credential
 located in ``etc/scenario/sahara-ci/credential.yaml.mako``, replacing the variables
-included into ``vanilla-2.6.0.yaml.mako`` with the values defined into
+included into ``vanilla-2.7.1.yaml.mako`` with the values defined into
 ``templatevars.ini``.
 For more information about writing scenario YAML files, see the section
 section `How to write scenario files`_.
@@ -65,10 +65,23 @@ section `How to write scenario files`_.
 Template variables
 ------------------
 The variables used in the Mako template files are replaced with the values from a
-INI-style file, whose name is passed to the test runner through the ``-V`` parameter.
+config file, whose name is passed to the test runner through the ``-V`` parameter.
 
-Format of recording variables:
-    ``OS_USERNAME: admin``
+The format of the config file is an INI-style file, as accepted by the Python
+ConfigParser module. The key/values must be specified in the DEFAULT section.
+
+Example of template variables file:
+.. sourcecode:: ini
+
+    [DEFAULT]
+    OS_USERNAME: demo
+    OS_TENANT_NAME: demo
+    OS_PASSWORD: foobar
+    ...
+    network_type: neutron
+    ...
+
+..
 
 Variables and sahara-ci templates
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -116,22 +129,25 @@ Section "credential"
 
 This section is dictionary-type.
 
-+---------------------+--------+----------+------------------------------+-------------------------+
-|   Fields            |  Type  | Required |          Default             |          Value          |
-+=====================+========+==========+==============================+=========================+
-| os_username         | string | True     | admin                        | user name for login     |
-+---------------------+--------+----------+------------------------------+-------------------------+
-| os_password         | string | True     | nova                         | password name for login |
-+---------------------+--------+----------+------------------------------+-------------------------+
-| os_tenant           | string | True     | admin                        | tenant name             |
-+---------------------+--------+----------+------------------------------+-------------------------+
-| os_auth_url         | string | True     | `http://localhost:5000/v2.0` | url for login           |
-+---------------------+--------+----------+------------------------------+-------------------------+
-| sahara_service_type | string |          | data-processing              | service type for sahara |
-+---------------------+--------+----------+------------------------------+-------------------------+
-| sahara_url          | string |          | None                         | url of sahara           |
-+---------------------+--------+----------+------------------------------+-------------------------+
-
++---------------------+--------+----------+------------------------------+---------------------------------+
+|   Fields            |  Type  | Required |          Default             |               Value             |
++=====================+========+==========+==============================+=================================+
+| os_username         | string | True     | admin                        | user name for login             |
++---------------------+--------+----------+------------------------------+---------------------------------+
+| os_password         | string | True     | nova                         | password name for login         |
++---------------------+--------+----------+------------------------------+---------------------------------+
+| os_tenant           | string | True     | admin                        | tenant name                     |
++---------------------+--------+----------+------------------------------+---------------------------------+
+| os_auth_url         | string | True     | `http://localhost:5000/v2.0` | url for login                   |
++---------------------+--------+----------+------------------------------+---------------------------------+
+| sahara_service_type | string |          | data-processing              | service type for sahara         |
++---------------------+--------+----------+------------------------------+---------------------------------+
+| sahara_url          | string |          | None                         | url of sahara                   |
++---------------------+--------+----------+------------------------------+---------------------------------+
+| ssl_cert            | string |          | None                         | ssl certificate for all clients |
++---------------------+--------+----------+------------------------------+---------------------------------+
+| ssl_verify          | boolean|          | True                         | enable verify ssl for sahara    |
++---------------------+--------+----------+------------------------------+---------------------------------+
 
 Section "network"
 -----------------
@@ -194,35 +210,59 @@ Section "node_group_templates"
 
 This section is an array-type.
 
-+---------------------------+---------+----------+----------+---------------------------------------+
-|           Fields          |   Type  | Required | Default  |                  Value                |
-+===========================+=========+==========+==========+=======================================+
-| name                      | string  | True     |          | name for node group template          |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| flavor                    | string  | True     |          | name or id of flavor                  |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| node_processes            | string  | True     |          | name of process                       |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| description               | string  |          | Empty    | description for node group            |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| volumes_per_node          | integer |          |    0     | minimum 0                             |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| volumes_size              | integer |          |    0     | minimum 0                             |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| auto_security_group       | boolean |          | True     |                                       |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| security_group            | array   |          |          | security group                        |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| node_configs              | object  |          |          | name_of_config_section: config: value |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| availability_zone         | string  |          |          |                                       |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| volumes_availability_zone | string  |          |          |                                       |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| volume_type               | string  |          |          |                                       |
-+---------------------------+---------+----------+----------+---------------------------------------+
-| is_proxy_gateway          | boolean |          | False    |                                       |
-+---------------------------+---------+----------+----------+---------------------------------------+
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+|           Fields          |       Type       | Required | Default  |                      Value                       |
++===========================+==================+==========+==========+==================================================+
+| name                      | string           | True     |          | name for node group template                     |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| flavor                    | string or object | True     |          | name or id of flavor, or see `section "flavor"`_ |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| node_processes            | string           | True     |          | name of process                                  |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| description               | string           |          | Empty    | description for node group                       |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| volumes_per_node          | integer          |          |    0     | minimum 0                                        |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| volumes_size              | integer          |          |    0     | minimum 0                                        |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| auto_security_group       | boolean          |          | True     |                                                  |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| security_group            | array            |          |          | security group                                   |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| node_configs              | object           |          |          | name_of_config_section: config: value            |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| availability_zone         | string           |          |          |                                                  |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| volumes_availability_zone | string           |          |          |                                                  |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| volume_type               | string           |          |          |                                                  |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+| is_proxy_gateway          | boolean          |          | False    |                                                  |
++---------------------------+------------------+----------+----------+--------------------------------------------------+
+
+
+Section "flavor"
+----------------
+
+This section is an dictionary-type.
+
++----------------+---------+----------+---------------+--------------------------------+
+|     Fields     |  Type   | Required |    Default    |              Value             |
++================+=========+==========+===============+================================+
+| name           | string  |          | auto-generate | name for flavor                |
++----------------+---------+----------+---------------+--------------------------------+
+| id             | string  |          | auto-generate | id for flavor                  |
++----------------+---------+----------+---------------+--------------------------------+
+| vcpus          | integer |          |       1       | number of VCPUs for the flavor |
++----------------+---------+----------+---------------+--------------------------------+
+| ram            | integer |          |       1       | memory in MB for the flavor    |
++----------------+---------+----------+---------------+--------------------------------+
+| root_disk      | integer |          |       0       | size of local disk in GB       |
++----------------+---------+----------+---------------+--------------------------------+
+| ephemeral_disk | integer |          |       0       | ephemeral space in MB          |
++----------------+---------+----------+---------------+--------------------------------+
+| swap_disk      | integer |          |       0       | swap space in MB               |
++----------------+---------+----------+---------------+--------------------------------+
 
 
 Section "cluster_template"

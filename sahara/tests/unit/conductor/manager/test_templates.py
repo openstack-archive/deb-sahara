@@ -57,6 +57,8 @@ SAMPLE_NGT = {
     "is_proxy_gateway": False,
     "volume_local_to_instance": False,
     'use_autoconfig': True,
+    "is_public": False,
+    "is_protected": False
 }
 
 SAMPLE_CLT = {
@@ -82,6 +84,7 @@ SAMPLE_CLT = {
             "security_groups": None,
             "availability_zone": None,
             'use_autoconfig': True,
+            "shares": None
         },
         {
             "name": "ng_2",
@@ -92,12 +95,16 @@ SAMPLE_CLT = {
             "security_groups": ["group1", "group2"],
             "availability_zone": None,
             'use_autoconfig': True,
+            "shares": None
         }
 
     ],
     "anti_affinity": ["datanode"],
     "description": "my template",
-    "neutron_management_network": str(uuid.uuid4())
+    "neutron_management_network": str(uuid.uuid4()),
+    "shares": None,
+    "is_public": False,
+    "is_protected": False
 }
 
 
@@ -254,6 +261,47 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
         for prop, value in six.iteritems(updated_values):
             if value is None:
                 self.assertIsNone(updated_ngt[prop])
+
+    def test_ngt_update_delete_when_protected(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_NGT)
+        sample['is_protected'] = True
+        ngt = self.api.node_group_template_create(ctx, sample)
+        ngt_id = ngt["id"]
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.node_group_template_update(ctx, ngt_id,
+                                                {"name": "tmpl"})
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            self.api.node_group_template_destroy(ctx, ngt_id)
+
+        self.api.node_group_template_update(ctx, ngt_id,
+                                            {"name": "tmpl",
+                                             "is_protected": False})
+
+    def test_public_ngt_update_from_another_tenant(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_NGT)
+        sample['is_public'] = True
+        ngt = self.api.node_group_template_create(ctx, sample)
+        ngt_id = ngt["id"]
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.node_group_template_update(ctx, ngt_id,
+                                                {"name": "tmpl"})
+
+    def test_public_ngt_delete_from_another_tenant(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_NGT)
+        sample['is_public'] = True
+        ngt = self.api.node_group_template_create(ctx, sample)
+        ngt_id = ngt["id"]
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            self.api.node_group_template_destroy(ctx, ngt_id)
 
 
 class ClusterTemplates(test_base.ConductorManagerTestCase):
@@ -452,3 +500,51 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
                     self.assertEqual([], updated_clt[prop])
                 else:
                     self.assertIsNone(updated_clt[prop])
+
+    def test_clt_update_delete_when_protected(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_CLT)
+        sample['is_protected'] = True
+        clt = self.api.cluster_template_create(ctx, sample)
+        clt_id = clt["id"]
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.cluster_template_update(ctx, clt_id, {"name": "tmpl"})
+            except ex.UpdateFailedException as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.cluster_template_destroy(ctx, clt_id)
+            except ex.DeletionFailed as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        self.api.cluster_template_update(ctx, clt_id,
+                                         {"name": "tmpl",
+                                          "is_protected": False})
+
+    def test_public_clt_update_delete_from_another_tenant(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_CLT)
+        sample['is_public'] = True
+        clt = self.api.cluster_template_create(ctx, sample)
+        clt_id = clt["id"]
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.cluster_template_update(ctx, clt_id,
+                                                 {"name": "tmpl"})
+            except ex.UpdateFailedException as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.cluster_template_destroy(ctx, clt_id)
+            except ex.DeletionFailed as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e

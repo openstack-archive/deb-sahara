@@ -386,6 +386,7 @@ def job_create(context, values):
     return IMPL.job_create(context, values)
 
 
+@to_dict
 def job_update(context, job, values):
     """Update a Job from the values dictionary."""
     return IMPL.job_update(context, job, values)
@@ -460,6 +461,13 @@ def job_binary_internal_get_raw_data(context, job_binary_internal_id):
     """Return the binary data field from the specified JobBinaryInternal."""
     return IMPL.job_binary_internal_get_raw_data(context,
                                                  job_binary_internal_id)
+
+
+@to_dict
+def job_binary_internal_update(context, job_binary_internal, values):
+    """Update the JobBinaryInternal with the provided values"""
+    return IMPL.job_binary_internal_update(
+        context, job_binary_internal, values)
 
 # Events ops
 

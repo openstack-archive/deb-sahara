@@ -28,6 +28,7 @@ def validate_cluster_creating(cluster):
         raise ex.InvalidComponentCountException('CLOUDERA_MANAGER',
                                                 1, mng_count)
 
+    zk_count = _get_inst_count(cluster, 'ZOOKEEPER_SERVER')
     nn_count = _get_inst_count(cluster, 'HDFS_NAMENODE')
     if nn_count != 1:
         raise ex.InvalidComponentCountException('HDFS_NAMENODE', 1, nn_count)
@@ -44,10 +45,49 @@ def validate_cluster_creating(cluster):
             'HDFS_DATANODE', replicas, dn_count,
             _('Number of datanodes must be not less than dfs_replication.'))
 
+    jn_count = _get_inst_count(cluster, 'HDFS_JOURNALNODE')
+    if jn_count > 0:
+        if jn_count < 3:
+            raise ex.InvalidComponentCountException('HDFS_JOURNALNODE',
+                                                    _('not less than 3'),
+                                                    jn_count)
+        if not jn_count % 2:
+            raise ex.InvalidComponentCountException('HDFS_JOURNALNODE',
+                                                    _('be odd'), jn_count)
+        if zk_count < 1:
+            raise ex.RequiredServiceMissingException('ZOOKEEPER',
+                                                     required_by='HDFS HA')
+        if 'HDFS_SECONDARYNAMENODE' not in _get_anti_affinity(cluster):
+            raise ex.NameNodeHAConfigurationError(_('HDFS_SECONDARYNAMENODE '
+                                                    'should be enabled '
+                                                    'in anti_affinity.'))
+        if 'HDFS_NAMENODE' not in _get_anti_affinity(cluster):
+            raise ex.NameNodeHAConfigurationError(_('HDFS_NAMENODE '
+                                                    'should be enabled '
+                                                    'in anti_affinity.'))
+
     rm_count = _get_inst_count(cluster, 'YARN_RESOURCEMANAGER')
     if rm_count > 1:
         raise ex.InvalidComponentCountException('YARN_RESOURCEMANAGER',
                                                 _('0 or 1'), rm_count)
+
+    stdb_rm_count = _get_inst_count(cluster, 'YARN_STANDBYRM')
+    if stdb_rm_count > 1:
+        raise ex.InvalidComponentCountException('YARN_STANDBYRM',
+                                                _('0 or 1'), stdb_rm_count)
+    if stdb_rm_count > 0:
+        if rm_count < 1:
+            raise ex.RequiredServiceMissingException('YARN_RESOURCEMANAGER',
+                                                     required_by='RM HA')
+        if zk_count < 1:
+            raise ex.RequiredServiceMissingException('ZOOKEEPER',
+                                                     required_by='RM HA')
+        if 'YARN_RESOURCEMANAGER' not in _get_anti_affinity(cluster):
+            raise ex.ResourceManagerHAConfigurationError(
+                _('YARN_RESOURCEMANAGER should be enabled in anti_affinity.'))
+        if 'YARN_STANDBYRM' not in _get_anti_affinity(cluster):
+            raise ex.ResourceManagerHAConfigurationError(
+                _('YARN_STANDBYRM should be enabled in anti_affinity.'))
 
     hs_count = _get_inst_count(cluster, 'YARN_JOBHISTORY')
     if hs_count > 1:
@@ -125,7 +165,6 @@ def validate_cluster_creating(cluster):
 
     hbm_count = _get_inst_count(cluster, 'HBASE_MASTER')
     hbr_count = _get_inst_count(cluster, 'HBASE_REGIONSERVER')
-    zk_count = _get_inst_count(cluster, 'ZOOKEEPER_SERVER')
 
     if hbm_count >= 1:
         if zk_count < 1:
@@ -205,6 +244,12 @@ def validate_cluster_creating(cluster):
         raise ex.InvalidComponentCountException('IMPALA_STATESTORE',
                                                 _('0 or 1'), iss_count)
     if ics_count == 1:
+        datanodes = set(u.get_instances(cluster, "HDFS_DATANODE"))
+        impalads = set(u.get_instances(cluster, "IMPALAD"))
+        if len(datanodes ^ impalads) > 0:
+            raise ex.InvalidClusterTopology(
+                _("IMPALAD must be installed on every HDFS_DATANODE"))
+
         if iss_count != 1:
             raise ex.RequiredServiceMissingException(
                 'IMPALA_STATESTORE', required_by='IMPALA')
@@ -271,3 +316,7 @@ def _get_scalable_processes():
 
 def _get_inst_count(cluster, process):
     return sum([ng.count for ng in u.get_node_groups(cluster, process)])
+
+
+def _get_anti_affinity(cluster):
+    return cluster.anti_affinity

@@ -22,7 +22,6 @@ import sahara.plugins.mapr.domain.service as s
 import sahara.plugins.mapr.util.validation_utils as vu
 import sahara.utils.files as files
 
-
 LOG = logging.getLogger(__name__)
 
 HIVE_METASTORE = np.NodeProcess(
@@ -113,16 +112,16 @@ class Hive(s.Service):
 
 
 @six.add_metaclass(s.Single)
-class HiveV012(Hive):
-    def __init__(self):
-        super(HiveV012, self).__init__()
-        self._version = '0.12'
-        self._dependencies = [('mapr-hive', self.version)]
-
-
-@six.add_metaclass(s.Single)
 class HiveV013(Hive):
     def __init__(self):
         super(HiveV013, self).__init__()
         self._version = '0.13'
         self._dependencies = [('mapr-hive', self.version)]
+
+
+@six.add_metaclass(s.Single)
+class HiveV10(Hive):
+    def __init__(self):
+        super(HiveV10, self).__init__()
+        self._version = "1.0"
+        self._dependencies = [("mapr-hive", self.version)]

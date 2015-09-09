@@ -11,7 +11,6 @@
 # install_sahara
 # install_python_saharaclient
 # configure_sahara
-# sahara_register_images
 # start_sahara
 # stop_sahara
 # cleanup_sahara
@@ -83,6 +82,11 @@ function configure_sahara {
 
     configure_auth_token_middleware $SAHARA_CONF_FILE sahara $SAHARA_AUTH_CACHE_DIR
 
+    # Set admin user parameters needed for trusts creation
+    iniset $SAHARA_CONF_FILE keystone_authtoken admin_tenant_name $SERVICE_TENANT_NAME
+    iniset $SAHARA_CONF_FILE keystone_authtoken admin_user sahara
+    iniset $SAHARA_CONF_FILE keystone_authtoken admin_password $SERVICE_PASSWORD
+
     iniset_rpc_backend sahara $SAHARA_CONF_FILE DEFAULT
 
     # Set configuration to send notifications
@@ -109,7 +113,7 @@ function configure_sahara {
         iniset $SAHARA_CONF_FILE DEFAULT use_neutron false
     fi
 
-    if is_service_enabled heat; then
+    if is_service_enabled heat && [ "$SAHARA_INFRA_ENGINE" == "heat" ]; then
         iniset $SAHARA_CONF_FILE DEFAULT infrastructure_engine heat
 
         if is_ssl_enabled_service "heat" || is_service_enabled tls-proxy; then
@@ -172,17 +176,6 @@ function install_python_saharaclient {
     fi
 }
 
-# sahara_register_images() - Registers images in sahara image registry
-function sahara_register_images {
-    if is_service_enabled heat && [[ ! -z "$HEAT_CFN_IMAGE_URL" ]]; then
-        # Register heat image for Fake plugin
-        local fake_plugin_properties="--property _sahara_tag_0.1=True"
-        fake_plugin_properties+=" --property _sahara_tag_fake=True"
-        fake_plugin_properties+=" --property _sahara_username=fedora"
-        openstack --os-url $GLANCE_SERVICE_PROTOCOL://$GLANCE_HOSTPORT image set $(basename "$HEAT_CFN_IMAGE_URL" ".qcow2") $fake_plugin_properties
-    fi
-}
-
 # start_sahara() - Start running processes, including screen
 function start_sahara {
     local service_port=$SAHARA_SERVICE_PORT
@@ -228,7 +221,6 @@ if is_service_enabled sahara; then
         create_sahara_accounts
     elif [[ "$1" == "stack" && "$2" == "extra" ]]; then
         echo_summary "Initializing sahara"
-        sahara_register_images
         start_sahara
     fi
 

@@ -35,7 +35,9 @@ SAMPLE_DATA_SOURCE = {
     "credentials": {
         "user": "test",
         "password": "123"
-    }
+    },
+    "is_public": False,
+    "is_protected": False
 }
 
 SAMPLE_JOB = {
@@ -43,7 +45,9 @@ SAMPLE_JOB = {
     "name": "job_test",
     "description": "test_desc",
     "type": edp.JOB_TYPE_PIG,
-    "mains": []
+    "mains": [],
+    "is_public": False,
+    "is_protected": False
 }
 
 SAMPLE_JOB_EXECUTION = {
@@ -53,7 +57,9 @@ SAMPLE_JOB_EXECUTION = {
     "input_id": "undefined",
     "output_id": "undefined",
     "start_time": datetime.datetime.now(),
-    "cluster_id": None
+    "cluster_id": None,
+    "is_public": False,
+    "is_protected": False
 }
 
 SAMPLE_CONF_JOB_EXECUTION = {
@@ -75,7 +81,9 @@ BINARY_DATA = b"vU}\x97\x1c\xdf\xa686\x08\xf2\tf\x0b\xb1}"
 SAMPLE_JOB_BINARY_INTERNAL = {
     "tenant_id": "test_tenant",
     "name": "job_test",
-    "data": BINARY_DATA
+    "data": BINARY_DATA,
+    "is_public": False,
+    "is_protected": False
 }
 
 
@@ -84,6 +92,8 @@ SAMPLE_JOB_BINARY = {
     "name": "job_binary_test",
     "description": "test_dec",
     "url": "internal-db://test_binary",
+    "is_public": False,
+    "is_protected": False
 }
 
 SAMPLE_JOB_BINARY_UPDATE = {
@@ -261,6 +271,52 @@ class DataSourceTest(test_base.ConductorManagerTestCase):
         new_info = {"status": edp.JOB_STATUS_PENDING}
         self.api.job_execution_update(context, job_ex_id, {'info': new_info})
 
+    def test_ds_update_delete_when_protected(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_DATA_SOURCE)
+        sample['is_protected'] = True
+        ds = self.api.data_source_create(ctx, sample)
+        ds_id = ds["id"]
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.data_source_update(ctx, ds_id, {"name": "ds"})
+            except ex.UpdateFailedException as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.data_source_destroy(ctx, ds_id)
+            except ex.DeletionFailed as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        self.api.data_source_update(ctx, ds_id,
+                                    {"name": "ds", "is_protected": False})
+
+    def test_public_ds_update_delete_from_another_tenant(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_DATA_SOURCE)
+        sample['is_public'] = True
+        ds = self.api.data_source_create(ctx, sample)
+        ds_id = ds["id"]
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.data_source_update(ctx, ds_id, {"name": "ds"})
+            except ex.UpdateFailedException as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.data_source_destroy(ctx, ds_id)
+            except ex.DeletionFailed as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
+
 
 class JobExecutionTest(test_base.ConductorManagerTestCase):
     def test_crud_operation_create_list_delete_update(self):
@@ -327,6 +383,21 @@ class JobExecutionTest(test_base.ConductorManagerTestCase):
             'conf3': 'value_je'
         }
         self.assertEqual(configs, job_ex['job_configs'])
+
+    def test_null_data_sources(self):
+        ctx = context.ctx()
+        job = self.api.job_create(ctx, SAMPLE_JOB)
+
+        SAMPLE_CONF_JOB_EXECUTION['job_id'] = job['id']
+        SAMPLE_CONF_JOB_EXECUTION['input_id'] = None
+        SAMPLE_CONF_JOB_EXECUTION['output_id'] = None
+
+        id = self.api.job_execution_create(ctx,
+                                           SAMPLE_CONF_JOB_EXECUTION)['id']
+        job_exec = self.api.job_execution_get(ctx, id)
+
+        self.assertIsNone(job_exec['input_id'])
+        self.assertIsNone(job_exec['output_id'])
 
     def test_deletion_constraints_on_data_and_jobs(self):
         ctx = context.ctx()
@@ -461,6 +532,59 @@ class JobExecutionTest(test_base.ConductorManagerTestCase):
         lst = self.api.job_execution_get_all(ctx, **kwargs)
         self.assertEqual(0, len(lst))
 
+    def test_je_update_when_protected(self):
+        ctx = context.ctx()
+        job = self.api.job_create(ctx, SAMPLE_JOB)
+        ds_input = self.api.data_source_create(ctx, SAMPLE_DATA_SOURCE)
+        SAMPLE_DATA_OUTPUT = copy.deepcopy(SAMPLE_DATA_SOURCE)
+        SAMPLE_DATA_OUTPUT['name'] = 'output'
+        ds_output = self.api.data_source_create(ctx, SAMPLE_DATA_OUTPUT)
+
+        sample = copy.deepcopy(SAMPLE_JOB_EXECUTION)
+        sample['is_protected'] = True
+        sample['job_id'] = job['id']
+        sample['input_id'] = ds_input['id']
+        sample['output_id'] = ds_output['id']
+
+        je = self.api.job_execution_create(ctx, sample)
+        je_id = je["id"]
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.job_execution_update(ctx, je_id, {"is_public": True})
+            except ex.UpdateFailedException as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        self.api.job_execution_update(ctx, je_id, {"is_protected": False,
+                                                   "is_public": True})
+
+    def test_public_je_update_from_another_tenant(self):
+        ctx = context.ctx()
+        job = self.api.job_create(ctx, SAMPLE_JOB)
+        ds_input = self.api.data_source_create(ctx, SAMPLE_DATA_SOURCE)
+        SAMPLE_DATA_OUTPUT = copy.deepcopy(SAMPLE_DATA_SOURCE)
+        SAMPLE_DATA_OUTPUT['name'] = 'output'
+        ds_output = self.api.data_source_create(ctx, SAMPLE_DATA_OUTPUT)
+
+        sample = copy.deepcopy(SAMPLE_JOB_EXECUTION)
+        sample['is_public'] = True
+        sample['job_id'] = job['id']
+        sample['input_id'] = ds_input['id']
+        sample['output_id'] = ds_output['id']
+
+        je = self.api.job_execution_create(ctx, sample)
+        je_id = je["id"]
+
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.job_execution_update(ctx, je_id, {"is_public": True})
+            except ex.UpdateFailedException as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
+
 
 class JobTest(test_base.ConductorManagerTestCase):
     def __init__(self, *args, **kwargs):
@@ -525,6 +649,52 @@ class JobTest(test_base.ConductorManagerTestCase):
                           self.api.job_get_all,
                           ctx, **{'badfield': 'somevalue'})
 
+    def test_job_update_delete_when_protected(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_JOB)
+        sample['is_protected'] = True
+        job = self.api.job_create(ctx, sample)
+        job_id = job["id"]
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.job_update(ctx, job_id, {"name": "job"})
+            except ex.UpdateFailedException as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.job_destroy(ctx, job_id)
+            except ex.DeletionFailed as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        self.api.job_update(ctx, job_id, {"name": "job",
+                                          "is_protected": False})
+
+    def test_public_job_update_delete_from_another_tenant(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_JOB)
+        sample['is_public'] = True
+        job = self.api.job_create(ctx, sample)
+        job_id = job["id"]
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.job_update(ctx, job_id, {"name": "job"})
+            except ex.UpdateFailedException as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.job_destroy(ctx, job_id)
+            except ex.DeletionFailed as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
+
 
 class JobBinaryInternalTest(test_base.ConductorManagerTestCase):
     def __init__(self, *args, **kwargs):
@@ -533,7 +703,7 @@ class JobBinaryInternalTest(test_base.ConductorManagerTestCase):
                 lambda: SAMPLE_JOB_BINARY_INTERNAL
             ], *args, **kwargs)
 
-    def test_crud_operation_create_list_delete(self):
+    def test_crud_operation_create_list_delete_update(self):
         ctx = context.ctx()
 
         self.api.job_binary_internal_create(ctx, SAMPLE_JOB_BINARY_INTERNAL)
@@ -542,6 +712,12 @@ class JobBinaryInternalTest(test_base.ConductorManagerTestCase):
         self.assertEqual(1, len(lst))
 
         job_bin_int_id = lst[0]['id']
+
+        update_jbi = self.api.job_binary_internal_update(
+            ctx, job_bin_int_id, {'name': 'newname'})
+
+        self.assertEqual('newname', update_jbi['name'])
+
         self.api.job_binary_internal_destroy(ctx, job_bin_int_id)
 
         lst = self.api.job_binary_internal_get_all(ctx)
@@ -612,6 +788,55 @@ class JobBinaryInternalTest(test_base.ConductorManagerTestCase):
         self.assertRaises(sa_exc.InvalidRequestError,
                           self.api.job_binary_internal_get_all,
                           ctx, **{'badfield': 'junk'})
+
+    def test_jbi_update_delete_when_protected(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_JOB_BINARY_INTERNAL)
+        sample['is_protected'] = True
+        jbi = self.api.job_binary_internal_create(ctx, sample)
+        jbi_id = jbi["id"]
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.job_binary_internal_update(ctx, jbi_id,
+                                                    {"name": "jbi"})
+            except ex.UpdateFailedException as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.job_binary_internal_destroy(ctx, jbi_id)
+            except ex.DeletionFailed as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        self.api.job_binary_internal_update(ctx, jbi_id,
+                                            {"name": "jbi",
+                                             "is_protected": False})
+
+    def test_public_jbi_update_delete_from_another_tenant(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_JOB_BINARY_INTERNAL)
+        sample['is_public'] = True
+        jbi = self.api.job_binary_internal_create(ctx, sample)
+        jbi_id = jbi["id"]
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.job_binary_internal_update(ctx, jbi_id,
+                                                    {"name": "jbi"})
+            except ex.UpdateFailedException as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.job_binary_internal_destroy(ctx, jbi_id)
+            except ex.DeletionFailed as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
 
 
 class JobBinaryTest(test_base.ConductorManagerTestCase):
@@ -746,3 +971,49 @@ class JobBinaryTest(test_base.ConductorManagerTestCase):
         job_ex_id = lst[0]["id"]
         new_info = {"status": edp.JOB_STATUS_PENDING}
         self.api.job_execution_update(ctx, job_ex_id, {"info": new_info})
+
+    def test_jb_update_delete_when_protected(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_JOB_BINARY)
+        sample['is_protected'] = True
+        jb = self.api.job_binary_create(ctx, sample)
+        jb_id = jb["id"]
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.job_binary_update(ctx, jb_id, {"name": "jb"})
+            except ex.UpdateFailedException as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.job_binary_destroy(ctx, jb_id)
+            except ex.DeletionFailed as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        self.api.job_binary_update(ctx, jb_id, {"name": "jb",
+                                                "is_protected": False})
+
+    def test_public_jb_update_delete_from_another_tenant(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_JOB_BINARY)
+        sample['is_public'] = True
+        jb = self.api.job_binary_create(ctx, sample)
+        jb_id = jb["id"]
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.job_binary_update(ctx, jb_id, {"name": "jb"})
+            except ex.UpdateFailedException as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e
+
+        with testtools.ExpectedException(ex.DeletionFailed):
+            try:
+                self.api.job_binary_destroy(ctx, jb_id)
+            except ex.DeletionFailed as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e

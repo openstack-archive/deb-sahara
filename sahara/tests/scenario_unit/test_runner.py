@@ -34,8 +34,8 @@ class RunnerUnitTest(testtools.TestCase):
             "clusters": [
                 {
                     "plugin_name": "vanilla",
-                    "plugin_version": "2.6.0",
-                    "image": "sahara-vanilla-2.6.0-ubuntu-14.04"
+                    "plugin_version": "2.7.1",
+                    "image": "sahara-vanilla-2.7.1-ubuntu-14.04"
                 }],
             }
 
@@ -46,7 +46,9 @@ class RunnerUnitTest(testtools.TestCase):
                 "sahara_url": None,
                 "sahara_service_type": "data-processing",
                 "os_password": "nova",
-                "os_tenant": "admin"
+                "os_tenant": "admin",
+                "ssl_cert": None,
+                "ssl_verify": True
             }
         }
 
@@ -62,12 +64,12 @@ class RunnerUnitTest(testtools.TestCase):
         expected_default_cluster = {
             "clusters": [
                 {
-                    "image": "sahara-vanilla-2.6.0-ubuntu-14.04",
+                    "image": "sahara-vanilla-2.7.1-ubuntu-14.04",
                     "edp_jobs_flow": None,
-                    "class_name": "vanilla2_6_0",
+                    "class_name": "vanilla2_7_1",
                     "plugin_name": "vanilla",
                     "scenario": ['run_jobs', 'scale', 'run_jobs'],
-                    "plugin_version": "2.6.0",
+                    "plugin_version": "2.7.1",
                     "retain_resources": False,
                 }],
         }
@@ -87,7 +89,8 @@ class RunnerUnitTest(testtools.TestCase):
                 "os_auth_url": "http://127.0.0.1:5000/v2.0",
                 "sahara_url": "http://127.0.0.1",
                 "os_password": "changed_nova",
-                "os_tenant": "changed_admin"
+                "os_tenant": "changed_admin",
+                "ssl_cert": "/etc/tests/cert.crt"
             },
             "network": {
                 "type": "neutron",
@@ -98,8 +101,8 @@ class RunnerUnitTest(testtools.TestCase):
             "clusters": [
                 {
                     "plugin_name": "vanilla",
-                    "plugin_version": "2.6.0",
-                    "image": "sahara-vanilla-2.6.0-ubuntu-14.04",
+                    "plugin_version": "2.7.1",
+                    "image": "sahara-vanilla-2.7.1-ubuntu-14.04",
                     "edp_jobs_flow": "test_flow",
                     "retain_resources": True
                 }],
@@ -145,7 +148,9 @@ class RunnerUnitTest(testtools.TestCase):
                 "sahara_url": "http://127.0.0.1",
                 "os_password": "changed_nova",
                 "os_tenant": "changed_admin",
-                "sahara_service_type": "data-processing"
+                "sahara_service_type": "data-processing",
+                "ssl_cert": "/etc/tests/cert.crt",
+                "ssl_verify": True
             },
         }
 
@@ -162,8 +167,8 @@ class RunnerUnitTest(testtools.TestCase):
             "clusters": [
                 {
                     "plugin_name": "vanilla",
-                    "plugin_version": "2.6.0",
-                    "image": "sahara-vanilla-2.6.0-ubuntu-14.04",
+                    "plugin_version": "2.7.1",
+                    "image": "sahara-vanilla-2.7.1-ubuntu-14.04",
                     "retain_resources": True,
                     'edp_jobs_flow': [
                         {
@@ -197,7 +202,7 @@ class RunnerUnitTest(testtools.TestCase):
                         }
                     ],
                     "scenario": ['run_jobs', 'scale', 'run_jobs'],
-                    "class_name": "vanilla2_6_0"
+                    "class_name": "vanilla2_7_1"
                 }],
         }
 
@@ -214,14 +219,14 @@ class RunnerUnitTest(testtools.TestCase):
     @mock.patch('os.system', return_value=None)
     def test_runner_main(self, mock_os, mock_sys):
         sys.argv = ['sahara/tests/scenario/runner.py',
-                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml']
+                    'sahara/tests/scenario_unit/vanilla2_7_1.yaml']
         runner.main()
 
     @mock.patch('sys.exit', return_value=None)
     @mock.patch('os.system', return_value=None)
     def test_runner_template_missing_varfile(self, mock_os, mock_sys):
         sys.argv = ['sahara/tests/scenario/runner.py',
-                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml.mako']
+                    'sahara/tests/scenario_unit/vanilla2_7_1.yaml.mako']
         self.assertRaises(NameError, runner.main)
 
     @mock.patch('sys.exit', return_value=None)
@@ -230,7 +235,7 @@ class RunnerUnitTest(testtools.TestCase):
         sys.argv = ['sahara/tests/scenario/runner.py',
                     '-V',
                     'sahara/tests/scenario_unit/templatevars_nodefault.ini',
-                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml.mako']
+                    'sahara/tests/scenario_unit/vanilla2_7_1.yaml.mako']
         self.assertRaises(NameError, runner.main)
 
     @mock.patch('sys.exit', return_value=None)
@@ -239,7 +244,7 @@ class RunnerUnitTest(testtools.TestCase):
         sys.argv = ['sahara/tests/scenario/runner.py',
                     '-V',
                     'sahara/tests/scenario_unit/templatevars_incomplete.ini',
-                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml.mako']
+                    'sahara/tests/scenario_unit/vanilla2_7_1.yaml.mako']
         self.assertRaises(NameError, runner.main)
 
     @mock.patch('sys.exit', return_value=None)
@@ -248,5 +253,5 @@ class RunnerUnitTest(testtools.TestCase):
         sys.argv = ['sahara/tests/scenario/runner.py',
                     '-V',
                     'sahara/tests/scenario_unit/templatevars_complete.ini',
-                    'sahara/tests/scenario_unit/vanilla2_6_0.yaml.mako']
+                    'sahara/tests/scenario_unit/vanilla2_7_1.yaml.mako']
         runner.main()

@@ -21,9 +21,9 @@ from oslo_serialization import jsonutils as json
 import testtools
 
 from sahara.service.validations.edp import data_source_schema
-from sahara.service.validations.edp import job
 from sahara.service.validations.edp import job_binary_schema
-from sahara.service.validations.edp import job_execution
+from sahara.service.validations.edp import job_execution_schema
+from sahara.service.validations.edp import job_schema
 from sahara.utils import api_validator
 
 
@@ -46,7 +46,7 @@ class TestJSONApiExamplesV11(testtools.TestCase):
         self._test(schema, path, formatter)
 
     def test_jobs(self):
-        schema = job.JOB_SCHEMA
+        schema = job_schema.JOB_SCHEMA
         path = self.EXAMPLES_PATH % 'jobs'
         formatter = self._formatter("job_binary_id",
                                     "udf_binary_id",
@@ -55,7 +55,7 @@ class TestJSONApiExamplesV11(testtools.TestCase):
         self._test(schema, path, formatter)
 
     def test_job_executions(self):
-        schema = job_execution.JOB_EXEC_SCHEMA
+        schema = job_execution_schema.JOB_EXEC_SCHEMA
         path = self.EXAMPLES_PATH % 'job-executions'
         formatter = self._formatter("cluster_id",
                                     "input_source_id",

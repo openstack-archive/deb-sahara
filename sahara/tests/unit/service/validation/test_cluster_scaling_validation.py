@@ -22,6 +22,7 @@ from sahara.plugins.vanilla import plugin
 from sahara.service import api
 import sahara.service.validation as v
 from sahara.service.validations import clusters_scaling as c_s
+from sahara.service.validations import clusters_schema as c_schema
 from sahara.tests.unit.service.validation import utils as u
 from sahara.tests.unit import testutils as tu
 
@@ -39,6 +40,7 @@ class TestScalingValidation(u.ValidationTestCase):
         self._create_object_fun = mock.Mock()
         self.duplicates_detected = ("Duplicates in node group names are"
                                     " detected: ['a']")
+        self.setup_context(tenant_id='tenant1')
 
     @mock.patch('sahara.service.api.get_cluster')
     @mock.patch('sahara.plugins.base.PluginManager.get_plugin')
@@ -110,7 +112,7 @@ class TestScalingValidation(u.ValidationTestCase):
     def test_check_cluster_scaling_add_ng(self, ops):
         ops.get_engine_type_and_version.return_value = "direct.1.1"
         ng1 = tu.make_ng_dict('ng', '42', ['namenode'], 1)
-        cluster = tu.create_cluster("test-cluster", "tenant", "vanilla",
+        cluster = tu.create_cluster("test-cluster", "tenant1", "vanilla",
                                     "1.2.1", [ng1], status='Active',
                                     id='12321')
         data = {
@@ -176,7 +178,7 @@ class TestScalingValidation(u.ValidationTestCase):
         m_func = mock.Mock()
         m_func.__name__ = "m_func"
         req_data.return_value = data
-        v.validate(c_s.CLUSTER_SCALING_SCHEMA,
+        v.validate(c_schema.CLUSTER_SCALING_SCHEMA,
                    self._create_object_fun)(m_func)(data=data,
                                                     cluster_id='42')
 
@@ -328,6 +330,7 @@ class TestScalingValidation(u.ValidationTestCase):
 
     @mock.patch("sahara.service.api.OPS")
     def test_cluster_scaling_v_right_data(self, ops):
+        self.setup_context(tenant_id='t')
         ops.get_engine_type_and_version.return_value = "direct.1.1"
         self._create_object_fun = c_s.check_cluster_scaling
 

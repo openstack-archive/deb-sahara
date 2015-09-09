@@ -5,10 +5,6 @@ if [ "$1" = "Ubuntu" ]; then
 deb %(ubuntu_mapr_base_repo)s
 deb %(ubuntu_mapr_ecosystem_repo)s
 EOF
-    cat >> /etc/apt/sources.list.d/security_repo.list << EOF
-deb http://security.ubuntu.com/ubuntu precise-security main
-deb http://security.ubuntu.com/ubuntu lucid-security main
-EOF
     sudo apt-get install -y --force-yes wget
     wget -O - http://package.mapr.com/releases/pub/maprgpg.key | sudo apt-key add -
     sudo apt-get update
@@ -40,7 +36,6 @@ EOF
         echo "Unsupported distribution version"
         exit 1
     fi
-    rpm -q libevent || rpm -Uvh ftp://rpmfind.net/linux/centos/6.6/os/x86_64/Packages/libevent-1.4.13-4.el6.x86_64.rpm
 else
     echo "Unknown distribution"
     exit 1

@@ -14,6 +14,7 @@ recursive-include sahara/locale *
 recursive-include sahara/db/migration/alembic_migrations *
 
 recursive-include sahara/plugins/default_templates *.json
+include sahara/plugins/ambari/resources/*.json
 include sahara/plugins/default_templates/template.conf
 include sahara/plugins/cdh/v5/resources/cdh_config.py
 include sahara/plugins/cdh/v5/resources/*.sh
@@ -33,8 +34,8 @@ include sahara/plugins/vanilla/hadoop2/resources/*.template
 include sahara/plugins/vanilla/v1_2_1/resources/*.sh
 include sahara/plugins/vanilla/v1_2_1/resources/*.sql
 include sahara/plugins/vanilla/v1_2_1/resources/*.xml
-include sahara/plugins/vanilla/v2_4_1/resources/*.xml
 include sahara/plugins/vanilla/v2_6_0/resources/*.xml
+include sahara/plugins/vanilla/v2_7_1/resources/*.xml
 include sahara/plugins/hdp/versions/version_1_3_2/resources/*.template
 include sahara/plugins/hdp/versions/version_1_3_2/resources/*.json
 include sahara/plugins/hdp/versions/version_1_3_2/resources/*.sh

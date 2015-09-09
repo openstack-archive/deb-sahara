@@ -38,6 +38,7 @@ SAMPLE_CLUSTER = {
             "count": 1,
             "security_groups": None,
             'use_autoconfig': True,
+            "shares": None
         },
         {
             "name": "ng_2",
@@ -46,6 +47,7 @@ SAMPLE_CLUSTER = {
             "count": 3,
             "security_groups": ["group1", "group2"],
             'use_autoconfig': True,
+            "shares": None
         }
     ],
     "cluster_configs": {
@@ -56,6 +58,8 @@ SAMPLE_CLUSTER = {
             "config_1": "value_1"
         }
     },
+    "is_public": False,
+    "is_protected": False
 }
 
 
@@ -69,7 +73,7 @@ class ClusterTest(test_base.ConductorManagerTestCase):
                 lambda: manager.INSTANCE_DEFAULTS,
             ], *args, **kwargs)
 
-    def test_cluster_create_list_delete(self):
+    def test_cluster_create_list_update_delete(self):
         ctx = context.ctx()
         cluster_db_obj = self.api.cluster_create(ctx, SAMPLE_CLUSTER)
         self.assertIsInstance(cluster_db_obj, dict)
@@ -227,6 +231,14 @@ class ClusterTest(test_base.ConductorManagerTestCase):
         }
         return self.api.instance_add(ctx, ng_id, instance)
 
+    def _add_instance_ipv6(self, ctx, ng_id, instance_name):
+        instance = {
+            "instance_name": instance_name,
+            "internal_ip": "FE80:0000:0000:0000:0202:B3FF:FE1E:8329",
+            "management_ip": "FE80:0000:0000:0000:0202:B3FF:FE1E:8329"
+        }
+        return self.api.instance_add(ctx, ng_id, instance)
+
     def test_add_instance(self):
         ctx = context.ctx()
         cluster_db_obj = self.api.cluster_create(ctx, SAMPLE_CLUSTER)
@@ -247,6 +259,27 @@ class ClusterTest(test_base.ConductorManagerTestCase):
             self.assertEqual("additional_vm",
                              ng["instances"][0]["instance_name"])
 
+    def test_add_instance_ipv6(self):
+        ctx = context.ctx()
+        cluster_db_obj = self.api.cluster_create(ctx, SAMPLE_CLUSTER)
+        _id = cluster_db_obj["id"]
+
+        ng_id = cluster_db_obj["node_groups"][-1]["id"]
+        count = cluster_db_obj["node_groups"][-1]["count"]
+
+        instance_name = "additional_vm_ipv6"
+        self._add_instance_ipv6(ctx, ng_id, instance_name)
+
+        cluster_db_obj = self.api.cluster_get(ctx, _id)
+        for ng in cluster_db_obj["node_groups"]:
+            if ng["id"] != ng_id:
+                continue
+
+            ng.pop('tenant_id')
+            self.assertEqual(count + 1, ng["count"])
+            self.assertEqual(instance_name,
+                             ng["instances"][0]["instance_name"])
+
     def test_update_instance(self):
         ctx = context.ctx()
         cluster_db_obj = self.api.cluster_create(ctx, SAMPLE_CLUSTER)
@@ -265,6 +298,25 @@ class ClusterTest(test_base.ConductorManagerTestCase):
                 continue
 
             self.assertEqual("1.1.1.1", ng["instances"][0]["management_ip"])
+
+    def test_update_instance_ipv6(self):
+        ctx = context.ctx()
+        ip = "FE80:0000:0000:0000:0202:B3FF:FE1E:8329"
+        cluster_db_obj = self.api.cluster_create(ctx, SAMPLE_CLUSTER)
+        _id = cluster_db_obj["id"]
+
+        ng_id = cluster_db_obj["node_groups"][-1]["id"]
+
+        instance_id = self._add_instance(ctx, ng_id)
+
+        self.api.instance_update(ctx, instance_id, {"management_ip": ip})
+
+        cluster_db_obj = self.api.cluster_get(ctx, _id)
+        for ng in cluster_db_obj["node_groups"]:
+            if ng["id"] != ng_id:
+                continue
+
+            self.assertEqual(ip, ng["instances"][0]["management_ip"])
 
     def test_remove_instance(self):
         ctx = context.ctx()
@@ -316,3 +368,35 @@ class ClusterTest(test_base.ConductorManagerTestCase):
         self.assertRaises(sa_exc.InvalidRequestError,
                           self.api.cluster_get_all,
                           ctx, **{'badfield': 'somevalue'})
+
+    def test_cluster_update_when_protected(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_CLUSTER)
+        sample['is_protected'] = True
+        cl = self.api.cluster_create(ctx, sample)
+        cl_id = cl["id"]
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.cluster_update(ctx, cl_id, {"name": "cluster"})
+            except ex.UpdateFailedException as e:
+                self.assert_protected_resource_exception(e)
+                raise e
+
+        self.api.cluster_update(ctx, cl_id, {"name": "cluster",
+                                             "is_protected": False})
+
+    def test_public_cluster_update_from_another_tenant(self):
+        ctx = context.ctx()
+        sample = copy.deepcopy(SAMPLE_CLUSTER)
+        sample['is_public'] = True
+        cl = self.api.cluster_create(ctx, sample)
+        cl_id = cl["id"]
+        ctx.tenant_id = 'tenant_2'
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            try:
+                self.api.cluster_update(ctx, cl_id, {"name": "cluster"})
+            except ex.UpdateFailedException as e:
+                self.assert_created_in_another_tenant_exception(e)
+                raise e

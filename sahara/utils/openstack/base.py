@@ -48,7 +48,7 @@ CONF.register_opts(opts, group=retries)
 
 
 def url_for(service_catalog=None, service_type='identity',
-            endpoint_type='publicURL'):
+            endpoint_type="internalURL"):
     if not service_catalog:
         service_catalog = context.current().service_catalog
     try:
@@ -65,11 +65,12 @@ def url_for(service_catalog=None, service_type='identity',
                 region_name=CONF.os_region_name)
 
 
-def retrieve_auth_url():
+def retrieve_auth_url(endpoint_type="internalURL"):
     version = 'v3' if CONF.use_identity_api_v3 else 'v2.0'
     ctx = context.current()
     if ctx.service_catalog:
-        info = urlparse.urlparse(url_for(ctx.service_catalog, 'identity'))
+        info = urlparse.urlparse(url_for(ctx.service_catalog, 'identity',
+                                         endpoint_type))
     else:
         info = urlparse.urlparse(CONF.keystone_authtoken.auth_uri)
     return "%s://%s/%s" % (info[:2] + (version,))
@@ -84,7 +85,7 @@ def execute_with_retries(method, *args, **kwargs):
             error_code = getattr(e, 'http_status', None) or getattr(
                 e, 'status_code', None) or getattr(e, 'code', None)
             if error_code in ERRORS_TO_RETRY:
-                LOG.warning(_LW('Occasional error occured during "{method}" '
+                LOG.warning(_LW('Occasional error occurred during "{method}" '
                                 'execution: {error_msg} ({error_code}). '
                                 'Operation will be retried.').format(
                             method=method.__name__,
@@ -94,7 +95,7 @@ def execute_with_retries(method, *args, **kwargs):
                 retry_after = getattr(e, 'retry_after', 0)
                 context.sleep(max(retry_after, CONF.retries.retry_after))
             else:
-                LOG.debug('Permanent error occured during "{method}" '
+                LOG.debug('Permanent error occurred during "{method}" '
                           'execution: {error_msg}.'.format(
                               method=method.__name__, error_msg=e))
                 raise e

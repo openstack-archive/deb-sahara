@@ -18,10 +18,11 @@ from neutronclient.neutron import client as neutron_cli
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from sahara import context
 from sahara import exceptions as ex
 from sahara.i18n import _
+from sahara.service import sessions
 from sahara.utils.openstack import base
+from sahara.utils.openstack import keystone
 
 
 opts = [
@@ -30,7 +31,10 @@ opts = [
                 help='Allow to perform insecure SSL requests to neutron.'),
     cfg.StrOpt('ca_file',
                help='Location of ca certificates file to use for neutron '
-                    'client requests.')
+                    'client requests.'),
+    cfg.StrOpt("endpoint_type",
+               default="internalURL",
+               help="Endpoint type for neutron client requests")
 ]
 
 neutron_group = cfg.OptGroup(name='neutron',
@@ -44,30 +48,20 @@ LOG = logging.getLogger(__name__)
 
 
 def client():
-    ctx = context.ctx()
-    args = {
-        'username': ctx.username,
-        'tenant_name': ctx.tenant_name,
-        'tenant_id': ctx.tenant_id,
-        'token': ctx.auth_token,
-        'endpoint_url': base.url_for(ctx.service_catalog, 'network'),
-        'ca_cert': CONF.neutron.ca_file,
-        'insecure': CONF.neutron.api_insecure
-    }
-    return neutron_cli.Client('2.0', **args)
+    session = sessions.cache().get_session(sessions.SESSION_TYPE_NEUTRON)
+    neutron = neutron_cli.Client('2.0', session=session, auth=keystone.auth(),
+                                 endpoint_type=CONF.neutron.endpoint_type)
+    return neutron
 
 
 class NeutronClient(object):
     neutron = None
     routers = {}
 
-    def __init__(self, network, uri, token, tenant_name):
-        self.neutron = neutron_cli.Client('2.0',
-                                          endpoint_url=uri,
-                                          token=token,
-                                          tenant_name=tenant_name,
-                                          ca_cert=CONF.neutron.ca_file,
-                                          insecure=CONF.neutron.api_insecure)
+    def __init__(self, network, token, tenant_name):
+        session = sessions.cache().get_session(sessions.SESSION_TYPE_NEUTRON)
+        auth = keystone.token_auth(token=token, project_name=tenant_name)
+        self.neutron = neutron_cli.Client('2.0', session=session, auth=auth)
         self.network = network
 
     def get_router(self):
