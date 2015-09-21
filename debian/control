@@ -149,6 +149,7 @@ Architecture: all
 Section: python
 Depends: adduser,
          dbconfig-common,
+         python-openstackclient,
          sahara-common (= ${source:Version}),
          ${misc:Depends},
          ${ostack-lsb-base},
