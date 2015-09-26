@@ -141,9 +141,9 @@ class ClouderaUtils(object):
         # instances non-empty
         cpo.add_provisioning_step(
             instances[0].cluster_id, _("Update configs"), len(instances))
-        with context.ThreadGroup as tg:
+        with context.ThreadGroup() as tg:
             for instance in instances:
-                tg.spawn("update-configs-%s" % instances.instance_name,
+                tg.spawn("update-configs-%s" % instance.instance_name,
                          self._update_configs, instance)
 
     @cpo.event_wrapper(True)
@@ -284,7 +284,7 @@ class ClouderaUtils(object):
         role = service.create_role(self.pu.get_role_name(instance, process),
                                    role_type, instance.fqdn())
         role.update_config(self._get_configs(process, cluster,
-                                             node_group=instance.node_group))
+                                             instance=instance))
 
     def get_cloudera_manager_info(self, cluster):
         mng = self.pu.get_manager(cluster)
@@ -297,6 +297,6 @@ class ClouderaUtils(object):
         }
         return info
 
-    def _get_configs(self, service, cluster=None, node_group=None):
+    def _get_configs(self, service, cluster=None, instance=None):
         # Defined in derived class.
         return

@@ -24,9 +24,9 @@ from sahara.swift import swift_helper
 from sahara.utils import files
 
 
-configs = {}
-obj_configs = {}
-cfg_process_map = {
+CONFIGS = {}
+OBJ_CONFIGS = {}
+CFG_PROCESS_MAP = {
     "admin-properties": common.RANGER_SERVICE,
     "ams-env": common.AMBARI_SERVICE,
     "ams-hbase-env": common.AMBARI_SERVICE,
@@ -104,12 +104,14 @@ hdp_utils_repo_cfg = provisioning.Config(
 
 
 def _get_service_name(service):
-    return cfg_process_map.get(service, service)
+    return CFG_PROCESS_MAP.get(service, service)
 
 
 def _get_config_group(group, param, plugin_version):
-    for section, process in six.iteritems(cfg_process_map):
-        if process == group and param in configs[plugin_version][section]:
+    if not CONFIGS or plugin_version not in CONFIGS:
+        load_configs(plugin_version)
+    for section, process in six.iteritems(CFG_PROCESS_MAP):
+        if process == group and param in CONFIGS[plugin_version][section]:
             return section
 
 
@@ -121,18 +123,18 @@ def _get_param_scope(param):
 
 
 def load_configs(version):
-    if obj_configs.get(version):
-        return obj_configs[version]
+    if OBJ_CONFIGS.get(version):
+        return OBJ_CONFIGS[version]
     cfg_path = "plugins/ambari/resources/configs-%s.json" % version
     vanilla_cfg = jsonutils.loads(files.get_file_text(cfg_path))
-    configs[version] = vanilla_cfg
+    CONFIGS[version] = vanilla_cfg
     sahara_cfg = [hdp_repo_cfg, hdp_utils_repo_cfg]
     for service, confs in vanilla_cfg.items():
         for k, v in confs.items():
             sahara_cfg.append(provisioning.Config(
                 k, _get_service_name(service), _get_param_scope(k),
                 default_value=v))
-    obj_configs[version] = sahara_cfg
+    OBJ_CONFIGS[version] = sahara_cfg
     return sahara_cfg
 
 
@@ -167,10 +169,10 @@ def _make_paths(dirs, suffix):
     return ",".join([d + suffix for d in dirs])
 
 
-def get_ng_params(node_group):
-    configs = _create_ambari_configs(node_group.node_configs,
-                                     node_group.cluster.hadoop_version)
-    storage_paths = node_group.storage_paths()
+def get_instance_params(inst):
+    configs = _create_ambari_configs(inst.node_group.node_configs,
+                                     inst.node_group.cluster.hadoop_version)
+    storage_paths = inst.storage_paths()
     configs.setdefault("hdfs-site", {})
     configs["hdfs-site"]["dfs.datanode.data.dir"] = _make_paths(
         storage_paths, "/hdfs/data")
@@ -188,7 +190,6 @@ def get_ng_params(node_group):
     configs["yarn-site"][
         "yarn.timeline-service.leveldb-timeline-store.path"] = _make_paths(
             storage_paths, "/yarn/timeline")
-
     return _serialize_ambari_configs(configs)
 
 

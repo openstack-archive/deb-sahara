@@ -3,7 +3,7 @@ Features Overview
 
 This page highlights some of the most prominent features available in
 sahara. The guidance provided here is primarily focused on the
-runtime aspects of sahara, for discussions about configuring the sahara
+runtime aspects of sahara. For discussions about configuring the sahara
 server processes please see the :doc:`configuration.guide` and
 :doc:`advanced.configuration.guide`.
 
@@ -14,11 +14,11 @@ One of the problems with running data processing applications on OpenStack
 is the inability to control where an instance is actually running. It is
 not always possible to ensure that two new virtual machines are started on
 different physical machines. As a result, any replication within the cluster
-is not reliable because all replicas may turn up on one physical machine.
-To remedy this, sahara provides the anti-affinity feature to explicitly
-command all instances of the specified processes to spawn on different
-Compute nodes. This is especially useful for Hadoop data node processes
-to increase HDFS replica reliability.
+is not reliable because all replicas may be co-located on one physical
+machine. To remedy this, sahara provides the anti-affinity feature to
+explicitly command all instances of the specified processes to spawn on
+different Compute nodes. This is especially useful for Hadoop data node
+processes to increase HDFS replica reliability.
 
 Starting with the Juno release, sahara can create server groups with the
 ``anti-affinity`` policy to enable this feature. Sahara creates one server
@@ -36,12 +36,11 @@ Block Storage support
 
 OpenStack Block Storage (cinder) can be used as an alternative for
 ephemeral drives on instances. Using Block Storage volumes increases the
-reliability of data which is important for HDFS service.
+reliability of data which is important for HDFS services.
 
 A user can set how many volumes will be attached to each instance in a
-node group, and the size of each volume.
-
-All volumes are attached during cluster creation/scaling operations.
+node group and the size of each volume. All volumes are attached during
+cluster creation and scaling operations.
 
 Cluster scaling
 ---------------
@@ -49,23 +48,34 @@ Cluster scaling
 Cluster scaling allows users to change the number of running instances
 in a cluster without needing to recreate the cluster. Users may
 increase or decrease the number of instances in node groups or add
-new node groups to existing clusters.
+new node groups to existing clusters. If a cluster fails to scale
+properly, all changes will be rolled back.
 
-If a cluster fails to scale properly, all changes will be rolled back.
-
-Data-locality
+Data locality
 -------------
 
-It is extremely important for data processing applications to perform
-work locally on the same rack, OpenStack Compute node, or virtual
-machine. Hadoop supports a data-locality feature and can schedule jobs
-to task tracker nodes that are local for the input stream. In this
+For optimal performance, it is best for data processing applications
+to work on data local to the same rack, OpenStack Compute node, or
+virtual machine. Hadoop supports a data locality feature and can schedule
+jobs to task tracker nodes that are local for the input stream. In this
 manner the task tracker nodes can communicate directly with the local
 data nodes.
 
 Sahara supports topology configuration for HDFS and Object Storage
 data sources. For more information on configuring this option please
 see the :ref:`data_locality_configuration` documentation.
+
+Volume-to-instance locality
+---------------------------
+
+Having an instance and an attached volume on the same physical host can
+be very helpful in order to achieve high-performance disk I/O operations.
+To achieve this, sahara provides access to the Block Storage
+volume instance locality functionality.
+
+For more information on using volume instance locality with sahara,
+please see the :ref:`volume_instance_locality_configuration`
+documentation.
 
 Distributed Mode
 ----------------
@@ -85,15 +95,16 @@ Hadoop HDFS High Availability
 
 Hadoop HDFS High Availability (HDFS HA) provides an architecture to ensure
 that HDFS will continue to work in the result of an active namenode failure.
-It uses 2 namenodes in an active/standby configuration to provide this
+It uses 2 namenodes in an active/passive configuration to provide this
 availability.
 
-High availability is achieved by using a set of journalnodes and Zookeeper
-servers along with ZooKeeper Failover Controllers (ZKFC) and additional
+High availability is achieved by using a set of journalnodes. Zookeeper
+servers, and ZooKeeper Failover Controllers (ZKFC), as well as additional
 configuration changes to HDFS and other services that use HDFS.
 
-Currently HDFS HA is only supported with the HDP 2.0.6 plugin. The feature
-is enabled through a ``cluster_configs`` parameter in the cluster's JSON:
+Currently HDFS HA is supported with the HDP 2.0.6 plugin and CDH 5.4.0 plugin.
+In HDP 2.0.6 plugin, the feature is enabled through a ``cluster_configs``
+parameter in the cluster's JSON:
 
 .. sourcecode:: cfg
 
@@ -102,6 +113,20 @@ is enabled through a ``cluster_configs`` parameter in the cluster's JSON:
                         "hdfs.nnha": true
                 }
         }
+
+In CDH 5.4.0 plugin, the HDFS HA is enabled through adding several
+HDFS_JOURNALNODE roles in the node group templates of cluster template.
+When HDFS_JOURNALNODE roles are added and the roles setup meets below
+requirements, the HDFS HA is enabled.
+
+* HDFS_JOURNALNODE number is odd, and at least 3.
+* Zookeeper is enabled.
+* NameNode and SecondaryNameNode are on different physical hosts by setting
+  anti-affinity.
+
+In this case, the original SecondrayNameNode node will be used as the
+Standby NameNode.
+
 
 Networking support
 ------------------
@@ -121,6 +146,13 @@ for data sources for EDP, Hadoop requires the application of
 a patch. For additional information about enabling this support,
 including patching Hadoop and configuring sahara, please refer to
 the :doc:`hadoop-swift` documentation.
+
+Shared Filesystem support
+-------------------------
+
+Sahara can also use NFS shares through the OpenStack Shared Filesystem service
+(manila) to store job binaries and data sources. See :doc:`edp` for more
+information on this feature.
 
 Orchestration support
 ---------------------
@@ -145,7 +177,7 @@ The following table provides a plugin capability matrix:
 +--------------------------+---------+----------+----------+-------+
 | Cluster Scaling          | x       | Scale Up | x        | x     |
 +--------------------------+---------+----------+----------+-------+
-| Swift Integration        | x       | x        | x        | N/A   |
+| Swift Integration        | x       | x        | x        | x     |
 +--------------------------+---------+----------+----------+-------+
 | Cinder Support           | x       | x        | x        | x     |
 +--------------------------+---------+----------+----------+-------+
@@ -174,14 +206,27 @@ for development and for when your installation is secured from outside
 environments. For production environments we recommend controlling the
 security group policy manually.
 
-Volume-to-instance locality
----------------------------
+Shared and protected resources support
+--------------------------------------
 
-Having an instance and an attached volume on the same physical host can
-be very helpful in order to achieve high-performance disk I/O operations.
-To achieve this, sahara provides access to the Block Storage
-volume instance locality functionality.
+Sahara allows you to create resources that can be shared across tenants and
+protected from modifications.
 
-For more information on using volume instance locality with sahara,
-please see the :ref:`volume_instance_locality_configuration`
-documentation.
+To provide this feature all sahara objects that can be accessed through
+REST API have ``is_public`` and ``is_protected`` boolean fields. They can be
+initially created with enabled ``is_public`` and ``is_protected``
+parameters or these parameters can be updated after creation. Both fields are
+set to ``False`` by default.
+
+If some object has its ``is_public`` field set to ``True``, it means that it's
+visible not only from the tenant in which it was created, but from any other
+tenants too.
+
+If some object has its ``is_protected`` field set to ``True``, it means that it
+can not be modified (updated, scaled, canceled or deleted) unless this field
+is set to ``False``.
+
+Public objects created in one tenant can be used from other tenants (for
+example, a cluster can be created from a public cluster template which is
+created in another tenant), but modification operations are possible only from
+the tenant in which object was created.

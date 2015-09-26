@@ -19,16 +19,17 @@ from oslo_log import log as logging
 import six
 import yaml
 
+from sahara.plugins import provisioning as plugin_provisioning
 from sahara.utils import general as g
 from sahara.utils.openstack import base as b
 from sahara.utils.openstack import heat as h
 from sahara.utils.openstack import neutron
 
-
 CONF = cfg.CONF
 LOG = logging.getLogger(__name__)
 
 SSH_PORT = 22
+INSTANCE_RESOURCE_NAME = "inst"
 
 
 def _get_inst_name(ng):
@@ -89,12 +90,21 @@ def _get_volume_name(ng):
     }
 
 
+def _get_wc_handle_name(inst_name):
+    return '%s-wc-handle' % inst_name
+
+
+def _get_wc_waiter_name(inst_name):
+    return '%s-wc-waiter' % inst_name
+
+
 class ClusterStack(object):
     def __init__(self, cluster):
         self.cluster = cluster
         self.node_groups_extra = {}
         self.heat_stack = None
         self.files = {}
+        self.last_updated_time = None
 
     def add_node_group_extra(self, node_group_id, node_count,
                              gen_userdata_func):
@@ -119,20 +129,28 @@ class ClusterStack(object):
         heat = h.client()
 
         kwargs = {
-            'stack_name': self.cluster.name,
+            'stack_name': self.cluster.stack_name,
             'timeout_mins': 180,
             'disable_rollback': disable_rollback,
             'parameters': {},
             'template': main_tmpl,
             'files': self.files}
 
+        if CONF.heat_stack_tags:
+            kwargs['tags'] = ",".join(CONF.heat_stack_tags)
+
         if not update_existing:
+            LOG.debug("Creating Heat stack with args: {args}"
+                      .format(args=kwargs))
             b.execute_with_retries(heat.stacks.create, **kwargs)
         else:
-            stack = h.get_stack(self.cluster.name)
+            stack = h.get_stack(self.cluster.stack_name)
+            self.last_updated_time = stack.updated_time
+            LOG.debug("Updating Heat stack {stack} with args: "
+                      "{args}".format(stack=stack, args=kwargs))
             b.execute_with_retries(stack.update, **kwargs)
 
-        self.heat_stack = h.get_stack(self.cluster.name)
+        self.heat_stack = h.get_stack(self.cluster.stack_name)
 
     def _need_aa_server_group(self, node_group):
         for node_process in node_group.node_processes:
@@ -144,8 +162,14 @@ class ClusterStack(object):
         if not self._need_aa_server_group(node_group):
             return {}
 
-        return {"scheduler_hints": {"group": {"Ref": _get_aa_group_name(
-            self.cluster)}}}
+        return {
+            "scheduler_hints": {
+                "group": {
+                    "get_resource": _get_aa_group_name(
+                        self.cluster)
+                }
+            }
+        }
 
     def _serialize_resources(self, outputs):
         resources = {}
@@ -191,8 +215,8 @@ class ClusterStack(object):
             "resources": self._serialize_instance(ng),
             "outputs": {
                 "instance": {"value": {
-                    "physical_id": {"Ref": "inst"},
-                    "name": {"get_attr": ["inst", "name"]}
+                    "physical_id": {"get_resource": INSTANCE_RESOURCE_NAME},
+                    "name": {"get_attr": [INSTANCE_RESOURCE_NAME, "name"]}
                 }}}
         })
 
@@ -201,39 +225,66 @@ class ClusterStack(object):
         security_group_description = (
             "Auto security group created by Sahara for Node Group "
             "'%s' of cluster '%s'." % (ng.name, ng.cluster.name))
-        rules = self._serialize_auto_security_group_rules(ng)
+
+        if CONF.use_neutron:
+            res_type = "OS::Neutron::SecurityGroup"
+            desc_key = "description"
+            rules_key = "rules"
+            create_rule = lambda ip_version, cidr, proto, from_port, to_port: {
+                "ethertype": "IPv{}".format(ip_version),
+                "remote_ip_prefix": cidr,
+                "protocol": proto,
+                "port_range_min": six.text_type(from_port),
+                "port_range_max": six.text_type(to_port)}
+        else:
+            res_type = "AWS::EC2::SecurityGroup"
+            desc_key = "GroupDescription"
+            rules_key = "SecurityGroupIngress"
+            create_rule = lambda _, cidr, proto, from_port, to_port: {
+                "CidrIp": cidr,
+                "IpProtocol": proto,
+                "FromPort": six.text_type(from_port),
+                "ToPort": six.text_type(to_port)}
+
+        rules = self._serialize_auto_security_group_rules(ng, create_rule)
 
         return {
             security_group_name: {
-                "type": "AWS::EC2::SecurityGroup",
+                "type": res_type,
                 "properties": {
-                    "GroupDescription": security_group_description,
-                    "SecurityGroupIngress": rules
+                    desc_key: security_group_description,
+                    rules_key: rules
                 }
             }
         }
 
-    def _serialize_auto_security_group_rules(self, ng):
-        create_rule = lambda cidr, proto, from_port, to_port: {
-            "CidrIp": cidr,
-            "IpProtocol": proto,
-            "FromPort": six.text_type(from_port),
-            "ToPort": six.text_type(to_port)}
-
+    def _serialize_auto_security_group_rules(self, ng, create_rule):
         rules = []
         for port in ng.open_ports:
-            rules.append(create_rule('0.0.0.0/0', 'tcp', port, port))
+            rules.append(create_rule(4, '0.0.0.0/0', 'tcp', port, port))
+            rules.append(create_rule(6, '::/0', 'tcp', port, port))
 
-        rules.append(create_rule('0.0.0.0/0', 'tcp', SSH_PORT, SSH_PORT))
+        rules.append(create_rule(4, '0.0.0.0/0', 'tcp', SSH_PORT, SSH_PORT))
+        rules.append(create_rule(6, '::/0', 'tcp', SSH_PORT, SSH_PORT))
 
         # open all traffic for private networks
         if CONF.use_neutron:
             for cidr in neutron.get_private_network_cidrs(ng.cluster):
+                ip_ver = 6 if ':' in cidr else 4
                 for protocol in ['tcp', 'udp']:
-                    rules.append(create_rule(cidr, protocol, 1, 65535))
-                rules.append(create_rule(cidr, 'icmp', -1, -1))
+                    rules.append(create_rule(ip_ver, cidr, protocol, 1, 65535))
+                rules.append(create_rule(ip_ver, cidr, 'icmp', 0, 255))
 
         return rules
+
+    @staticmethod
+    def _get_wait_condition_timeout(ng):
+        configs = ng.cluster.cluster_configs
+        timeout_cfg = plugin_provisioning.HEAT_WAIT_CONDITION_TIMEOUT
+        cfg_target = timeout_cfg.applicable_target
+        cfg_name = timeout_cfg.name
+        return int(configs.get(cfg_target,
+                               {}).get(cfg_name, timeout_cfg.default_value))
 
     def _serialize_instance(self, ng):
         resources = {}
@@ -250,7 +301,7 @@ class ClusterStack(object):
                 port_name, self.cluster.neutron_management_network,
                 self._get_security_groups(ng)))
 
-            properties["networks"] = [{"port": {"Ref": "port"}}]
+            properties["networks"] = [{"port": {"get_resource": "port"}}]
 
             if ng.floating_ip_pool:
                 resources.update(self._serialize_neutron_floating(ng))
@@ -266,7 +317,22 @@ class ClusterStack(object):
             properties["key_name"] = self.cluster.user_keypair_id
 
         gen_userdata_func = self.node_groups_extra[ng.id]['gen_userdata_func']
-        userdata = gen_userdata_func(ng, inst_name)
+        key_script = gen_userdata_func(ng, inst_name)
+        wait_condition_script = (
+            "wc_notify --data-binary '{\"status\": \"SUCCESS\"}'")
+        userdata = {
+            "str_replace": {
+                "template": "\n".join([key_script, wait_condition_script]),
+                "params": {
+                    "wc_notify": {
+                        "get_attr": [
+                            _get_wc_handle_name(ng.name),
+                            "curl_cli"
+                        ]
+                    }
+                }
+            }
+        }
 
         if ng.availability_zone:
             properties["availability_zone"] = ng.availability_zone
@@ -282,14 +348,29 @@ class ClusterStack(object):
         })
 
         resources.update({
-            "inst": {
+            INSTANCE_RESOURCE_NAME: {
                 "type": "OS::Nova::Server",
                 "properties": properties
             }
         })
 
-        resources.update(self._serialize_volume(ng))
+        if ng.volumes_per_node > 0 and ng.volumes_size > 0:
+            resources.update(self._serialize_volume(ng))
 
+        resources.update(self._serialize_volume(ng))
+        resources.update({
+            _get_wc_handle_name(ng.name): {
+                "type": "OS::Heat::WaitConditionHandle"
+            },
+            _get_wc_waiter_name(ng.name): {
+                "type": "OS::Heat::WaitCondition",
+                "depends_on": INSTANCE_RESOURCE_NAME,
+                "properties": {
+                    "timeout": self._get_wait_condition_timeout(ng),
+                    "handle": {"get_resource": _get_wc_handle_name(ng.name)}
+                }
+            }
+        })
         return resources
 
     def _serialize_port(self, port_name, fixed_net_id, security_groups):
@@ -314,7 +395,7 @@ class ClusterStack(object):
                 "type": "OS::Neutron::FloatingIP",
                 "properties": {
                     "floating_network_id": ng.floating_ip_pool,
-                    "port_id": {"Ref": "port"}
+                    "port_id": {"get_resource": "port"}
                 }
             }
         }
@@ -330,8 +411,8 @@ class ClusterStack(object):
             "floating_ip_assoc": {
                 "type": "OS::Nova::FloatingIPAssociation",
                 "properties": {
-                    "floating_ip": {"Ref": "floating_ip"},
-                    "server_id": {"Ref": "inst"}
+                    "floating_ip": {"get_resource": "floating_ip"},
+                    "server_id": {"get_resource": INSTANCE_RESOURCE_NAME}
                 }
             }
         }
@@ -350,7 +431,8 @@ class ClusterStack(object):
                         "properties": {
                             "volume_index": "%index%",
                             "instance_index": {"get_param": "instance_index"},
-                            "instance": {"Ref": "inst"}}
+                            "instance": {"get_resource":
+                                         INSTANCE_RESOURCE_NAME}}
                     }
                 }
             }
@@ -396,8 +478,7 @@ class ClusterStack(object):
                     "type": "OS::Cinder::VolumeAttachment",
                     "properties": {
                         "instance_uuid": {"get_param": "instance"},
-                        "volume_id": {"Ref": "volume"},
-                        "mountpoint": None
+                        "volume_id": {"get_resource": "volume"},
                     }
                 }},
             "outputs": {}
@@ -406,9 +487,11 @@ class ClusterStack(object):
     def _get_security_groups(self, node_group):
         if not node_group.auto_security_group:
             return node_group.security_groups
-
-        return (list(node_group.security_groups or []) +
-                [{"Ref": g.generate_auto_security_group_name(node_group)}])
+        node_group_sg = list(node_group.security_groups or [])
+        node_group_sg += [
+            {"get_resource": g.generate_auto_security_group_name(node_group)}
+        ]
+        return node_group_sg
 
     def _serialize_aa_server_group(self):
         server_group_name = _get_aa_group_name(self.cluster)

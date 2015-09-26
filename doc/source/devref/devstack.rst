@@ -15,7 +15,7 @@ Start VM and set up OS
 ----------------------
 
 In order to run DevStack in a local VM, you need to start by installing
-a guest with Ubuntu 12.04 server. Download an image file from
+a guest with Ubuntu 14.04 server. Download an image file from
 `Ubuntu's web site <http://www.ubuntu.com/download/server>`_ and create
 a new guest from it. Virtualization solution must support
 nested virtualization. Without nested virtualization VMs running inside
@@ -26,7 +26,7 @@ On Linux QEMU/KVM supports nested virtualization, on Mac OS - VMware Fusion.
 VMware Fusion requires adjustments to run VM with fixed IP. You may find
 instructions which can help :ref:`below <fusion-fixed-ip>`.
 
-Start a new VM with Ubuntu Server 12.04. Recommended settings:
+Start a new VM with Ubuntu Server 14.04. Recommended settings:
 
 - Processor - at least 2 cores
 - Memory - at least 8GB
@@ -45,7 +45,7 @@ Install DevStack
 ----------------
 
 The instructions assume that you've decided to install DevStack into
-Ubuntu 12.04 system.
+Ubuntu 14.04 system.
 
 1. Clone DevStack:
 
@@ -92,7 +92,7 @@ Ubuntu 12.04 system.
     # access to install prerequisites and fetch repositories.
     # OFFLINE=True
 
-    # Enable Sahara
+    # Enable sahara
     enable_plugin sahara git://git.openstack.org/openstack/sahara
 
 In cases where you need to specify a git refspec (branch, tag, or commit hash)
@@ -108,9 +108,7 @@ appended after the git repo URL as follows:
 
 .. sourcecode:: bash
 
-    enable_service ceilometer-acompute ceilometer-acentral ceilometer-anotification ceilometer-collector
-    enable_service ceilometer-alarm-evaluator,ceilometer-alarm-notifier
-    enable_service ceilometer-api
+    enable_plugin ceilometer git://git.openstack.org/openstack/ceilometer
 
 4. Start DevStack:
 
@@ -124,12 +122,12 @@ appended after the git repo URL as follows:
 6. Congratulations! You have OpenStack running in your VM and ready to launch VMs inside that VM :)
 
 
-Managing Sahara in DevStack
+Managing sahara in DevStack
 ---------------------------
 
-If you install DevStack with Sahara included you can rejoin screen with
+If you install DevStack with sahara included you can rejoin screen with
 ``rejoin-stack.sh`` command and switch to ``sahara`` tab. Here you can manage
-the Sahara service as other OpenStack services. Sahara source code is located
+the sahara service as other OpenStack services. Sahara source code is located
 at ``$DEST/sahara`` which is usually ``/opt/stack/sahara``.
 
 

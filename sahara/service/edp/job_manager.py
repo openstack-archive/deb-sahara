@@ -107,7 +107,7 @@ def _run_job(job_execution_id):
 
     # Set the job id and the start time
     # Optionally, update the status and the 'extra' field
-    update_dict = {'oozie_job_id': jid,
+    update_dict = {'engine_job_id': jid,
                    'start_time': datetime.datetime.now()}
     if status:
         update_dict['info'] = {'status': status}
@@ -127,7 +127,13 @@ def run_job(job_execution_id):
         LOG.warning(
             _LW("Can't run job execution (reason: {reason})").format(
                 reason=ex))
-        cancel_job(job_execution_id)
+
+        job_execution = conductor.job_execution_get(
+            context.ctx(), job_execution_id)
+
+        if job_execution.engine_job_id is not None:
+            cancel_job(job_execution_id)
+
         conductor.job_execution_update(
             context.ctx(), job_execution_id,
             {'info': {'status': edp.JOB_STATUS_FAILED},

@@ -13,12 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import mock
+
+from sahara.conductor import resource as r
 from sahara.service.heat import templates as h
 from sahara.tests.unit import base
 from sahara.tests.unit import testutils as tu
 
 
-class TestClusterTemplate(base.SaharaWithDbTestCase):
+class BaseTestClusterTemplate(base.SaharaWithDbTestCase):
     """Checks valid structure of Resources section in generated Heat templates.
 
     1. It checks templates generation with different OpenStack
@@ -43,12 +46,14 @@ class TestClusterTemplate(base.SaharaWithDbTestCase):
 
     def _make_cluster(self, mng_network, ng1, ng2, anti_affinity=[]):
         return tu.create_cluster("cluster", "tenant1", "general",
-                                 "1.2.1", [ng1, ng2],
+                                 "2.6.0", [ng1, ng2],
                                  user_keypair_id='user_key',
                                  neutron_management_network=mng_network,
                                  default_image_id='1', image_id=None,
                                  anti_affinity=anti_affinity)
 
+
+class TestClusterTemplate(BaseTestClusterTemplate):
     def _make_heat_template(self, cluster, ng1, ng2):
         heat_template = h.ClusterStack(cluster)
         heat_template.add_node_group_extra(ng1['id'], 1,
@@ -66,7 +71,13 @@ class TestClusterTemplate(base.SaharaWithDbTestCase):
         ng1 = [ng for ng in cluster.node_groups if ng.name == "master"][0]
         ng2 = [ng for ng in cluster.node_groups if ng.name == "worker"][0]
 
-        expected = {"scheduler_hints": {"group": {"Ref": "cluster-aa-group"}}}
+        expected = {
+            "scheduler_hints": {
+                "group": {
+                    "get_resource": "cluster-aa-group"
+                }
+            }
+        }
         actual = heat_template._get_anti_affinity_scheduler_hints(ng2)
         self.assertEqual(expected, actual)
 
@@ -84,14 +95,118 @@ class TestClusterTemplate(base.SaharaWithDbTestCase):
 
         ng1 = [ng for ng in cluster.node_groups if ng.name == "master"][0]
         ng2 = [ng for ng in cluster.node_groups if ng.name == "worker"][0]
-
         expected = ['1', '2']
         actual = heat_template._get_security_groups(ng1)
         self.assertEqual(expected, actual)
 
-        expected = ['3', '4', {'Ref': 'cluster-worker-2'}]
+        expected = ['3', '4', {'get_resource': 'cluster-worker-2'}]
         actual = heat_template._get_security_groups(ng2)
         self.assertEqual(expected, actual)
+
+    def _generate_auto_security_group_template(self, use_neutron):
+        self.override_config('use_neutron', use_neutron)
+        ng1, ng2 = self._make_node_groups('floating')
+        cluster = self._make_cluster('private_net', ng1, ng2)
+        ng1['cluster'] = cluster
+        ng2['cluster'] = cluster
+        ng1 = r.NodeGroupResource(ng1)
+        ng2 = r.NodeGroupResource(ng2)
+        heat_template = self._make_heat_template(cluster, ng1, ng2)
+        return heat_template._serialize_auto_security_group(ng1)
+
+    @mock.patch('sahara.utils.openstack.neutron.get_private_network_cidrs')
+    def test_serialize_auto_security_group_neutron(self, patched):
+        ipv4_cidr = '192.168.0.0/24'
+        ipv6_cidr = 'fe80::/64'
+        patched.side_effect = lambda cluster: [ipv4_cidr, ipv6_cidr]
+        expected_rules = [
+            ('0.0.0.0/0', 'IPv4', 'tcp', '22', '22'),
+            ('::/0', 'IPv6', 'tcp', '22', '22'),
+            (ipv4_cidr, 'IPv4', 'tcp', '1', '65535'),
+            (ipv4_cidr, 'IPv4', 'udp', '1', '65535'),
+            (ipv4_cidr, 'IPv4', 'icmp', '0', '255'),
+            (ipv6_cidr, 'IPv6', 'tcp', '1', '65535'),
+            (ipv6_cidr, 'IPv6', 'udp', '1', '65535'),
+            (ipv6_cidr, 'IPv6', 'icmp', '0', '255'),
+        ]
+        expected = {'cluster-master-1': {
+            'type': 'OS::Neutron::SecurityGroup',
+            'properties': {
+                'description': 'Auto security group created by Sahara '
+                    'for Node Group \'master\' of cluster \'cluster\'.',
+                'rules': [{
+                    'remote_ip_prefix': rule[0],
+                    'ethertype': rule[1],
+                    'protocol': rule[2],
+                    'port_range_min': rule[3],
+                    'port_range_max': rule[4]
+                } for rule in expected_rules]
+            }
+        }}
+        actual = self._generate_auto_security_group_template(True)
+        self.assertEqual(expected, actual)
+
+    def test_serialize_auto_security_group_nova_network(self):
+        expected = {'cluster-master-1': {
+            'type': 'AWS::EC2::SecurityGroup',
+            'properties': {
+                'GroupDescription': 'Auto security group created by Sahara'
+                    ' for Node Group \'master\' of cluster \'cluster\'.',
+                'SecurityGroupIngress': [{
+                    'ToPort': '22',
+                    'CidrIp': '0.0.0.0/0',
+                    'FromPort': '22',
+                    'IpProtocol': 'tcp'
+                }, {
+                    'ToPort': '22',
+                    'CidrIp': '::/0',
+                    'FromPort': '22',
+                    'IpProtocol': 'tcp'
+                }]
+            }
+        }}
+        actual = self._generate_auto_security_group_template(False)
+        self.assertEqual(expected, actual)
+
+
+class TestClusterTemplateWaitCondition(BaseTestClusterTemplate):
+    def _make_heat_template(self, cluster, ng1, ng2):
+        heat_template = h.ClusterStack(cluster)
+        heat_template.add_node_group_extra(ng1.id, 1,
+                                           get_ud_generator('line1\nline2'))
+        heat_template.add_node_group_extra(ng2.id, 1,
+                                           get_ud_generator('line2\nline3'))
+        return heat_template
+
+    def setUp(self):
+        super(TestClusterTemplateWaitCondition, self).setUp()
+        _ng1, _ng2 = self._make_node_groups("floating")
+        _cluster = self._make_cluster("private_net", _ng1, _ng2)
+        _ng1["cluster"] = _ng2["cluster"] = _cluster
+        self.ng1 = mock.Mock()
+        self.ng1.configure_mock(**_ng1)
+        self.ng2 = mock.Mock()
+        self.ng2.configure_mock(**_ng2)
+        self.cluster = mock.Mock()
+        self.cluster.configure_mock(**_cluster)
+        self.template = self._make_heat_template(self.cluster,
+                                                 self.ng1, self.ng2)
+
+    def test_use_wait_condition(self):
+        instance = self.template._serialize_instance(self.ng1)
+        expected_wc_handle = {
+            "type": "OS::Heat::WaitConditionHandle"
+        }
+        expected_wc_waiter = {
+            "type": "OS::Heat::WaitCondition",
+            "depends_on": "inst",
+            "properties": {
+                "timeout": 3600,
+                "handle": {"get_resource": "master-wc-handle"}
+            }
+        }
+        self.assertEqual(expected_wc_handle, instance["master-wc-handle"])
+        self.assertEqual(expected_wc_waiter, instance["master-wc-waiter"])
 
 
 def get_ud_generator(s):

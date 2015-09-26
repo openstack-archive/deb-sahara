@@ -4,9 +4,10 @@ Development Guidelines
 Coding Guidelines
 -----------------
 
-For all the code in Sahara we have a rule - it should pass `PEP 8`_.
+For all the Python code in Sahara we have a rule - it should pass `PEP 8`_.
+All Bash code should pass `bashate`_.
 
-To check your code against PEP 8 run:
+To check your code against PEP 8 and bashate run:
 
 .. sourcecode:: console
 
@@ -15,6 +16,19 @@ To check your code against PEP 8 run:
 .. note::
   For more details on coding guidelines see file ``HACKING.rst`` in the root
   of Sahara repo.
+
+Static analysis
+---------------
+
+The static analysis checks are optional in Sahara. but they are still very useful.
+The gate job will inform you if the number of static analysis warnings
+has increased after your change. We recommend to always check the static warnings.
+
+To run the check commit yor change first and execute the following command:
+
+.. sourcecode:: console
+
+    $ tox -e pylint
 
 Modification of Upstream Files
 ------------------------------
@@ -32,7 +46,7 @@ files came from.  For example:
 .. sourcecode:: console
 
   $ pwd
-  /home/me/sahara/sahara/plugins/vanilla/v2_3_0/resources
+  /home/me/sahara/sahara/plugins/vanilla/v2_6_0/resources
 
   $ ls
   core-default.xml     hdfs-default.xml    oozie-default.xml   README.rst
@@ -47,7 +61,7 @@ and it is recommended that developers execute the tests themselves to
 catch regressions early.  Developers are also expected to keep the
 test suite up-to-date with any submitted code changes.
 
-Unit tests are located at ``sahara/tests``.
+Unit tests are located at ``sahara/tests/unit``.
 
 Sahara's suite of unit tests can be executed in an isolated environment
 with `Tox`_. To execute the unit tests run the following from the root of
@@ -112,6 +126,7 @@ running ``tox -e docs`` first time):
 
 
 .. _PEP 8: http://www.python.org/dev/peps/pep-0008/
+.. _bashate: https://github.com/openstack-dev/bashate
 .. _PEP 257: http://www.python.org/dev/peps/pep-0257/
 .. _Tox: http://tox.testrun.org/
 .. _Sphinx: http://sphinx.pocoo.org/markup/index.html
@@ -148,3 +163,19 @@ in module ``sahara/utils/cluster_progress_ops.py``.
 
 .. note::
     It's strictly recommended to use ``event_wrapper`` for events handling
+
+OpenStack client usage guidelines
+---------------------------------
+
+The sahara project uses several OpenStack clients internally. These clients
+are all wrapped by utility functions which make using them more convenient.
+When developing sahara, if you need to use a OpenStack client you should
+check the ``sahara.utils.openstack`` package for the appropriate one.
+
+When developing new OpenStack client interactions in sahara, it is important
+to understand the ``sahara.service.sessions`` package and the usage of
+keystone ``Session`` and auth plugin objects(for example, ``Token`` or
+``Password``). Sahara is migrating all clients to use this authentication
+methodology, where available. For more information on using sessions with
+keystone, please see
+http://docs.openstack.org/developer/python-keystoneclient/using-sessions.html

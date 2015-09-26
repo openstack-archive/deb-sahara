@@ -41,7 +41,8 @@ class TestJobExecCreateValidation(u.ValidationTestCase):
         self.scheme = je_schema.JOB_EXEC_SCHEMA
         # Make sure that the spark plugin is loaded
         if 'spark' not in main.CONF['plugins']:
-            self.override_config('plugins', main.CONF['plugins'] + ['spark'])
+            self.override_config('plugins', main.CONF['plugins'] + ['spark',
+                                                                    'vanilla'])
         api.plugin_base.setup_plugins()
 
     @mock.patch('sahara.conductor.api.LocalApi.cluster_get')
@@ -64,7 +65,7 @@ class TestJobExecCreateValidation(u.ValidationTestCase):
         ng = tu.make_ng_dict('master', 42, ['oozie'], 1,
                              instances=[tu.make_inst_dict('id', 'name')])
         get_cluster.return_value = tu.create_cluster("cluster", "tenant1",
-                                                     "vanilla", "1.2.1", [ng])
+                                                     "vanilla", "2.6.0", [ng])
 
         self._assert_create_object_validation(
             data={
@@ -113,7 +114,7 @@ class TestJobExecCreateValidation(u.ValidationTestCase):
         ng = tu.make_ng_dict('master', 42, ['oozie'], 1,
                              instances=[tu.make_inst_dict('id', 'name')])
         get_cluster.return_value = tu.create_cluster("cluster", "tenant1",
-                                                     "vanilla", "1.2.1", [ng])
+                                                     "vanilla", "2.6.0", [ng])
 
         self._assert_create_object_validation(
             data={
@@ -156,7 +157,7 @@ class TestJobExecCreateValidation(u.ValidationTestCase):
         ng = tu.make_ng_dict('master', 42, ['namenode'], 1,
                              instances=[tu.make_inst_dict('id', 'name')])
         get_cluster.return_value = tu.create_cluster("cluster", "tenant1",
-                                                     "vanilla", "1.2.1", [ng])
+                                                     "vanilla", "2.6.0", [ng])
 
         self._assert_create_object_validation(
             data={
@@ -199,7 +200,7 @@ class TestJobExecCreateValidation(u.ValidationTestCase):
         ng = tu.make_ng_dict('master', 42, ['namenode', 'oozie'], 1,
                              instances=[tu.make_inst_dict('id', 'name')])
         cluster_get.return_value = tu.create_cluster("cluster", "tenant1",
-                                                     "vanilla", "1.2.1", [ng])
+                                                     "vanilla", "2.6.0", [ng])
 
         self._assert_create_object_validation(
             data={

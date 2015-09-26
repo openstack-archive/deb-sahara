@@ -90,13 +90,13 @@ class OozieJobEngine(base_engine.JobEngine):
         return "%s/workflow.xml" % job_dir
 
     def cancel_job(self, job_execution):
-        if job_execution.oozie_job_id is not None:
+        if job_execution.engine_job_id is not None:
             client = self._get_client()
             client.kill_job(job_execution)
             return client.get_job_status(job_execution)
 
     def get_job_status(self, job_execution):
-        if job_execution.oozie_job_id is not None:
+        if job_execution.engine_job_id is not None:
             return self._get_client().get_job_status(job_execution)
 
     def run_job(self, job_execution):
@@ -184,6 +184,12 @@ class OozieJobEngine(base_engine.JobEngine):
         job_execution = conductor.job_execution_get(ctx, job_execution.id)
         if job_execution.info['status'] == edp.JOB_STATUS_TOBEKILLED:
             return (None, edp.JOB_STATUS_KILLED, None)
+
+        conductor.job_execution_update(
+            context.ctx(), job_execution.id,
+            {'info': {'status': edp.JOB_STATUS_READYTORUN},
+             'engine_job_id': oozie_job_id})
+
         client.run_job(job_execution, oozie_job_id)
         try:
             status = client.get_job_status(job_execution,

@@ -52,7 +52,7 @@ def validate_number_of_datanodes(cluster, scaled_groups, default_configs):
 
 
 class ClusterSpec(object):
-    def __init__(self, config, version='1.3.2'):
+    def __init__(self, config, version='2.0.6'):
         self._config_template = config
         self.services = []
         self.configurations = {}
@@ -210,7 +210,6 @@ class ClusterSpec(object):
                 node_group.count = ng.count
                 node_group.id = ng.id
                 node_group.components = ng.node_processes[:]
-                node_group.ng_storage_paths = ng.storage_paths()
                 for instance in ng.instances:
                     node_group.instances.add(Instance(instance))
                 self.node_groups[node_group.name] = node_group
@@ -229,6 +228,10 @@ class ClusterSpec(object):
 
     def _process_user_inputs(self, user_inputs):
         for ui in user_inputs:
+            # if it doesn't have a tag then it's not part of the
+            # operational config that Ambari knows about
+            if not hasattr(ui.config, 'tag'):
+                continue
             user_input_handler = self.user_input_handlers.get(
                 '{0}/{1}'.format(ui.config.tag, ui.config.name),
                 self._default_user_input_handler)
@@ -266,13 +269,9 @@ class NodeGroup(object):
         self.cardinality = None
         self.count = None
         self.instances = set()
-        self.ng_storage_paths = []
 
     def add_component(self, component):
         self.components.append(component)
-
-    def storage_paths(self):
-        return self.ng_storage_paths
 
 
 class User(object):

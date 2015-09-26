@@ -91,7 +91,8 @@ class TestBase(testtools.TestCase):
                 {
                     'name': 'master',
                     'node_processes': ['namenode', 'oozie', 'resourcemanager'],
-                    'flavor': '2'
+                    'flavor': '2',
+                    'is_proxy_gateway': True
                 },
                 {
                     'name': 'worker',
@@ -171,6 +172,8 @@ class TestBase(testtools.TestCase):
         swift.assert_called_with(auth_version='2.0',
                                  user='admin',
                                  key='nova',
+                                 insecure=False,
+                                 cacert='/etc/tests/cert.crt',
                                  tenant_name='admin',
                                  authurl='http://localhost:5000/v2.0')
 

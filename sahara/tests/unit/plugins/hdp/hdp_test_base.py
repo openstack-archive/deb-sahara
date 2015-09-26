@@ -29,6 +29,11 @@ class TestServer(object):
         self.public_ip = public_ip
         self.internal_ip = private_ip
         self.node_group = None
+        self.sahara_instance = self
+        self.storage_path = ['/mnt']
+
+    def storage_paths(self):
+        return self.storage_path
 
     def fqdn(self):
         return self.inst_fqdn
@@ -41,7 +46,7 @@ def get_instance_info(*args, **kwargs):
     return args[0].instance_info
 
 
-def create_clusterspec(hdp_version='1.3.2'):
+def create_clusterspec(hdp_version='2.0.6'):
     version_suffix = hdp_version.replace('.', '_')
     cluster_config_file = pkg.resource_string(
         version.version_info.package,
@@ -81,10 +86,6 @@ class TestNodeGroup(object):
         self.node_processes = node_processes
         self.count = count
         self.id = name
-        self.ng_storage_paths = []
-
-    def storage_paths(self):
-        return self.ng_storage_paths
 
 
 class TestUserInputConfig(object):

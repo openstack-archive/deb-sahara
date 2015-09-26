@@ -42,6 +42,13 @@ ROLLBACK_STAGES = [c_u.CLUSTER_STATUS_ROLLBACK_SPAWNING,
                    c_u.CLUSTER_STATUS_ROLLBACK_WAITING,
                    c_u.CLUSTER_STATUS_ROLLBACK__PREPARING]
 
+heat_engine_opts = [
+    cfg.ListOpt('heat_stack_tags', default=['data-processing-cluster'],
+                help="List of tags to be used during operating with stack.")
+]
+
+CONF.register_opts(heat_engine_opts)
+
 
 class HeatEngine(e.Engine):
     def get_type_and_version(self):
@@ -52,10 +59,19 @@ class HeatEngine(e.Engine):
 
         target_count = self._get_ng_counts(cluster)
         self._nullify_ng_counts(cluster)
-
+        cluster = self._generate_heat_stack_name(cluster)
         self._launch_instances(cluster, target_count, CREATE_STAGES)
 
         self._update_rollback_strategy(cluster)
+
+    @staticmethod
+    def _generate_heat_stack_name(cluster):
+        cluster = conductor.cluster_get(context.ctx(), cluster)
+        hsn = cluster.name + cluster.id[:8]
+        extra = cluster.extra.to_dict() if cluster.extra else {}
+        extra['heat_stack_name'] = hsn
+        conductor.cluster_update(context.ctx(), cluster, {'extra': extra})
+        return conductor.cluster_get(context.ctx(), cluster)
 
     def _get_ng_counts(self, cluster):
         count = {}
@@ -172,8 +188,9 @@ class HeatEngine(e.Engine):
     def shutdown_cluster(self, cluster):
         """Shutdown specified cluster and all related resources."""
         try:
-            b.execute_with_retries(heat.client().stacks.delete, cluster.name)
-            stack = heat.get_stack(cluster.name)
+            b.execute_with_retries(
+                heat.client().stacks.delete, cluster.stack_name)
+            stack = heat.get_stack(cluster.stack_name)
             heat.wait_stack_completion(stack)
         except heat_exc.HTTPNotFound:
             LOG.warning(_LW('Did not find stack for cluster. Trying to delete '
@@ -196,7 +213,9 @@ class HeatEngine(e.Engine):
         self._update_instance_count(stack, cluster, target_count)
         stack.instantiate(update_existing=update_stack,
                           disable_rollback=disable_rollback)
-        heat.wait_stack_completion(stack.heat_stack)
+        heat.wait_stack_completion(
+            stack.heat_stack,
+            is_update=update_stack, last_updated_time=stack.last_updated_time)
         return self._populate_cluster(cluster, stack)
 
     def _launch_instances(self, cluster, target_count, stages,

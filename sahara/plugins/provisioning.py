@@ -213,6 +213,19 @@ class ValidationError(object):
 
 # COMMON FOR ALL PLUGINS CONFIGS
 
+XFS_ENABLED = Config(
+    "Enable XFS", 'general', 'cluster', priority=1,
+    default_value=True, config_type="bool", is_optional=True,
+    description='Enables XFS for formatting'
+)
+
+DISKS_PREPARING_TIMEOUT = Config(
+    "Timeout for disk preparing", 'general', 'cluster', priority=1,
+    default_value=300, config_type="int", is_optional=True,
+    description='Timeout for preparing disks, formatting and mounting'
+)
+
+
 NTP_URL = Config(
     "URL of NTP server", 'general', 'cluster', priority=1,
     default_value='', is_optional=True,
@@ -227,6 +240,12 @@ NTP_ENABLED = Config(
                 'instances'
 )
 
+HEAT_WAIT_CONDITION_TIMEOUT = Config(
+    "Heat Wait Condition timeout", "general", "cluster", priority=1,
+    config_type="int", default_value=3600, is_optional=True,
+    description="The number of seconds to wait for the instance to boot")
+
 
 def list_of_common_configs():
-    return [NTP_ENABLED, NTP_URL]
+    return [DISKS_PREPARING_TIMEOUT, NTP_ENABLED, NTP_URL,
+            HEAT_WAIT_CONDITION_TIMEOUT, XFS_ENABLED]
