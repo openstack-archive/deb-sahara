@@ -1,9 +1,11 @@
-sahara (1:3.0.0~b3-2) UNRELEASED; urgency=medium
+sahara (1:3.0.0~rc1-1) experimental; urgency=medium
 
+  * New upstream release.
+  * Fixed (build-)depends for this release.
   * Added nl.po.
   * Now sahara-api depends on python-openstackclient.
 
- -- Thomas Goirand <zigo@debian.org>  Mon, 21 Sep 2015 13:05:41 +0000
+ -- Thomas Goirand <zigo@debian.org>  Sat, 26 Sep 2015 20:02:03 +0000
 
 sahara (1:3.0.0~b3-1) experimental; urgency=medium
 
