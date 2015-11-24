@@ -1,8 +1,10 @@
 sahara (1:3.0.0-5) unstable; urgency=medium
 
-  * d/rules: fix typo in rules with wrong package naming
+  [ Mikhail Ivanov ]
+  * d/rules: fix typo in rules with wrong package naming (ie: it was
+    sahara-commom instead of common (see the m at the end instead of n)).
 
- -- Mikhail Ivanov <mivanov@mirantis.com>  Mon, 23 Nov 2015 19:06:02 +0300
+ -- Thomas Goirand <zigo@debian.org>  Tue, 03 Nov 2015 11:58:35 +0000
 
 sahara (1:3.0.0-4) unstable; urgency=medium
 
