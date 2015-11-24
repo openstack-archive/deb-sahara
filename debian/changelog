@@ -1,9 +1,3 @@
-sahara (1:3.0.0-6) unstable; urgency=medium
-
-  * d/rules: fix typo with variables and directories naming
-
- -- Mikhail Ivanov <mivanov@mirantis.com>  Mon, 23 Nov 2015 19:16:38 +0300
-
 sahara (1:3.0.0-5) unstable; urgency=medium
 
   * d/rules: fix typo in rules with wrong package naming
