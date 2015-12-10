@@ -36,7 +36,6 @@ from sahara.tests.scenario import timeouts
 from sahara.tests.scenario import utils
 from sahara.utils import crypto as ssh
 
-
 logger = logging.getLogger('swiftclient')
 logger.setLevel(logging.CRITICAL)
 
@@ -44,6 +43,8 @@ DEFAULT_TEMPLATES_PATH = (
     'sahara/tests/scenario/templates/%(plugin_name)s/%(hadoop_version)s')
 CHECK_OK_STATUS = "OK"
 CHECK_FAILED_STATUS = "FAILED"
+CLUSTER_STATUS_ACTIVE = "Active"
+CLUSTER_STATUS_ERROR = "Error"
 
 
 def track_result(check_name, exit_with_error=True):
@@ -88,11 +89,13 @@ class BaseTestCase(base.BaseTestCase):
         timeouts.Defaults.init_defaults(self.testcase)
         self.testcase['ssh_username'] = self.sahara.sahara_client.images.get(
             self.nova.get_image_id(self.testcase['image'])).username
-        self.private_key, self.public_key = ssh.generate_key_pair()
-        self.key_name = self.__create_keypair()
+        self.key = self.testcase.get('key_name')
+        if self.key is None:
+            self.private_key, self.public_key = ssh.generate_key_pair()
+            self.key_name = self.__create_keypair()
         # save the private key if retain_resources is specified
         # (useful for debugging purposes)
-        if self.testcase['retain_resources']:
+        if self.testcase['retain_resources'] or self.key is None:
             with open(self.key_name + '.key', 'a') as private_key_file:
                 private_key_file.write(self.private_key)
         self.plugin_opts = {
@@ -100,6 +103,7 @@ class BaseTestCase(base.BaseTestCase):
             'hadoop_version': self.testcase['plugin_version']
         }
         self.template_path = DEFAULT_TEMPLATES_PATH % self.plugin_opts
+        self.cinder = True
 
     def _init_clients(self):
         username = self.credentials['os_username']
@@ -129,9 +133,15 @@ class BaseTestCase(base.BaseTestCase):
             tenant_name=tenant_name)
 
     def create_cluster(self):
-        self.ng_id_map = self._create_node_group_templates()
-        cl_tmpl_id = self._create_cluster_template()
-        self.cluster_id = self._create_cluster(cl_tmpl_id)
+        self.cluster_id = self.sahara.get_cluster_id(
+            self.testcase.get('existing_cluster'))
+        self.ng_id_map = {}
+        if self.cluster_id is None:
+            self.ng_id_map = self._create_node_group_templates()
+            cl_tmpl_id = self._create_cluster_template()
+            self.cluster_id = self._create_cluster(cl_tmpl_id)
+        elif self.key is None:
+            self.cinder = False
         self._poll_cluster_status_tracked(self.cluster_id)
         cluster = self.sahara.get_cluster(self.cluster_id, show_progress=True)
         self.check_cinder()
@@ -169,11 +179,10 @@ class BaseTestCase(base.BaseTestCase):
 
     @track_result("Check EDP jobs", False)
     def check_run_jobs(self):
-        jobs = {}
-        if self.testcase['edp_jobs_flow']:
-            jobs = self.testcase['edp_jobs_flow']
-        else:
-            jobs = []
+        batching = self.testcase.get('edp_batching',
+                                     len(self.testcase['edp_jobs_flow']))
+        batching_size = batching
+        jobs = self.testcase.get('edp_jobs_flow', [])
 
         pre_exec = []
         for job in jobs:
@@ -184,7 +193,13 @@ class BaseTestCase(base.BaseTestCase):
             configs = self._put_io_data_to_configs(
                 configs, input_id, output_id)
             pre_exec.append([job_id, input_id, output_id, configs])
+            batching -= 1
+            if not batching:
+                self._job_batching(pre_exec)
+                pre_exec = []
+                batching = batching_size
 
+    def _job_batching(self, pre_exec):
         job_exec_ids = []
         for job_exec in pre_exec:
             job_exec_ids.append(self._run_job(*job_exec))
@@ -198,7 +213,10 @@ class BaseTestCase(base.BaseTestCase):
                 location = utils.rand_name(ds['destination'])
             if ds['type'] == 'swift':
                 url = self._create_swift_data(location)
-            if ds['type'] == 'hdfs' or ds['type'] == 'maprfs':
+            if ds['type'] == 'hdfs':
+                url = self._create_hdfs_data(location, ds.get('hdfs_username',
+                                                              'oozie'))
+            if ds['type'] == 'maprfs':
                 url = location
             return self.__create_datasource(
                 name=utils.rand_name(name),
@@ -262,20 +280,38 @@ class BaseTestCase(base.BaseTestCase):
                               configs)
 
     def _poll_jobs_status(self, exec_ids):
-        with fixtures.Timeout(
-                timeouts.Defaults.instance.timeout_poll_jobs_status,
-                gentle=True):
-            success = False
-            while not success:
-                success = True
-                for exec_id in exec_ids:
-                    status = self.sahara.get_job_status(exec_id)
-                    if status in ['FAILED', 'KILLED', 'DONEWITHERROR']:
-                        self.fail("Job %s in %s status" % (exec_id, status))
-                    if status != 'SUCCEEDED':
-                        success = False
-
-                time.sleep(5)
+        try:
+            with fixtures.Timeout(
+                    timeouts.Defaults.instance.timeout_poll_jobs_status,
+                    gentle=True):
+                success = False
+                polling_ids = list(exec_ids)
+                while not success:
+                    current_ids = list(polling_ids)
+                    success = True
+                    for exec_id in polling_ids:
+                        status = self.sahara.get_job_status(exec_id)
+                        if status not in ['FAILED', 'KILLED', 'DONEWITHERROR',
+                                          "SUCCEEDED"]:
+                            success = False
+                        else:
+                            current_ids.remove(exec_id)
+                    polling_ids = list(current_ids)
+                    time.sleep(5)
+        finally:
+            report = []
+            for exec_id in exec_ids:
+                status = self.sahara.get_job_status(exec_id)
+                if status != "SUCCEEDED":
+                    info = self.sahara.get_job_info(exec_id)
+                    report.append("Job with id={id}, name={name}, "
+                                  "type={type} has status "
+                                  "{status}".format(id=exec_id,
+                                                    name=info.name,
+                                                    type=info.type,
+                                                    status=status))
+            if report:
+                self.fail("\n".join(report))
 
     def _create_swift_data(self, source=None):
         container = self._get_swift_container()
@@ -287,6 +323,31 @@ class BaseTestCase(base.BaseTestCase):
         self.__upload_to_container(container, path, data)
 
         return 'swift://%s.sahara/%s' % (container, path)
+
+    def _create_hdfs_data(self, source, hdfs_username):
+
+        def to_hex_present(string):
+            return "".join(map(lambda x: hex(ord(x)).replace("0x", "\\x"),
+                               string))
+
+        if 'user' in source:
+            return source
+        hdfs_dir = utils.rand_name("/user/%s/data" % hdfs_username)
+        inst_ip = self._get_nodes_with_process()[0]["management_ip"]
+        self._run_command_on_node(
+            inst_ip,
+            "sudo su - -c \"hdfs dfs -mkdir -p %(path)s \" %(user)s" % {
+                "path": hdfs_dir, "user": hdfs_username})
+        hdfs_filepath = utils.rand_name(hdfs_dir + "/file")
+        data = open(source).read()
+        self._run_command_on_node(
+            inst_ip,
+            ("echo -e \"%(data)s\" | sudo su - -c \"hdfs dfs"
+             " -put - %(path)s\" %(user)s") % {
+                 "data": to_hex_present(data),
+                 "path": hdfs_filepath,
+                 "user": hdfs_username})
+        return hdfs_filepath
 
     def _create_internal_db_data(self, source):
         data = open(source).read()
@@ -313,20 +374,25 @@ class BaseTestCase(base.BaseTestCase):
 
         body = {}
         for op in scale_ops:
+            node_scale = op['node_group']
             if op['operation'] == 'add':
                 if 'add_node_groups' not in body:
                     body['add_node_groups'] = []
                 body['add_node_groups'].append({
                     'node_group_template_id':
-                    self.ng_id_map[op['node_group']],
+                    self.ng_id_map.get(node_scale,
+                                       self.sahara.get_node_group_template_id(
+                                           node_scale)),
                     'count': op['size'],
-                    'name': utils.rand_name(op['node_group'])
+                    'name': utils.rand_name(node_scale)
                 })
             if op['operation'] == 'resize':
                 if 'resize_node_groups' not in body:
                     body['resize_node_groups'] = []
                 body['resize_node_groups'].append({
-                    'name': self.ng_name_map[op['node_group']],
+                    'name': self.ng_name_map.get(
+                        node_scale,
+                        self.sahara.get_node_group_template_id(node_scale)),
                     'count': op['size']
                 })
 
@@ -338,7 +404,6 @@ class BaseTestCase(base.BaseTestCase):
             self._validate_scaling(ng_after_scale,
                                    self._get_expected_count_of_nodes(
                                        ng_before_scale, body))
-        self.check_cinder()
 
     def _validate_scaling(self, after, expected_count):
         for (key, value) in six.iteritems(expected_count):
@@ -361,7 +426,7 @@ class BaseTestCase(base.BaseTestCase):
 
     @track_result("Check cinder volumes")
     def check_cinder(self):
-        if not self._get_node_list_with_volumes():
+        if not self._get_node_list_with_volumes() or not self.cinder:
             print("All tests for Cinder were skipped")
             return
         for node_with_volumes in self._get_node_list_with_volumes():
@@ -523,9 +588,9 @@ class BaseTestCase(base.BaseTestCase):
                 gentle=True):
             while True:
                 status = self.sahara.get_cluster_status(cluster_id)
-                if status == 'Active':
+                if status == CLUSTER_STATUS_ACTIVE:
                     break
-                if status == 'Error':
+                if status == CLUSTER_STATUS_ERROR:
                     raise exc.TempestException("Cluster in %s state" % status)
                 time.sleep(3)
 
@@ -534,11 +599,11 @@ class BaseTestCase(base.BaseTestCase):
                                         pkey=self.private_key)
         return ssh_session.exec_command(command)
 
-    def _get_nodes_with_process(self, process):
+    def _get_nodes_with_process(self, process=None):
         nodegroups = self.sahara.get_cluster(self.cluster_id).node_groups
         nodes_with_process = []
         for nodegroup in nodegroups:
-            if process in nodegroup['node_processes']:
+            if not process or process in nodegroup['node_processes']:
                 nodes_with_process.extend(nodegroup['instances'])
         return nodes_with_process
 

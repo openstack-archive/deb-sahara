@@ -55,10 +55,15 @@ class FakeCluster(object):
 
 
 class FakeResponse(object):
-    def __init__(self, set_id=None, set_status=None, node_groups=None):
+    def __init__(self, set_id=None, set_status=None, node_groups=None,
+                 url=None, job_id=None, name=None, job_type=None):
         self.id = set_id
         self.status = set_status
         self.node_groups = node_groups
+        self.url = url
+        self.job_id = job_id
+        self.name = name
+        self.type = job_type
 
 
 class TestBase(testtools.TestCase):
@@ -114,6 +119,7 @@ class TestBase(testtools.TestCase):
             'timeout_check_transient': 3,
             'retain_resources': True,
             'image': 'image_name',
+            'edp_batching': 1,
             "edp_jobs_flow":
                 {
                     "test_flow":
@@ -142,6 +148,7 @@ class TestBase(testtools.TestCase):
         self.base_scenario.ng_id_map = {'worker': 'set_id', 'master': 'set_id'}
         self.base_scenario.ng_name_map = {}
         self.base_scenario.key_name = 'test_key'
+        self.base_scenario.key = 'key_from_yaml'
         self.base_scenario.template_path = ('sahara/tests/scenario/templates/'
                                             'vanilla/2.7.1')
         self.job = self.base_scenario.testcase["edp_jobs_flow"].get(
@@ -230,7 +237,8 @@ class TestBase(testtools.TestCase):
     @mock.patch('sahara.tests.scenario.clients.NeutronClient.get_network_id',
                 return_value='mock_net')
     @mock.patch('saharaclient.api.base.ResourceManager._get',
-                return_value=FakeResponse(set_status='Active'))
+                return_value=FakeResponse(
+                    set_status=base.CLUSTER_STATUS_ACTIVE))
     @mock.patch('sahara.tests.scenario.base.BaseTestCase._check_event_logs')
     def test__poll_cluster_status(self, mock_status, mock_neutron,
                                   mock_saharaclient, mock_check_event_logs):
@@ -339,12 +347,16 @@ class TestBase(testtools.TestCase):
                              ['id_for_job_binaries'],
                              []))
 
+    @mock.patch('sahara.tests.scenario.clients.SaharaClient.get_cluster_id',
+                return_value='cluster_id')
     @mock.patch('sahara.tests.scenario.base.BaseTestCase.check_cinder',
                 return_value=None)
     @mock.patch('sahara.tests.scenario.clients.SaharaClient.get_job_status',
-                return_value='SUCCEEDED')
+                return_value='KILLED')
     @mock.patch('saharaclient.api.base.ResourceManager._get',
-                return_value=FakeResponse(set_id='id_for_run_job_get'))
+                return_value=FakeResponse(set_id='id_for_run_job_get',
+                                          job_type='Java',
+                                          name='test_job'))
     @mock.patch('saharaclient.api.base.ResourceManager._create',
                 return_value=FakeResponse(set_id='id_for_run_job_create'))
     @mock.patch('sahara.tests.scenario.base.BaseTestCase.'
@@ -369,7 +381,8 @@ class TestBase(testtools.TestCase):
                             mock_job_binaries, mock_job,
                             mock_node_group_template, mock_cluster_template,
                             mock_cluster, mock_cluster_status, mock_create,
-                            mock_get, mock_client, mock_cinder):
+                            mock_get, mock_client, mock_cinder,
+                            mock_get_cluster_id):
         self.base_scenario._init_clients()
         self.base_scenario.create_cluster()
         self.base_scenario.testcase["edp_jobs_flow"] = [
@@ -393,6 +406,9 @@ class TestBase(testtools.TestCase):
         ]
         with mock.patch('time.sleep'):
             self.assertIsNone(self.base_scenario.check_run_jobs())
+        self.assertIn("Job with id=id_for_run_job_create, name=test_job, "
+                      "type=Java has status KILLED",
+                      self.base_scenario._results[-1]['traceback'][-1])
 
     @mock.patch('sahara.tests.scenario.base.BaseTestCase.'
                 '_poll_cluster_status',
@@ -506,3 +522,24 @@ class TestBase(testtools.TestCase):
                              "ephemeral_disk": 1,
                              "swap_disk": 1
                          }))
+
+    @mock.patch('sahara.tests.scenario.base.BaseTestCase._run_command_on_node')
+    @mock.patch('keystoneclient.session.Session')
+    def test_create_hdfs_data(self, mock_session, mock_ssh):
+        self.base_scenario._init_clients()
+        output_path = '/user/test/data/output'
+        self.assertEqual(output_path,
+                         self.base_scenario._create_hdfs_data(output_path,
+                                                              None))
+        input_path = 'etc/edp-examples/edp-pig/trim-spaces/data/input'
+        with mock.patch(
+            'sahara.tests.scenario.clients.SaharaClient.get_cluster',
+            return_value=FakeResponse(node_groups=[
+                {
+                    'instances': [
+                        {
+                            'management_ip': 'test_ip'
+                        }]
+                }])):
+            self.assertTrue('/user/test/data-' in (
+                self.base_scenario._create_hdfs_data(input_path, 'test')))

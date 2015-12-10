@@ -41,7 +41,6 @@ if os.path.exists(os.path.join(possible_topdir,
 oslo_i18n.enable_lazy()
 
 
-from sahara.api import acl
 import sahara.main as server
 from sahara.service import ops
 
@@ -49,12 +48,9 @@ from sahara.service import ops
 def main():
     server.setup_common(possible_topdir, 'engine')
 
-    # NOTE(apavlov): acl.wrap is called here to set up auth_uri value
-    # in context by using keystone functionality (mostly to avoid
-    # code duplication).
-    acl.wrap(None)
-
     server.setup_sahara_engine()
 
     ops_server = ops.OpsServer()
-    ops_server.start()
+    launcher = server.get_process_launcher()
+    launcher.launch_service(ops_server.get_service())
+    launcher.wait()

@@ -13,8 +13,6 @@
 # under the License.
 
 
-import six
-
 import sahara.plugins.mapr.domain.configuration_file as bcf
 import sahara.plugins.mapr.domain.node_process as np
 import sahara.plugins.mapr.domain.service as s
@@ -39,6 +37,12 @@ HBASE_THRIFT = np.NodeProcess(
     package='mapr-hbasethrift',
     open_ports=[9090]
 )
+HBASE_REST = np.NodeProcess(
+    name="hbaserestgateway",
+    ui_name="HBase REST",
+    package="mapr-hbase-rest",
+    open_ports=[8080, 8085],
+)
 
 
 class HBase(s.Service):
@@ -56,6 +60,9 @@ class HBase(s.Service):
             vu.at_least(1, HBASE_MASTER),
             vu.at_least(1, HBASE_REGION_SERVER),
         ]
+        self._ui_info = [
+            ("HBase Master", HBASE_MASTER, "http://%s:60010"),
+        ]
 
     def get_config_files(self, cluster_context, configs, instance=None):
         hbase_site = bcf.HadoopXML("hbase-site.xml")
@@ -66,7 +73,6 @@ class HBase(s.Service):
         return [hbase_site]
 
 
-@six.add_metaclass(s.Single)
 class HBaseV094(HBase):
     def __init__(self):
         super(HBaseV094, self).__init__()
@@ -74,7 +80,6 @@ class HBaseV094(HBase):
         self._dependencies = [('mapr-hbase', self.version)]
 
 
-@six.add_metaclass(s.Single)
 class HBaseV0987(HBase):
     def __init__(self):
         super(HBaseV0987, self).__init__()
@@ -82,17 +87,23 @@ class HBaseV0987(HBase):
         self._dependencies = [('mapr-hbase', self.version)]
 
 
-@six.add_metaclass(s.Single)
 class HBaseV0989(HBase):
     def __init__(self):
         super(HBaseV0989, self).__init__()
         self._version = '0.98.9'
         self._dependencies = [('mapr-hbase', self.version)]
+        self._node_processes.append(HBASE_REST)
+        self._ui_info.append(
+            ("HBase REST", HBASE_REST, "http://%s:8085"),
+        )
 
 
-@six.add_metaclass(s.Single)
 class HBaseV09812(HBase):
     def __init__(self):
         super(HBaseV09812, self).__init__()
         self._version = "0.98.12"
         self._dependencies = [("mapr-hbase", self.version)]
+        self._node_processes.append(HBASE_REST)
+        self._ui_info.append(
+            ("HBase REST", HBASE_REST, "http://%s:8085"),
+        )

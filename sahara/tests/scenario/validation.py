@@ -90,6 +90,14 @@ SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
+                    "existing_cluster": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "key_name": {
+                        "type": "string",
+                        "minLength": 1
+                    },
                     "plugin_name": {
                         "type": "string",
                         "minLength": 1
@@ -223,7 +231,11 @@ SCHEMA = {
                                 }
                             },
                             "anti_affinity": {
-                                "type": "boolean"
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                }
                             }
                         },
                         "required": ["name", "node_group_templates"],
@@ -294,11 +306,14 @@ SCHEMA = {
                         }
                     },
                     "edp_jobs_flow": {
-                        "type": "string",
-                        "minLength": 1
+                        "type": ["string", "array"]
                     },
                     "retain_resources": {
                         "type": "boolean"
+                    },
+                    "edp_batching": {
+                        "type": "integer",
+                        "minimum": 1
                     }
                 },
                 "required": ["plugin_name", "plugin_version", "image"],
@@ -328,6 +343,9 @@ SCHEMA = {
                                         "enum": ["swift", "hdfs", "maprfs"]
                                     },
                                     "source": {
+                                        "type": "string"
+                                    },
+                                    "hdfs_username": {
                                         "type": "string"
                                     }
                                 },

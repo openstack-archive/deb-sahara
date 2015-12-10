@@ -18,8 +18,11 @@ eggs
 etc/sahara.conf
 etc/sahara/*.conf
 etc/sahara/*.topology
-sahara/tests/integration/configs/itest.conf
 sdist
 target
 tools/lintstack.head.py
 tools/pylint_exceptions
+doc/source/sample.config
+
+# Files created by releasenotes build
+releasenotes/build

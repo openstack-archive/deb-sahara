@@ -14,11 +14,13 @@
 
 
 from oslo_serialization import jsonutils as json
+import six
 
-from sahara import context
 import sahara.exceptions as e
 from sahara.i18n import _
 import sahara.plugins.exceptions as ex
+from sahara.plugins.mapr.util import event_log as el
+from sahara.plugins.mapr.util import general as g
 from sahara.plugins.mapr.util import service_utils as su
 import sahara.plugins.provisioning as p
 from sahara.utils import files as files
@@ -26,6 +28,7 @@ from sahara.utils import files as files
 _INSTALL_PACKAGES_TIMEOUT = 3600
 
 
+@six.add_metaclass(g.Singleton)
 class Service(object):
     def __init__(self):
         self._name = None
@@ -75,13 +78,11 @@ class Service(object):
         return self._validation_rules
 
     def install(self, cluster_context, instances):
-        with context.ThreadGroup() as tg:
-            for instance in instances:
-                tg.spawn('install-packages-%s' % instance.id,
-                         self._install_packages_on_instance, cluster_context,
-                         instance)
+        g.execute_on_instances(instances, self._install_packages_on_instance,
+                               cluster_context)
 
-    def _install_packages_on_instance(self, cluster_context, instance):
+    @el.provision_event(instance_reference=1)
+    def _install_packages_on_instance(self, instance, cluster_context):
         processes = [p for p in self.node_processes if
                      p.ui_name in instance.node_group.node_processes]
         if processes is not None and len(processes) > 0:
@@ -89,8 +90,7 @@ class Service(object):
             cmd = cluster_context.distro.create_install_cmd(packages)
             with instance.remote() as r:
                 r.execute_command(cmd, run_as_root=True,
-                                  timeout=_INSTALL_PACKAGES_TIMEOUT,
-                                  raise_when_error=False)
+                                  timeout=_INSTALL_PACKAGES_TIMEOUT)
 
     def _get_packages(self, node_processes):
         result = []
@@ -219,12 +219,3 @@ class Service(object):
 
     def post_configure_sh(self, cluster_context, instances):
         pass
-
-
-class Single(type):
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances:
-            cls._instances[cls] = super(Single, cls).__call__(*args, **kwargs)
-        return cls._instances[cls]

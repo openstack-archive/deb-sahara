@@ -65,7 +65,7 @@ class RunnerUnitTest(testtools.TestCase):
             "clusters": [
                 {
                     "image": "sahara-vanilla-2.7.1-ubuntu-14.04",
-                    "edp_jobs_flow": None,
+                    "edp_jobs_flow": [],
                     "class_name": "vanilla2_7_1",
                     "plugin_name": "vanilla",
                     "scenario": ['run_jobs', 'scale', 'run_jobs'],
@@ -138,6 +138,20 @@ class RunnerUnitTest(testtools.TestCase):
                         "args": [10, 10]
                     },
                     ],
+                "test_flow2": [
+                    {
+                        "type": "Java",
+                        "additional_libs": [
+                            {
+                                "type": "database",
+                                "source": "sahara/tests/integration/tests/"
+                                          "resources/"
+                            }],
+                        "configs": "edp.java.main_class: org.apache.hadoop."
+                                   "examples.QuasiMonteCarlo",
+                        "args": [20, 20]
+                    },
+                ],
                 },
             }
 
@@ -251,6 +265,15 @@ class RunnerUnitTest(testtools.TestCase):
     @mock.patch('subprocess.call', return_value=None)
     def test_runner_template_working(self, mock_sub, mock_sys):
         sys.argv = ['sahara/tests/scenario/runner.py',
+                    '-V',
+                    'sahara/tests/scenario_unit/templatevars_complete.ini',
+                    'sahara/tests/scenario_unit/vanilla2_7_1.yaml.mako']
+        runner.main()
+
+    @mock.patch('sys.exit', return_value=None)
+    def test_runner_validate(self, mock_sys):
+        sys.argv = ['sahara/tests/scenario/runner.py',
+                    '--validate',
                     '-V',
                     'sahara/tests/scenario_unit/templatevars_complete.ini',
                     'sahara/tests/scenario_unit/vanilla2_7_1.yaml.mako']

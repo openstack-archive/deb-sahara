@@ -244,10 +244,6 @@ def cluster_update(context, cluster_id, values):
             if cluster is None:
                 raise ex.NotFoundException(cluster_id,
                                            _("Cluster id '%s' not found!"))
-
-            validate.check_tenant_for_update(context, cluster)
-            validate.check_protected_from_update(cluster, values)
-
             cluster.update(values)
     except db_exc.DBDuplicateEntry as e:
         raise ex.DBDuplicateEntry(
@@ -845,11 +841,6 @@ def job_execution_update(context, job_execution_id, values):
         if not job_ex:
             raise ex.NotFoundException(job_execution_id,
                                        _("JobExecution id '%s' not found!"))
-
-        # Skip this check for periodic tasks
-        if context.tenant_id:
-            validate.check_tenant_for_update(context, job_ex)
-        validate.check_protected_from_update(job_ex, values)
 
         job_ex.update(values)
         session.add(job_ex)

@@ -151,6 +151,22 @@ class SaharaClient(Client):
         data = self.sahara_client.job_executions.get(exec_id)
         return str(data.info['status'])
 
+    def get_job_info(self, exec_id):
+        job_execution = self.sahara_client.job_executions.get(exec_id)
+        return self.sahara_client.jobs.get(job_execution.job_id)
+
+    def get_cluster_id(self, name):
+        if uuidutils.is_uuid_like(name):
+            return name
+        for cluster in self.sahara_client.clusters.list():
+            if cluster.name == name:
+                return cluster.id
+
+    def get_node_group_template_id(self, name):
+        for nodegroup in self.sahara_client.node_group_templates.list():
+            if nodegroup.name == name:
+                return nodegroup.id
+
     def is_resource_deleted(self, method, *args, **kwargs):
         try:
             method(*args, **kwargs)

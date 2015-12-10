@@ -73,6 +73,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         return configs.load_configs(hadoop_version)
 
     def configure_cluster(self, cluster):
+        deploy.disable_repos(cluster)
         deploy.setup_ambari(cluster)
         deploy.setup_agents(cluster)
         deploy.wait_ambari_accessible(cluster)
@@ -175,14 +176,25 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         pass
 
     def get_edp_engine(self, cluster, job_type):
+        if job_type in edp_engine.EDPSparkEngine.get_supported_job_types():
+            return edp_engine.EDPSparkEngine(cluster)
         if job_type in edp_engine.EDPOozieEngine.get_supported_job_types():
             return edp_engine.EDPOozieEngine(cluster)
         return None
 
-    def get_edp_job_types(self, versions=None):
-        return edp_engine.EDPOozieEngine.get_supported_job_types()
+    def get_edp_job_types(self, versions=[]):
+        res = {}
+        for version in self.get_versions():
+            if not versions or version in versions:
+                oozie_engine = edp_engine.EDPOozieEngine
+                spark_engine = edp_engine.EDPSparkEngine
+                res[version] = (oozie_engine.get_supported_job_types() +
+                                spark_engine.get_supported_job_types())
+        return res
 
     def get_edp_config_hints(self, job_type, version):
+        if job_type in edp_engine.EDPSparkEngine.get_supported_job_types():
+            return edp_engine.EDPSparkEngine.get_possible_job_config(job_type)
         if job_type in edp_engine.EDPOozieEngine.get_supported_job_types():
             return edp_engine.EDPOozieEngine.get_possible_job_config(job_type)
 
@@ -199,6 +211,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
             p_common.HISTORYSERVER: [10020, 19888],
             p_common.HIVE_METASTORE: [9933],
             p_common.HIVE_SERVER: [9999, 10000],
+            p_common.KAFKA_BROKER: [6667],
             p_common.NAMENODE: [8020, 9000, 50070, 50470],
             p_common.NIMBUS: [6627],
             p_common.NODEMANAGER: [8042, 8044, 45454],
@@ -207,7 +220,8 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
             p_common.RESOURCEMANAGER: [8025, 8030, 8050, 8088, 8141],
             p_common.SECONDARY_NAMENODE: [50090],
             p_common.SPARK_JOBHISTORYSERVER: [18080],
-            p_common.STORM_UI_SERVER: [8000, 8080, 8744]
+            p_common.STORM_UI_SERVER: [8000, 8080, 8744],
+            p_common.ZOOKEEPER_SERVER: [2181],
         }
         ports = []
         for service in node_group.node_processes:

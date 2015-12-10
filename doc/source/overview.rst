@@ -29,15 +29,17 @@ The solution will address the following use cases:
 
 Key features are:
 
-* designed as an OpenStack component;
+* designed as an OpenStack component.
 * managed through a REST API with a user interface(UI) available as part of
-  OpenStack Dashboard;
+  OpenStack Dashboard.
 * support for a variety of data processing frameworks:
-    * multiple Hadoop vendor distributions
-    * Apache Spark and Storm
-    * pluggable system of Hadoop installation engines
+
+    * multiple Hadoop vendor distributions.
+    * Apache Spark and Storm.
+    * pluggable system of Hadoop installation engines.
     * integration with vendor specific management tools, such as Apache
-      Ambari and Cloudera Management Console
+      Ambari and Cloudera Management Console.
+
 * predefined configuration templates with the ability to modify parameters.
 
 Details
@@ -98,7 +100,7 @@ For fast cluster provisioning a generic workflow will be as following:
 * perform operations on the cluster; add or remove nodes.
 * terminate the cluster when it is no longer needed.
 
-For analytics as a service, a generic workflow will be as follows:
+For analytics as a service, a generic workflow will be as following:
 
 * select one of the predefined data processing framework versions.
 * configure a job:
@@ -114,7 +116,7 @@ For analytics as a service, a generic workflow will be as follows:
       to the user.
     * cluster will be removed automatically after job completion.
 
-* get the results of computations (for example, from Swift).
+* get the results of computations (for example, from swift).
 
 User's Perspective
 ------------------
@@ -136,7 +138,7 @@ configurations can not be applied to a single node, but to a whole Cluster.
 A user can specify these kinds of configurations in a Cluster Template. Sahara
 enables users to specify which processes should be added to an anti-affinity
 group within a Cluster Template. If a process is included into an
-anti-affinity group, it means that VMs where this process are going to be
+anti-affinity group, it means that VMs where this process is going to be
 launched should be scheduled to different hardware hosts.
 
 The Cluster entity represents a collection of VM instances that all have the
@@ -151,13 +153,13 @@ and NameNode processes could be run either on a single VM or two separate
 VMs. Also a cluster could contain worker nodes of different types. Worker
 nodes could run both TaskTracker and DataNode, or either of these processes
 alone. Sahara allows a user to create a cluster with any combination of these
-options, but it will not allow the creation of a non working topology (for
+options, but it will not allow the creation of a non-working topology (for
 example: a set of workers with DataNodes, but without a NameNode).
 
-Each Cluster belongs to some Identity service project determined by the user.
+Each Cluster belongs to an Identity service project determined by the user.
 Users have access only to objects located in projects they have access to.
 Users can edit and delete only objects they have created or exist in their
-project. Naturally, admin users have full access to every object. In this
+projects. Naturally, admin users have full access to every object. In this
 manner, sahara complies with general OpenStack access policy.
 
 Integration with Object Storage
@@ -184,6 +186,6 @@ In addition to the monitoring capabilities provided by vendor-specific
 Hadoop management tooling, sahara provides pluggable integration with
 external monitoring systems such as Nagios or Zabbix.
 
-Both deployment and monitoring tools can be installed on stand-alone VMs,
+Both deployment and monitoring tools can be installed on standalone VMs,
 thus allowing a single instance to manage and monitor several clusters at
 once.

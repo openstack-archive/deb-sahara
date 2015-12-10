@@ -20,6 +20,7 @@ import six
 import yaml
 
 from sahara.plugins import provisioning as plugin_provisioning
+from sahara.service.heat import commons as heat_common
 from sahara.utils import general as g
 from sahara.utils.openstack import base as b
 from sahara.utils.openstack import heat as h
@@ -30,6 +31,14 @@ LOG = logging.getLogger(__name__)
 
 SSH_PORT = 22
 INSTANCE_RESOURCE_NAME = "inst"
+
+heat_engine_opts = [
+    cfg.BoolOpt(
+        'heat_enable_wait_condition', default=True,
+        help="Enable wait condition feature to reduce polling during cluster "
+             "creation")
+]
+CONF.register_opts(heat_engine_opts)
 
 
 def _get_inst_name(ng):
@@ -105,6 +114,26 @@ class ClusterStack(object):
         self.heat_stack = None
         self.files = {}
         self.last_updated_time = None
+        self.base_info = (
+            "Data Processing Cluster by Sahara\n"
+            "Sahara cluster name: {cluster}\n"
+            "Sahara engine: {version}".format(
+                cluster=cluster.name, version=heat_common.HEAT_ENGINE_VERSION)
+        )
+
+    def _node_group_description(self, ng):
+        return "{info}\nNode group {node_group}".format(
+            info=self.base_info, node_group=ng.name)
+
+    def _asg_for_node_group_description(self, ng):
+        return ("{info}\n"
+                "Auto security group for Sahara Node Group: "
+                "{node_group}".format(info=self.base_info, node_group=ng.name))
+
+    def _volume_for_node_group_description(self, ng):
+        return ("{info}\n"
+                "Volume for Sahara Node Group {node_group}".format(
+                    node_group=ng.name, info=self.base_info))
 
     def add_node_group_extra(self, node_group_id, node_count,
                              gen_userdata_func):
@@ -118,7 +147,7 @@ class ClusterStack(object):
         resources = self._serialize_resources(outputs)
         return yaml.safe_dump({
             "heat_template_version": "2013-05-23",
-            "description": "Data Processing Cluster by Sahara",
+            "description": self.base_info,
             "resources": resources,
             "outputs": outputs
         })
@@ -205,9 +234,7 @@ class ClusterStack(object):
     def _serialize_ng_file(self, ng):
         return yaml.safe_dump({
             "heat_template_version": "2013-05-23",
-            "description": "Node Group {node_group} of "
-                           "cluster {cluster}".format(node_group=ng.name,
-                                                      cluster=ng.cluster.name),
+            "description": self._node_group_description(ng),
             "parameters": {
                 "instance_index": {
                     "type": "string"
@@ -222,9 +249,7 @@ class ClusterStack(object):
 
     def _serialize_auto_security_group(self, ng):
         security_group_name = g.generate_auto_security_group_name(ng)
-        security_group_description = (
-            "Auto security group created by Sahara for Node Group "
-            "'%s' of cluster '%s'." % (ng.name, ng.cluster.name))
+        security_group_description = self._asg_for_node_group_description(ng)
 
         if CONF.use_neutron:
             res_type = "OS::Neutron::SecurityGroup"
@@ -318,21 +343,25 @@ class ClusterStack(object):
 
         gen_userdata_func = self.node_groups_extra[ng.id]['gen_userdata_func']
         key_script = gen_userdata_func(ng, inst_name)
-        wait_condition_script = (
-            "wc_notify --data-binary '{\"status\": \"SUCCESS\"}'")
-        userdata = {
-            "str_replace": {
-                "template": "\n".join([key_script, wait_condition_script]),
-                "params": {
-                    "wc_notify": {
-                        "get_attr": [
-                            _get_wc_handle_name(ng.name),
-                            "curl_cli"
-                        ]
+        if CONF.heat_enable_wait_condition:
+            wait_condition_script = (
+                "wc_notify --data-binary '{\"status\": \"SUCCESS\"}'")
+            userdata = {
+                "str_replace": {
+                    "template": "\n".join(
+                        [key_script, wait_condition_script]),
+                    "params": {
+                        "wc_notify": {
+                            "get_attr": [
+                                _get_wc_handle_name(ng.name),
+                                "curl_cli"
+                            ]
+                        }
                     }
                 }
             }
-        }
+        else:
+            userdata = key_script
 
         if ng.availability_zone:
             properties["availability_zone"] = ng.availability_zone
@@ -354,11 +383,14 @@ class ClusterStack(object):
             }
         })
 
-        if ng.volumes_per_node > 0 and ng.volumes_size > 0:
-            resources.update(self._serialize_volume(ng))
-
         resources.update(self._serialize_volume(ng))
-        resources.update({
+        resources.update(self._serialize_wait_condition(ng))
+        return resources
+
+    def _serialize_wait_condition(self, ng):
+        if not CONF.heat_enable_wait_condition:
+            return {}
+        return {
             _get_wc_handle_name(ng.name): {
                 "type": "OS::Heat::WaitConditionHandle"
             },
@@ -370,8 +402,7 @@ class ClusterStack(object):
                     "handle": {"get_resource": _get_wc_handle_name(ng.name)}
                 }
             }
-        })
-        return resources
+        }
 
     def _serialize_port(self, port_name, fixed_net_id, security_groups):
         properties = {
@@ -418,6 +449,8 @@ class ClusterStack(object):
         }
 
     def _serialize_volume(self, ng):
+        if not ng.volumes_size or not ng.volumes_per_node:
+            return {}
         volume_file_name = "file://" + ng.name + "-volume.yaml"
         self.files[volume_file_name] = self._serialize_volume_file(ng)
 
@@ -456,9 +489,7 @@ class ClusterStack(object):
 
         return yaml.safe_dump({
             "heat_template_version": "2013-05-23",
-            "description": "Volume for node Group {node_group} of "
-                           "cluster {cluster}".format(node_group=ng.name,
-                                                      cluster=ng.cluster.name),
+            "description": self._volume_for_node_group_description(ng),
             "parameters": {
                 "volume_index": {
                     "type": "string"
@@ -485,12 +516,12 @@ class ClusterStack(object):
         })
 
     def _get_security_groups(self, node_group):
-        if not node_group.auto_security_group:
-            return node_group.security_groups
         node_group_sg = list(node_group.security_groups or [])
-        node_group_sg += [
-            {"get_resource": g.generate_auto_security_group_name(node_group)}
-        ]
+        if node_group.auto_security_group:
+            node_group_sg += [
+                {"get_resource": g.generate_auto_security_group_name(
+                    node_group)}
+            ]
         return node_group_sg
 
     def _serialize_aa_server_group(self):

@@ -8,7 +8,7 @@ manner.
 Basic configuration
 -------------------
 
-Sahara is packaged with a basic sample configration file:
+Sahara is packaged with a basic sample configuration file:
 ``sahara.conf.sample-basic``. This file contains all the essential
 parameters that are required for sahara. We recommend creating your
 configuration file based on this basic example.
@@ -64,7 +64,7 @@ in the ``[DEFAULT]`` section:
 If you are using nova-network for networking then this parameter should
 be set to ``false``.
 
-With these paramaters set, sahara is ready to run.
+With these parameters set, sahara is ready to run.
 
 If you wish to increase the logging levels for troubleshooting there
 are two parameters in the ``[DEFAULT]`` section of the configuration
@@ -118,11 +118,11 @@ address:
 
 .. warning::
     When using floating IP addresses for management
-    (``use_floating_ip=True``) **every** instance in the cluster must have
+    (``use_floating_ips=True``) **every** instance in the cluster must have
     a floating IP address, otherwise sahara will not be able to utilize
     that cluster.
 
-If not using floating IP addresses (``use_floating_ip=False``) sahara
+If not using floating IP addresses (``use_floating_ips=False``) sahara
 will use fixed IP addresses for instance management. When using neutron
 for the Networking service the user will be able to choose the
 fixed IP network for all instances in a cluster. Whether using nova-network
@@ -250,3 +250,12 @@ Example 2. Disallow image registry manipulations to non-admin users.
         "data-processing:images:add_tags": "role:admin",
         "data-processing:images:remove_tags": "role:admin"
     }
+
+API configuration
+-----------------
+
+Sahara uses the ``api-paste.ini`` file to configure the data processing API
+service. For middleware injection sahara uses pastedeploy library. The location
+of the api-paste file is controlled by the ``api_paste_config`` parameter in
+the ``[default]`` section. By default sahara will search for a
+``api-paste.ini`` file in the same directory as the configuration file.

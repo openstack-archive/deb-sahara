@@ -8,6 +8,7 @@ clusters:
         node_processes:
           - Ambari
           - MapReduce History Server
+          - Spark History Server
           - NameNode
           - ResourceManager
           - SecondaryNameNode
@@ -42,4 +43,6 @@ clusters:
       name: ${cluster_name}
     scenario:
       - run_jobs
-    edp_jobs_flow: hadoop_2
+    edp_jobs_flow:
+      - java_job
+      - spark_pi
