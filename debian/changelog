@@ -2,6 +2,7 @@ sahara (1:4.0.0~b1-1) experimental; urgency=medium
 
   * New upstream release.
   * Fixed (build-)depends for this release.
+  * Removed the use of "dpkg-parsechangelog -S" wich doesn't work on Trusty.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 10 Dec 2015 14:42:25 +0100
 

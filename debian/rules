@@ -3,7 +3,7 @@
 PYTHONS:=$(shell pyversions -vr)
 
 include /usr/share/openstack-pkg-tools/pkgos.make
-export OSLO_PACKAGE_VERSION=$(shell dpkg-parsechangelog -S Version | sed -e 's/^[[:digit:]]*://' -e 's/[-].*//' -e 's/~/.0/')
+export OSLO_PACKAGE_VERSION=$(shell dpkg-parsechangelog | grep Version: | cut -d' ' -f2 | sed -e 's/^[[:digit:]]*://' -e 's/[-].*//' -e 's/~/.0/' | head -n 1)
 
 LAST_CHANGE = $(shell dpkg-parsechangelog -S Date)
 BUILD_DATE  = $(shell LC_ALL=C date -u "+%B %d, %Y" -d "$(LAST_CHANGE)")
