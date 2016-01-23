@@ -105,7 +105,11 @@ def _run_job(job_execution_id):
     # Job id is a string
     # Status is a string
     # Extra is a dictionary to add to extra in the job_execution
-    jid, status, extra = eng.run_job(job_execution)
+    if job_execution.job_configs.job_execution_info.get('job_execution_type'
+                                                        ) == 'scheduled':
+        jid, status, extra = eng.run_scheduled_job(job_execution)
+    else:
+        jid, status, extra = eng.run_job(job_execution)
 
     # Set the job id and the start time
     # Optionally, update the status and the 'extra' field
@@ -147,9 +151,12 @@ def cancel_job(job_execution_id):
     ctx = context.ctx()
     job_execution = conductor.job_execution_get(ctx, job_execution_id)
     if job_execution.info['status'] in edp.JOB_STATUSES_TERMINATED:
+        LOG.info(_LI("Job execution is already finished and shouldn't be"
+                     " canceled"))
         return job_execution
     cluster = conductor.cluster_get(ctx, job_execution.cluster_id)
     if cluster is None:
+        LOG.info(_LI("Can not cancel this job on a non-existant cluster."))
         return job_execution
     engine = _get_job_engine(cluster, job_execution)
     if engine is not None:

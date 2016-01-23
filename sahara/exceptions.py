@@ -224,9 +224,13 @@ class HeatStackException(SaharaException):
     code = "HEAT_STACK_EXCEPTION"
     message_template = _("Heat stack failed with status %s")
 
-    def __init__(self, heat_stack_status):
-        formatted_message = self.message_template % heat_stack_status
-
+    def __init__(self, heat_stack_status=None, message=None):
+        if message:
+            formatted_message = message
+        elif heat_stack_status:
+            formatted_message = self.message_template % heat_stack_status
+        else:
+            formatted_message = _("Heat stack failed")
         super(HeatStackException, self).__init__(formatted_message)
 
 
@@ -354,3 +358,13 @@ class MaxRetriesExceeded(SaharaException):
                                                      'attempts': attempts}
 
         super(MaxRetriesExceeded, self).__init__(formatted_message)
+
+
+class InvalidJobExecutionInfoException(SaharaException):
+    message = _("Job execution information is invalid")
+
+    def __init__(self, message=None):
+        if message:
+            self.message = message
+        self.code = "INVALID_JOB_EXECUTION_INFO"
+        super(InvalidJobExecutionInfoException, self).__init__()

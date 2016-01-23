@@ -18,6 +18,7 @@ import six
 
 from sahara import conductor as c
 from sahara import context
+from sahara.service.castellan import utils as key_manager
 from sahara.service.edp.oozie.workflow_creator import hive_workflow
 from sahara.service.edp.oozie.workflow_creator import java_workflow
 from sahara.service.edp.oozie.workflow_creator import mapreduce_workflow
@@ -101,8 +102,8 @@ class BaseFactory(object):
         if proxy_configs:
             configs[sw.HADOOP_SWIFT_USERNAME] = proxy_configs.get(
                 'proxy_username')
-            configs[sw.HADOOP_SWIFT_PASSWORD] = proxy_configs.get(
-                'proxy_password')
+            configs[sw.HADOOP_SWIFT_PASSWORD] = key_manager.get_secret(
+                proxy_configs.get('proxy_password'))
             configs[sw.HADOOP_SWIFT_TRUST_ID] = proxy_configs.get(
                 'proxy_trust_id')
             configs[sw.HADOOP_SWIFT_DOMAIN_NAME] = CONF.proxy_user_domain_name
@@ -113,8 +114,8 @@ class BaseFactory(object):
                 if "user" in src.credentials:
                     configs[sw.HADOOP_SWIFT_USERNAME] = src.credentials['user']
                 if "password" in src.credentials:
-                    configs[
-                        sw.HADOOP_SWIFT_PASSWORD] = src.credentials['password']
+                    configs[sw.HADOOP_SWIFT_PASSWORD] = (
+                        key_manager.get_secret(src.credentials['password']))
                 break
         return configs
 
@@ -224,8 +225,8 @@ class JavaFactory(BaseFactory):
         if proxy_configs:
             configs[sw.HADOOP_SWIFT_USERNAME] = proxy_configs.get(
                 'proxy_username')
-            configs[sw.HADOOP_SWIFT_PASSWORD] = proxy_configs.get(
-                'proxy_password')
+            configs[sw.HADOOP_SWIFT_PASSWORD] = key_manager.get_secret(
+                proxy_configs.get('proxy_password'))
             configs[sw.HADOOP_SWIFT_TRUST_ID] = proxy_configs.get(
                 'proxy_trust_id')
             configs[sw.HADOOP_SWIFT_DOMAIN_NAME] = CONF.proxy_user_domain_name
@@ -315,15 +316,13 @@ def get_possible_job_config(job_type):
 
     if edp.compare_job_type(job_type,
                             edp.JOB_TYPE_MAPREDUCE, edp.JOB_TYPE_PIG):
-        # TODO(nmakhotkin): Here we need return config based on specific plugin
         cfg = xmlutils.load_hadoop_xml_defaults(
-            'plugins/vanilla/v2_6_0/resources/mapred-default.xml')
+            'service/edp/resources/mapred-default.xml')
         if edp.compare_job_type(job_type, edp.JOB_TYPE_MAPREDUCE):
             cfg += get_possible_mapreduce_configs()
     elif edp.compare_job_type(job_type, edp.JOB_TYPE_HIVE):
-        # TODO(nmakhotkin): Here we need return config based on specific plugin
         cfg = xmlutils.load_hadoop_xml_defaults(
-            'plugins/vanilla/v2_6_0/resources/hive-default.xml')
+            'service/edp/resources/hive-default.xml')
 
     config = {'configs': cfg}
     if edp.compare_job_type(job_type, edp.JOB_TYPE_PIG, edp.JOB_TYPE_HIVE):

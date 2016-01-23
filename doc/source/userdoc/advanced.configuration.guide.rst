@@ -156,8 +156,8 @@ you want to run sahara services and follow these steps:
    configured to use the same message broker and database.
 
 To configure oslo.messaging, first you will need to choose a message
-broker driver. Currently there are three drivers provided: RabbitMQ, Qpid
-or ZeroMQ. For the RabbitMQ or Qpid drivers please see the
+broker driver. Currently there are two drivers provided: RabbitMQ
+or ZeroMQ. For the RabbitMQ drivers please see the
 :ref:`notification-configuration` documentation for an explanation of
 common configuration options.
 
@@ -167,58 +167,70 @@ respective source trees:
 
  * For Rabbit MQ see
 
-   * rabbit_opts variable in `impl_rabbit.py <https://git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/impl_rabbit.py?id=1.4.0#n38>`_
-   * amqp_opts variable in `amqp.py <https://git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/amqp.py?id=1.4.0#n37>`_
-
- * For Qpid see
-
-   * qpid_opts variable in `impl_qpid.py <https://git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/impl_qpid.py?id=1.4.0#n40>`_
-   * amqp_opts variable in `amqp.py <https://git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/amqp.py?id=1.4.0#n37>`_
+   * rabbit_opts variable in `impl_rabbit.py <https://git.openstack.org/
+     cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers
+     /impl_rabbit.py?id=1.4.0#n38>`_
+   * amqp_opts variable in `amqp.py <https://git.openstack.org/cgit/
+     openstack/oslo.messaging/tree/oslo/messaging/
+     _drivers/amqp.py?id=1.4.0#n37>`_
 
  * For Zmq see
 
-   * zmq_opts variable in `impl_zmq.py <https://git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/impl_zmq.py?id=1.4.0#n49>`_
-   * matchmaker_opts variable in `matchmaker.py <https://git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/matchmaker.py?id=1.4.0#n27>`_
-   * matchmaker_redis_opts variable in `matchmaker_redis.py <https://git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/matchmaker_redis.py?id=1.4.0#n26>`_
-   * matchmaker_opts variable in `matchmaker_ring.py <https://git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/matchmaker_ring.py?id=1.4.0#n27>`_
+   * zmq_opts variable in `impl_zmq.py <https://git.openstack.org/cgit/
+     openstack/oslo.messaging/tree/oslo/messaging/_drivers/
+     impl_zmq.py?id=1.4.0#n49>`_
+   * matchmaker_opts variable in `matchmaker.py <https://git.openstack.org/
+     cgit/openstack/oslo.messaging/tree/oslo/messaging/_drivers/
+     matchmaker.py?id=1.4.0#n27>`_
+   * matchmaker_redis_opts variable in `matchmaker_redis.py <https://
+     git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/
+     _drivers/matchmaker_redis.py?id=1.4.0#n26>`_
+   * matchmaker_opts variable in `matchmaker_ring.py <https://
+     git.openstack.org/cgit/openstack/oslo.messaging/tree/oslo/messaging/
+     _drivers/matchmaker_ring.py?id=1.4.0#n27>`_
 
 These options will also be present in the generated sample configuration
 file. For instructions on creating the configuration file please see the
 :doc:`configuration.guide`.
 
-External key manager usage (EXPERIMENTAL)
------------------------------------------
+.. _external_key_manager_usage:
+
+External key manager usage
+--------------------------
 
 Sahara generates and stores several passwords during the course of operation.
 To harden sahara's usage of passwords it can be instructed to use an
 external key manager for storage and retrieval of these secrets. To enable
 this feature there must first be an OpenStack Key Manager service deployed
-within the stack. Currently, the barbican project is the only key manager
-supported by sahara.
+within the stack.
 
 With a Key Manager service deployed on the stack, sahara must be configured
-to enable the external storage of secrets. This is accomplished by editing
-the sahara configuration file as follows:
+to enable the external storage of secrets. Sahara uses the
+`castellan <https://docs.openstack.org/developer/castellan/>`_ library
+to interface with the OpenStack Key Manager service. This library provides
+configurable access to a key manager. To configure sahara to use barbican as
+the key manager, edit the sahara configuration file as follows:
 
 .. sourcecode:: cfg
 
     [DEFAULT]
-    use_external_key_manager=True
+    use_barbican_key_manager=True
 
-.. TODO (mimccune)
-    this language should be removed once a new keystone authentication
-    section has been created in the configuration file.
+Enabling the ``use_barbican_key_manager`` option will configure castellan
+to use barbican as its key management implementation. By default it will
+attempt to find barbican in the Identity service's service catalog.
 
-Additionally, at this time there are two more values which must be provided
-to ensure proper access for sahara to the Key Manager service. These are
-the Identity domain for the administrative user and the domain for the
-administrative project. By default these values will appear as:
+For added control of the barbican server location, optional configuration
+values may be added to specify the URL for the barbican API server.
 
 .. sourcecode:: cfg
 
-    [DEFAULT]
-    admin_user_domain_name=default
-    admin_project_domain_name=default
+    [castellan]
+    barbican_api_endpoint=http://{barbican controller IP:PORT}/
+    barbican_api_version=v1
+
+The specific values for the barbican endpoint will be dictated by the
+IP address of the controller for your installation.
 
 With all of these values configured and the Key Manager service deployed,
 sahara will begin storing its secrets in the external manager.

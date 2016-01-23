@@ -17,12 +17,17 @@
 
 import copy
 
+from oslo_config import cfg
+
 from sahara.conductor import resource as r
 from sahara.db import base as db_base
+from sahara.service.castellan import utils as key_manager
 from sahara.service import shares
 from sahara.utils import configs
 from sahara.utils import crypto
 
+
+CONF = cfg.CONF
 
 CLUSTER_DEFAULTS = {
     "cluster_configs": {},
@@ -381,20 +386,62 @@ class ConductorManager(db_base.Base):
 
     def data_source_create(self, context, values):
         """Create a Data Source from the values dictionary."""
+
         values = copy.deepcopy(values)
         values = _apply_defaults(values, DATA_SOURCE_DEFAULTS)
         values['tenant_id'] = context.tenant_id
-
+        # if credentials are being passed in, we use the key_manager
+        # to store the password.
+        if (values.get('credentials') and
+                values['credentials'].get('password')):
+            values['credentials']['password'] = key_manager.store_secret(
+                values['credentials']['password'], context)
         return self.db.data_source_create(context, values)
 
     def data_source_destroy(self, context, data_source):
         """Destroy the Data Source or raise if it does not exist."""
+
+        # in cases where the credentials to access the data source are
+        # stored with the record and the external key manager is being
+        # used, we need to delete the key from the external manager.
+        if (CONF.use_barbican_key_manager and not
+                CONF.use_domain_for_proxy_users):
+            ds_record = self.data_source_get(context, data_source)
+            if (ds_record.get('credentials') and
+                    ds_record['credentials'].get('password')):
+                key_manager.delete_secret(
+                    ds_record['credentials']['password'], context)
         return self.db.data_source_destroy(context, data_source)
 
     def data_source_update(self, context, id, values):
         """Update the Data Source or raise if it does not exist."""
+
         values = copy.deepcopy(values)
         values["id"] = id
+        # in cases where the credentials to access the data source are
+        # stored with the record and the external key manager is being
+        # used, we need to delete the old key from the manager and
+        # create a new one. the other option here would be to retrieve
+        # the previous key and check to see if it has changed, but it
+        # seems less expensive to just delete the old and create a new
+        # one.
+        # it should be noted that the jsonschema validation ensures that
+        # if the proxy domain is not in use then credentials must be
+        # sent with this record.
+        if (CONF.use_barbican_key_manager and not
+                CONF.use_domain_for_proxy_users):
+            # first we retrieve the original record to get the old key
+            # uuid, and delete it.
+            ds_record = self.data_source_get(context, id)
+            if (ds_record.get('credentials') and
+                    ds_record['credentials'].get('password')):
+                key_manager.delete_secret(
+                    ds_record['credentials']['password'], context)
+            # next we create the new key.
+            if (values.get('credentials') and
+                    values['credentials'].get('password')):
+                values['credentials']['password'] = key_manager.store_secret(
+                    values['credentials']['password'], context)
         return self.db.data_source_update(context, values)
 
     # JobExecution ops
@@ -489,10 +536,25 @@ class ConductorManager(db_base.Base):
         values = copy.deepcopy(values)
         values = _apply_defaults(values, JOB_BINARY_DEFAULTS)
         values['tenant_id'] = context.tenant_id
+        # if credentials are being passed in, we use the key_manager
+        # to store the password.
+        if values.get('extra') and values['extra'].get('password'):
+            values['extra']['password'] = key_manager.store_secret(
+                values['extra']['password'], context)
         return self.db.job_binary_create(context, values)
 
     def job_binary_destroy(self, context, job_binary):
         """Destroy the JobBinary or raise if it does not exist."""
+
+        # in cases where the credentials to access the job binary are
+        # stored with the record and the external key manager is being
+        # used, we need to delete the key from the external manager.
+        if (CONF.use_barbican_key_manager and not
+                CONF.use_domain_for_proxy_users):
+            jb_record = self.job_binary_get(context, job_binary)
+            if jb_record.get('extra') and jb_record['extra'].get('password'):
+                key_manager.delete_secret(jb_record['extra']['password'],
+                                          context)
         self.db.job_binary_destroy(context, job_binary)
 
     def job_binary_update(self, context, id, values):
@@ -500,6 +562,25 @@ class ConductorManager(db_base.Base):
 
         values = copy.deepcopy(values)
         values['id'] = id
+        # in cases where the credentials to access the job binary are
+        # stored with the record and the external key manager is being
+        # used, we need to delete the old key from the manager and
+        # create a new one. the other option here would be to retrieve
+        # the previous key and check to see if it has changed, but it
+        # seems less expensive to just delete the old and create a new
+        # one.
+        if (CONF.use_barbican_key_manager and not
+                CONF.use_domain_for_proxy_users):
+            # first we retrieve the original record to get the old key
+            # uuid, and delete it.
+            jb_record = self.job_binary_get(context, id)
+            if jb_record.get('extra') and jb_record['extra'].get('password'):
+                key_manager.delete_secret(jb_record['extra']['password'],
+                                          context)
+            # next we create the new key.
+            if values.get('extra') and values['extra'].get('password'):
+                values['extra']['password'] = key_manager.store_secret(
+                    values['extra']['password'], context)
         return self.db.job_binary_update(context, values)
 
     # JobBinaryInternal ops

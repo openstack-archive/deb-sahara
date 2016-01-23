@@ -18,9 +18,9 @@ from oslo_config import cfg
 import six
 import swiftclient
 
-import sahara.context as context
 import sahara.exceptions as ex
 from sahara.i18n import _
+from sahara.service.castellan import utils as key_manager
 from sahara.swift import utils as su
 from sahara.utils.openstack import swift as sw
 
@@ -82,17 +82,18 @@ def get_raw_data(job_binary, proxy_configs=None):
     conn_kwargs = {}
     if proxy_configs:
         conn_kwargs.update(username=proxy_configs.get('proxy_username'),
-                           password=proxy_configs.get('proxy_password'),
+                           password=key_manager.get_secret(
+                           proxy_configs.get('proxy_password')),
                            trust_id=proxy_configs.get('proxy_trust_id'))
     else:
         conn_kwargs.update(username=job_binary.extra.get('user'),
-                           password=job_binary.extra.get('password'))
-
+                           password=key_manager.get_secret(
+                           job_binary.extra.get('password')))
     conn = sw.client(**conn_kwargs)
     return _get_raw_data(job_binary, conn)
 
 
 @_validate_job_binary_url
 def get_raw_data_with_context(job_binary):
-    conn = sw.client_from_token(context.ctx().auth_token)
+    conn = sw.client_from_token()
     return _get_raw_data(job_binary, conn)

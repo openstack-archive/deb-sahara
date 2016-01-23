@@ -24,6 +24,7 @@ from sahara.plugins import utils
 from sahara.plugins.vanilla.hadoop2 import config_helper as c_helper
 from sahara.plugins.vanilla.hadoop2 import oozie_helper as o_helper
 from sahara.plugins.vanilla import utils as vu
+from sahara.service.castellan import utils as key_manager
 from sahara.swift import swift_helper as swift
 from sahara.topology import topology_helper as th
 from sahara.utils import cluster_progress_ops as cpo
@@ -184,7 +185,8 @@ def _get_hadoop_configs(pctx, instance):
         if proxy_configs and c_helper.is_swift_enabled(pctx, cluster):
             hive_cfg.update({
                 swift.HADOOP_SWIFT_USERNAME: proxy_configs['proxy_username'],
-                swift.HADOOP_SWIFT_PASSWORD: proxy_configs['proxy_password'],
+                swift.HADOOP_SWIFT_PASSWORD: key_manager.get_secret(
+                    proxy_configs['proxy_password']),
                 swift.HADOOP_SWIFT_TRUST_ID: proxy_configs['proxy_trust_id'],
                 swift.HADOOP_SWIFT_DOMAIN_NAME: CONF.proxy_user_domain_name
             })

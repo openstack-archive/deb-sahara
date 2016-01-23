@@ -20,6 +20,7 @@ from oslo_utils import timeutils
 
 from sahara.conductor import manager
 from sahara import context
+from sahara.service.castellan import config as castellan
 import sahara.service.periodic as p
 import sahara.tests.unit.base as base
 from sahara.tests.unit.conductor.manager import test_clusters as tc
@@ -32,6 +33,7 @@ class TestPeriodicBack(base.SaharaWithDbTestCase):
     def setUp(self):
         super(TestPeriodicBack, self).setUp()
         self.api = manager.ConductorManager()
+        castellan.validate_config()
 
     @mock.patch('sahara.service.edp.job_manager.get_job_status')
     def test_job_status_update(self, get_job_status):
@@ -131,7 +133,7 @@ class TestPeriodicBack(base.SaharaWithDbTestCase):
 
         timeutils.set_time_override(datetime.datetime(2005, 2, 1, second=0))
 
-        self._make_cluster('1', status='Pending')
+        self._make_cluster('1', c_u.CLUSTER_STATUS_SPAWNING)
 
         timeutils.set_time_override(datetime.datetime(
             2005, 2, 1, minute=59, second=50))
@@ -147,7 +149,7 @@ class TestPeriodicBack(base.SaharaWithDbTestCase):
         self.override_config('cleanup_time_for_incomplete_clusters', 1)
         timeutils.set_time_override(datetime.datetime(2005, 2, 1, second=0))
 
-        self._make_cluster('1', status='Pending')
+        self._make_cluster('1', c_u.CLUSTER_STATUS_SPAWNING)
 
         timeutils.set_time_override(datetime.datetime(
             2005, 2, 1, hour=1, second=10))

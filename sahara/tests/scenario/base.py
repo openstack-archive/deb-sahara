@@ -104,6 +104,8 @@ class BaseTestCase(base.BaseTestCase):
         }
         self.template_path = DEFAULT_TEMPLATES_PATH % self.plugin_opts
         self.cinder = True
+        self.proxy_ng_name = False
+        self.proxy = False
 
     def _init_clients(self):
         username = self.credentials['os_username']
@@ -144,6 +146,11 @@ class BaseTestCase(base.BaseTestCase):
             self.cinder = False
         self._poll_cluster_status_tracked(self.cluster_id)
         cluster = self.sahara.get_cluster(self.cluster_id, show_progress=True)
+        if self.proxy_ng_name:
+            for ng in cluster.node_groups:
+                if ng['name'] == self.proxy_ng_name:
+                    self.proxy = ng['instances'][0]['management_ip']
+
         self.check_cinder()
         if not getattr(cluster, "provision_progress", None):
             return
@@ -177,6 +184,15 @@ class BaseTestCase(base.BaseTestCase):
         configs['args'] = args
         return configs
 
+    def _prepare_job_running(self, job):
+        input_id, output_id = self._create_datasources(job)
+        main_libs, additional_libs = self._create_job_binaries(job)
+        job_id = self._create_job(job['type'], main_libs, additional_libs)
+        configs = self._parse_job_configs(job)
+        configs = self._put_io_data_to_configs(
+            configs, input_id, output_id)
+        return [job_id, input_id, output_id, configs]
+
     @track_result("Check EDP jobs", False)
     def check_run_jobs(self):
         batching = self.testcase.get('edp_batching',
@@ -186,13 +202,7 @@ class BaseTestCase(base.BaseTestCase):
 
         pre_exec = []
         for job in jobs:
-            input_id, output_id = self._create_datasources(job)
-            main_libs, additional_libs = self._create_job_binaries(job)
-            job_id = self._create_job(job['type'], main_libs, additional_libs)
-            configs = self._parse_job_configs(job)
-            configs = self._put_io_data_to_configs(
-                configs, input_id, output_id)
-            pre_exec.append([job_id, input_id, output_id, configs])
+            pre_exec.append(self._prepare_job_running(job))
             batching -= 1
             if not batching:
                 self._job_batching(pre_exec)
@@ -318,7 +328,8 @@ class BaseTestCase(base.BaseTestCase):
         path = utils.rand_name('test')
         data = None
         if source:
-            data = open(source).read()
+            with open(source) as source_fd:
+                data = source_fd.read()
 
         self.__upload_to_container(container, path, data)
 
@@ -339,7 +350,8 @@ class BaseTestCase(base.BaseTestCase):
             "sudo su - -c \"hdfs dfs -mkdir -p %(path)s \" %(user)s" % {
                 "path": hdfs_dir, "user": hdfs_username})
         hdfs_filepath = utils.rand_name(hdfs_dir + "/file")
-        data = open(source).read()
+        with open(source) as source_fd:
+            data = source_fd.read()
         self._run_command_on_node(
             inst_ip,
             ("echo -e \"%(data)s\" | sudo su - -c \"hdfs dfs"
@@ -350,7 +362,8 @@ class BaseTestCase(base.BaseTestCase):
         return hdfs_filepath
 
     def _create_internal_db_data(self, source):
-        data = open(source).read()
+        with open(source) as source_fd:
+            data = source_fd.read()
         id = self.__create_internal_db_data(utils.rand_name('test'), data)
         return 'internal-db://%s' % id
 
@@ -492,6 +505,7 @@ class BaseTestCase(base.BaseTestCase):
             if (not kwargs.get('is_proxy_gateway',
                                False)) and (check_indirect_access):
                 kwargs['floating_ip_pool'] = None
+                self.proxy_ng_name = kwargs['name']
             else:
                 kwargs['floating_ip_pool'] = floating_ip_pool
             ng_id = self.__create_node_group_template(**kwargs)
@@ -595,7 +609,11 @@ class BaseTestCase(base.BaseTestCase):
                 time.sleep(3)
 
     def _run_command_on_node(self, node_ip, command):
-        ssh_session = connection.Client(node_ip, self.testcase['ssh_username'],
+        host_ip = node_ip
+        if self.proxy:
+            host_ip = self.proxy
+            command = "ssh %s %s" % (node_ip, command)
+        ssh_session = connection.Client(host_ip, self.testcase['ssh_username'],
                                         pkey=self.private_key)
         return ssh_session.exec_command(command)
 

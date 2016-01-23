@@ -24,6 +24,7 @@ from sahara import conductor as c
 from sahara import context
 from sahara import exceptions as e
 from sahara.i18n import _
+from sahara.service.castellan import utils as key_manager
 from sahara.service.edp import base_engine
 from sahara.service.edp.binary_retrievers import dispatch
 from sahara.service.edp import hdfs_helper as h
@@ -118,8 +119,8 @@ class SparkJobEngine(base_engine.JobEngine):
         if proxy_configs:
             configs[sw.HADOOP_SWIFT_USERNAME] = proxy_configs.get(
                 'proxy_username')
-            configs[sw.HADOOP_SWIFT_PASSWORD] = proxy_configs.get(
-                'proxy_password')
+            configs[sw.HADOOP_SWIFT_PASSWORD] = key_manager.get_secret(
+                proxy_configs.get('proxy_password'))
             configs[sw.HADOOP_SWIFT_TRUST_ID] = proxy_configs.get(
                 'proxy_trust_id')
             configs[sw.HADOOP_SWIFT_DOMAIN_NAME] = CONF.proxy_user_domain_name
@@ -363,6 +364,10 @@ class SparkJobEngine(base_engine.JobEngine):
         raise e.EDPError(_("Spark job execution failed. Exit status = "
                            "%(status)s, stdout = %(stdout)s") %
                          {'status': ret, 'stdout': stdout})
+
+    def run_scheduled_job(self, job_execution):
+        raise e.NotImplementedException(_("Currently Spark engine does not"
+                                          " support scheduled EDP jobs"))
 
     def validate_job_execution(self, cluster, job, data):
         j.check_main_class_present(data, job)

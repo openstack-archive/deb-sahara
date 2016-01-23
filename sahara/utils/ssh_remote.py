@@ -108,7 +108,7 @@ def _connect(host, username, private_key, proxy_command=None,
     global _proxy_ssh
 
     LOG.debug('Creating SSH connection')
-    if type(private_key) in [str, unicode]:
+    if isinstance(private_key, six.string_types):
         private_key = crypto.to_paramiko_private_key(private_key)
 
     _ssh = paramiko.SSHClient()
@@ -524,7 +524,7 @@ class NetcatSocket(object):
 
     def _terminate(self):
         if self.rootwrap_command:
-            os.system('{0} kill {1}'.format(self.rootwrap_command,
+            os.system('{0} kill {1}'.format(self.rootwrap_command,  # nosec
                                             self.process.pid))
         else:
             self.process.terminate()
@@ -572,7 +572,7 @@ class InstanceInteropHelper(remote.Remote):
         neutron_info = dict()
         neutron_info['network'] = instance.cluster.neutron_management_network
         ctx = context.current()
-        neutron_info['token'] = ctx.auth_token
+        neutron_info['token'] = context.get_auth_token()
         neutron_info['tenant'] = ctx.tenant_name
         neutron_info['host'] = instance.management_ip
 

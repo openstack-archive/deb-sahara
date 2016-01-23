@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright (c) 2013 Mirantis Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -58,5 +56,5 @@ def main():
     server.setup_auth_policy()
 
     launcher = server.get_process_launcher()
-    launcher.launch_service(server.SaharaWSGIService("sahara-all", app))
-    launcher.wait()
+    server.launch_api_service(
+        launcher, server.SaharaWSGIService("sahara-all", app))

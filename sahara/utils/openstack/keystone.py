@@ -80,7 +80,7 @@ CONF.register_opts(ssl_opts, group=keystone_group)
 def auth():
     '''Return a token auth plugin for the current context.'''
     ctx = context.current()
-    return ctx.auth_plugin or token_auth(token=ctx.auth_token,
+    return ctx.auth_plugin or token_auth(token=context.get_auth_token(),
                                          project_id=ctx.tenant_id)
 
 
@@ -203,7 +203,7 @@ def token_auth(token, project_id=None, project_name=None,
     :returns: a token auth plugin object.
     '''
     token_kwargs = dict(
-        auth_url=base.retrieve_auth_url(),
+        auth_url=base.retrieve_auth_url(CONF.keystone.endpoint_type),
         token=token
     )
     if CONF.use_identity_api_v3:
@@ -229,7 +229,8 @@ def token_from_auth(auth):
 
     :returns: an auth token in string format.
     '''
-    return keystone_session.Session(auth=auth).get_token()
+    return keystone_session.Session(
+        auth=auth, verify=CONF.generic_session_verify).get_token()
 
 
 def user_id_from_auth(auth):
