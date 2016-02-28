@@ -72,8 +72,8 @@ Build-Depends-Indep: alembic (>= 0.8.0),
                      testrepository,
 Standards-Version: 3.9.6
 Homepage: https://github.com/openstack/sahara
-Vcs-Browser: http://anonscm.debian.org/gitweb/?p=openstack/sahara.git;a=summary
-Vcs-Git: git://anonscm.debian.org/openstack/sahara.git
+Vcs-Browser: https://anonscm.debian.org/cgit/openstack/sahara.git/
+Vcs-Git: https://anonscm.debian.org/git/openstack/sahara.git
 
 Package: python-sahara
 Architecture: all
