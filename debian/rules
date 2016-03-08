@@ -30,27 +30,30 @@ ifeq (,$(findstring nodocs, $(DEB_BUILD_OPTIONS)))
 endif
 
 override_dh_auto_build:
-	dh_auto_build
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-api.config
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-api.postinst
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-common.config
 	/usr/share/openstack-pkg-tools/pkgos_insert_include pkgos_func sahara-common.postinst
 
 override_dh_install:
+	python2.7 setup.py install --install-layout=deb --root $(CURDIR)/debian/tmp
 	dh_install -O--buildsystem=python_distutils --fail-missing
 
 	# Install the config files.
 	mkdir -p $(CURDIR)/debian/sahara-common/usr/share/sahara-common
-	oslo-config-generator \
+	PYTHONPATH=$(CURDIR)/debian/tmp/usr/lib/python2.7/dist-packages oslo-config-generator \
+		--wrap-width 140 \
 		--namespace sahara.config \
-		--namespace oslo.db \
-		--namespace oslo.messaging \
-		--namespace oslo.concurrency \
 		--namespace keystonemiddleware.auth_token \
-		--namespace periodic.config \
-		--namespace ssl.config \
+		--namespace oslo.concurrency \
+		--namespace oslo.db \
 		--namespace oslo.log \
+		--namespace oslo.messaging \
+		--namespace oslo.middleware.cors \
 		--namespace oslo.policy \
+		--namespace oslo.service.periodic_task \
+		--namespace oslo.service.sslutils \
+		--namespace oslo.service.wsgi \
 		--output-file $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
 	sed -i 's|#connection=<None>|connection=sqlite:///var/lib/sahara/saharadb|' $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
 
