@@ -15,6 +15,7 @@
 
 """Implementation of SQLAlchemy backend."""
 
+import copy
 import sys
 import threading
 
@@ -172,6 +173,53 @@ def like_filter(query, cls, search_opts):
     return query, remaining
 
 
+def _get_regex_op(connection):
+    db = connection.split(':')[0].split('+')[0]
+    regexp_op_map = {
+        'postgresql': '~',
+        'mysql': 'REGEXP'
+    }
+    return regexp_op_map.get(db, None)
+
+
+def regex_filter(query, cls, regex_cols, search_opts):
+    """Add regex filters for specified columns.
+
+    Add a regex filter to the query for any entry in the
+    'search_opts' dict where the key is the name of a column in
+    'cls' and listed in 'regex_cols' and the value is a string.
+
+    Return the modified query and any entries in search_opts
+    whose keys do not match columns or whose values are not
+    strings.
+
+    This is only supported for mysql and postgres. For other
+    databases, the query is not altered.
+
+    :param query: a non-null query object
+    :param cls: the database model class the filters will apply to
+    :param regex_cols: a list of columns for which regex is supported
+    :param search_opts: a dictionary whose key/value entries are interpreted as
+    column names and search patterns
+    :returns: a tuple containing the modified query and a dictionary of
+    unused search_opts
+    """
+
+    regex_op = _get_regex_op(CONF.database.connection)
+    if not regex_op:
+        return query, copy.copy(search_opts)
+
+    remaining = {}
+    for k, v in six.iteritems(search_opts):
+        if isinstance(v, six.string_types) and (
+                k in cls.__table__.columns and k in regex_cols):
+            col = cls.__table__.columns[k]
+            query = query.filter(col.op(regex_op)(v))
+        else:
+            remaining[k] = v
+    return query, remaining
+
+
 def setup_db():
     try:
         engine = get_engine()
@@ -204,8 +252,14 @@ def cluster_get(context, cluster_id):
     return _cluster_get(context, get_session(), cluster_id)
 
 
-def cluster_get_all(context, **kwargs):
+def cluster_get_all(context, regex_search=False, **kwargs):
+
+    regex_cols = ['name', 'description', 'plugin_name']
+
     query = model_query(m.Cluster, context)
+    if regex_search:
+        query, kwargs = regex_filter(query,
+                                     m.Cluster, regex_cols, kwargs)
     return query.filter_by(**kwargs).all()
 
 
@@ -398,8 +452,14 @@ def cluster_template_get(context, cluster_template_id):
     return _cluster_template_get(context, get_session(), cluster_template_id)
 
 
-def cluster_template_get_all(context, **kwargs):
+def cluster_template_get_all(context, regex_search=False, **kwargs):
+
+    regex_cols = ['name', 'description', 'plugin_name']
+
     query = model_query(m.ClusterTemplate, context)
+    if regex_search:
+        query, kwargs = regex_filter(query,
+                                     m.ClusterTemplate, regex_cols, kwargs)
     return query.filter_by(**kwargs).all()
 
 
@@ -430,7 +490,7 @@ def cluster_template_create(context, values):
 
 
 def cluster_template_destroy(context, cluster_template_id,
-                             ignore_default=False):
+                             ignore_prot_on_def=False):
     session = get_session()
     with session.begin():
         cluster_template = _cluster_template_get(context, session,
@@ -439,18 +499,15 @@ def cluster_template_destroy(context, cluster_template_id,
             raise ex.NotFoundException(
                 cluster_template_id,
                 _("Cluster Template id '%s' not found!"))
-        elif not ignore_default and cluster_template.is_default:
-            raise ex.DeletionFailed(
-                _("Cluster template id '%s' "
-                  "is a default template") % cluster_template.id)
 
         validate.check_tenant_for_delete(context, cluster_template)
-        validate.check_protected_from_delete(cluster_template)
+        if not (cluster_template.is_default and ignore_prot_on_def):
+            validate.check_protected_from_delete(cluster_template)
 
         session.delete(cluster_template)
 
 
-def cluster_template_update(context, values, ignore_default=False):
+def cluster_template_update(context, values, ignore_prot_on_def=False):
     explicit_node_groups = "node_groups" in values
     if explicit_node_groups:
         node_groups = values.pop("node_groups")
@@ -468,15 +525,9 @@ def cluster_template_update(context, values, ignore_default=False):
                     cluster_template_id,
                     _("Cluster Template id '%s' not found!"))
 
-            elif not ignore_default and cluster_template.is_default:
-                raise ex.UpdateFailedException(
-                    cluster_template_id,
-                    _("ClusterTemplate id '%s' can not be updated. "
-                      "It is a default template.")
-                )
-
             validate.check_tenant_for_update(context, cluster_template)
-            validate.check_protected_from_update(cluster_template, values)
+            if not (cluster_template.is_default and ignore_prot_on_def):
+                validate.check_protected_from_update(cluster_template, values)
 
             if len(cluster_template.clusters) > 0:
                 raise ex.UpdateFailedException(
@@ -523,8 +574,14 @@ def node_group_template_get(context, node_group_template_id):
                                     node_group_template_id)
 
 
-def node_group_template_get_all(context, **kwargs):
+def node_group_template_get_all(context, regex_search=False, **kwargs):
+
+    regex_cols = ['name', 'description', 'plugin_name']
+
     query = model_query(m.NodeGroupTemplate, context)
+    if regex_search:
+        query, kwargs = regex_filter(query,
+                                     m.NodeGroupTemplate, regex_cols, kwargs)
     return query.filter_by(**kwargs).all()
 
 
@@ -544,7 +601,7 @@ def node_group_template_create(context, values):
 
 
 def node_group_template_destroy(context, node_group_template_id,
-                                ignore_default=False):
+                                ignore_prot_on_def=False):
     session = get_session()
     with session.begin():
         node_group_template = _node_group_template_get(context, session,
@@ -553,18 +610,15 @@ def node_group_template_destroy(context, node_group_template_id,
             raise ex.NotFoundException(
                 node_group_template_id,
                 _("Node Group Template id '%s' not found!"))
-        elif not ignore_default and node_group_template.is_default:
-            raise ex.DeletionFailed(
-                _("Node group template id '%s' "
-                  "is a default template") % node_group_template_id)
 
         validate.check_tenant_for_delete(context, node_group_template)
-        validate.check_protected_from_delete(node_group_template)
+        if not (node_group_template.is_default and ignore_prot_on_def):
+            validate.check_protected_from_delete(node_group_template)
 
         session.delete(node_group_template)
 
 
-def node_group_template_update(context, values, ignore_default=False):
+def node_group_template_update(context, values, ignore_prot_on_def=False):
     session = get_session()
     try:
         with session.begin():
@@ -573,15 +627,10 @@ def node_group_template_update(context, values, ignore_default=False):
             if not ngt:
                 raise ex.NotFoundException(
                     ngt_id, _("NodeGroupTemplate id '%s' not found"))
-            elif not ignore_default and ngt.is_default:
-                raise ex.UpdateFailedException(
-                    ngt_id,
-                    _("NodeGroupTemplate id '%s' can not be updated. "
-                      "It is a default template.")
-                )
 
             validate.check_tenant_for_update(context, ngt)
-            validate.check_protected_from_update(ngt, values)
+            if not (ngt.is_default and ignore_prot_on_def):
+                validate.check_protected_from_update(ngt, values)
 
             # Check to see that the node group template to be updated is not in
             # use by an existing cluster.
@@ -594,6 +643,34 @@ def node_group_template_update(context, values, ignore_default=False):
                     )
 
             ngt.update(values)
+
+            # Here we update any cluster templates that reference the
+            # updated node group template
+            for template_relationship in ngt.templates_relations:
+                ct_id = template_relationship.cluster_template_id
+                ct = cluster_template_get(
+                    context, template_relationship.cluster_template_id)
+                node_groups = ct.node_groups
+                ct_node_groups = []
+                for ng in node_groups:
+                    # Need to fill in all node groups, not just
+                    # the modified group
+                    ng_to_add = ng
+                    if ng.node_group_template_id == ngt_id:
+                        # use the updated node group template
+                        ng_to_add = ngt
+                    ng_to_add = ng_to_add.to_dict()
+                    ng_to_add.update(
+                        {"count": ng["count"],
+                         "node_group_template_id": ng.node_group_template_id})
+                    ng_to_add.pop("updated_at", None)
+                    ng_to_add.pop("created_at", None)
+                    ng_to_add.pop("id", None)
+                    ct_node_groups.append(ng_to_add)
+                ct_update = {"id": ct_id,
+                             "node_groups": ct_node_groups}
+                cluster_template_update(context, ct_update, ignore_prot_on_def)
+
     except db_exc.DBDuplicateEntry as e:
         raise ex.DBDuplicateEntry(
             _("Duplicate entry for NodeGroupTemplate: %s") % e.columns)
@@ -635,8 +712,14 @@ def data_source_count(context, **kwargs):
     return query.filter_by(**kwargs).count()
 
 
-def data_source_get_all(context, **kwargs):
+def data_source_get_all(context, regex_search=False, **kwargs):
+
+    regex_cols = ['name', 'description', 'url']
+
     query = model_query(m.DataSource, context)
+    if regex_search:
+        query, kwargs = regex_filter(query,
+                                     m.DataSource, regex_cols, kwargs)
     return query.filter_by(**kwargs).all()
 
 
@@ -688,17 +771,6 @@ def data_source_update(context, values):
             validate.check_tenant_for_update(context, data_source)
             validate.check_protected_from_update(data_source, values)
 
-            jobs = job_execution_get_all(context)
-            pending_jobs = [job for job in jobs if
-                            job.info["status"] == "PENDING"]
-
-            for job in pending_jobs:
-                if job.data_source_urls:
-                    if ds_id in job.data_source_urls:
-                        raise ex.UpdateFailedException(
-                            _("DataSource is used in a "
-                              "PENDING Job and can not be updated."))
-
             data_source.update(values)
     except db_exc.DBDuplicateEntry as e:
         raise ex.DBDuplicateEntry(
@@ -718,7 +790,7 @@ def job_execution_get(context, job_execution_id):
     return _job_execution_get(context, get_session(), job_execution_id)
 
 
-def job_execution_get_all(context, **kwargs):
+def job_execution_get_all(context, regex_search=False, **kwargs):
     """Get all JobExecutions filtered by **kwargs.
 
     kwargs key values may be the names of fields in a JobExecution
@@ -732,13 +804,23 @@ def job_execution_get_all(context, **kwargs):
          job_execution_get_all(**{'cluster.name': 'test',
                                   'job.name': 'wordcount'})
     """
-    query = model_query(m.JobExecution, context)
+
+    regex_cols = ['job.name', 'cluster.name']
 
     # Remove the external fields if present, they'll
     # be handled with a join and filter
     externals = {k: kwargs.pop(k) for k in ['cluster.name',
                                             'job.name',
                                             'status'] if k in kwargs}
+
+    # At this time, none of the fields in m.JobExecution itself
+    # are candidates for regex search, however this code fragment
+    # should remain in case that changes. This is the correct place
+    # to insert regex filters on the m.JobExecution class
+    query = model_query(m.JobExecution, context)
+    if regex_search:
+        query, kwargs = regex_filter(query,
+                                     m.JobExecution, regex_cols, kwargs)
 
     # Filter JobExecution by the remaining kwargs. This has to be done
     # before application of the joins and filters because those
@@ -747,12 +829,20 @@ def job_execution_get_all(context, **kwargs):
 
     # Now add the joins and filters for the externals
     if 'cluster.name' in externals:
-        query = query.join(m.Cluster).filter(
-            m.Cluster.name == externals['cluster.name'])
+        search_opts = {'name': externals['cluster.name']}
+        query = query.join(m.Cluster)
+        if regex_filter and 'cluster.name' in regex_cols:
+            query, search_opts = regex_filter(query,
+                                              m.Cluster, ['name'], search_opts)
+        query = query.filter_by(**search_opts)
 
     if 'job.name' in externals:
-        query = query.join(m.Job).filter(
-            m.Job.name == externals['job.name'])
+        search_opts = {'name': externals['job.name']}
+        query = query.join(m.Job)
+        if regex_filter and 'job.name' in regex_cols:
+            query, search_opts = regex_filter(query,
+                                              m.Job, ['name'], search_opts)
+        query = query.filter_by(**search_opts)
 
     res = query.all()
 
@@ -870,8 +960,14 @@ def job_get(context, job_id):
     return _job_get(context, get_session(), job_id)
 
 
-def job_get_all(context, **kwargs):
+def job_get_all(context, regex_search=False, **kwargs):
+
+    regex_cols = ['name', 'description']
+
     query = model_query(m.Job, context)
+    if regex_search:
+        query, kwargs = regex_filter(query,
+                                     m.Job, regex_cols, kwargs)
     return query.filter_by(**kwargs).all()
 
 
@@ -970,12 +1066,13 @@ def _job_binary_get(context, session, job_binary_id):
     return query.filter_by(id=job_binary_id).first()
 
 
-def job_binary_get_all(context, **kwargs):
-    """Returns JobBinary objects that do not contain a data field
+def job_binary_get_all(context, regex_search=False, **kwargs):
 
-    The data column uses deferred loading.
-    """
+    regex_cols = ['name', 'description', 'url']
     query = model_query(m.JobBinary, context)
+    if regex_search:
+        query, kwargs = regex_filter(query,
+                                     m.JobBinary, regex_cols, kwargs)
     return query.filter_by(**kwargs).all()
 
 
@@ -1084,12 +1181,18 @@ def _job_binary_internal_get(context, session, job_binary_internal_id):
     return query.filter_by(id=job_binary_internal_id).first()
 
 
-def job_binary_internal_get_all(context, **kwargs):
+def job_binary_internal_get_all(context, regex_search=False, **kwargs):
     """Returns JobBinaryInternal objects that do not contain a data field
 
     The data column uses deferred loading.
     """
+
+    regex_cols = ['name']
+
     query = model_query(m.JobBinaryInternal, context)
+    if regex_search:
+        query, kwargs = regex_filter(query,
+                                     m.JobBinaryInternal, regex_cols, kwargs)
     return query.filter_by(**kwargs).all()
 
 
@@ -1273,3 +1376,113 @@ def cluster_event_add(context, step_id, values):
         session.add(event)
 
     return event.id
+
+
+# Cluster verifications / health check ops
+
+def _cluster_verification_get(context, session, verification_id):
+    # tenant id is not presented
+    query = model_query(m.ClusterVerification, context, session,
+                        project_only=False)
+    return query.filter_by(id=verification_id).first()
+
+
+def cluster_verification_get(context, verification_id):
+    return _cluster_verification_get(context, get_session(), verification_id)
+
+
+def cluster_verification_add(context, cluster_id, values):
+    session = get_session()
+
+    with session.begin():
+        cluster = _cluster_get(context, session, cluster_id)
+
+        if not cluster:
+            raise ex.NotFoundException(
+                cluster_id, _("Cluster id '%s' not found!"))
+
+        verification = m.ClusterVerification()
+        values['cluster_id'] = cluster_id
+        verification.update(values)
+        session.add(verification)
+
+    return verification
+
+
+def cluster_verification_update(context, verification_id, values):
+    session = get_session()
+
+    with session.begin():
+        verification = _cluster_verification_get(
+            context, session, verification_id)
+
+        if not verification:
+            raise ex.NotFoundException(
+                verification_id, _("Verification id '%s' not found!"))
+
+        verification.update(values)
+    return verification
+
+
+def cluster_verification_delete(context, verification_id):
+    session = get_session()
+
+    with session.begin():
+        verification = _cluster_verification_get(
+            context, session, verification_id)
+
+        if not verification:
+            raise ex.NotFoundException(
+                verification_id, _("Verification id '%s' not found!"))
+
+        for check in verification.checks:
+            session.delete(check)
+
+        session.delete(verification)
+
+
+def _cluster_health_check_get(context, session, health_check_id):
+    # tenant id is not presented
+    query = model_query(m.ClusterHealthCheck, context, session,
+                        project_only=False)
+    return query.filter_by(id=health_check_id).first()
+
+
+def cluster_health_check_get(context, health_check_id):
+    return _cluster_health_check_get(context, get_session(), health_check_id)
+
+
+def cluster_health_check_add(context, verification_id, values):
+    session = get_session()
+
+    with session.begin():
+        verification = _cluster_verification_get(
+            context, session, verification_id)
+
+        if not verification:
+            raise ex.NotFoundException(
+                verification_id, _("Verification id '%s' not found!"))
+
+        health_check = m.ClusterHealthCheck()
+        values['verification_id'] = verification_id
+        values['tenant_id'] = context.tenant_id
+        health_check.update(values)
+        session.add(health_check)
+
+    return health_check
+
+
+def cluster_health_check_update(context, health_check_id, values):
+    session = get_session()
+
+    with session.begin():
+        health_check = _cluster_health_check_get(
+            context, session, health_check_id)
+
+        if not health_check:
+            raise ex.NotFoundException(
+                health_check_id, _("Health check id '%s' not found!"))
+
+        health_check.update(values)
+
+    return health_check

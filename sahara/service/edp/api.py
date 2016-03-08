@@ -152,7 +152,8 @@ def get_job_execution_status(id):
 
 
 def job_execution_list(**kwargs):
-    return conductor.job_execution_get_all(context.ctx(), **kwargs)
+    return conductor.job_execution_get_all(context.ctx(),
+                                           regex_search=True, **kwargs)
 
 
 def get_job_execution(id):
@@ -168,7 +169,15 @@ def cancel_job_execution(id):
 
 
 def update_job_execution(id, values):
+    _update_status(values.pop("info", None))
     return conductor.job_execution_update(context.ctx(), id, values)
+
+
+def _update_status(info):
+    if info:
+        status = info.get("status", None)
+        if status == edp.JOB_ACTION_SUSPEND:
+            OPS.job_execution_suspend(id)
 
 
 def delete_job_execution(id):
@@ -177,7 +186,8 @@ def delete_job_execution(id):
 
 
 def get_data_sources(**kwargs):
-    return conductor.data_source_get_all(context.ctx(), **kwargs)
+    return conductor.data_source_get_all(context.ctx(),
+                                         regex_search=True, **kwargs)
 
 
 def get_data_source(id):
@@ -197,7 +207,7 @@ def data_source_update(id, values):
 
 
 def get_jobs(**kwargs):
-    return conductor.job_get_all(context.ctx(), **kwargs)
+    return conductor.job_get_all(context.ctx(), regex_search=True, **kwargs)
 
 
 def get_job(id):
@@ -221,7 +231,8 @@ def create_job_binary(values):
 
 
 def get_job_binaries(**kwargs):
-    return conductor.job_binary_get_all(context.ctx(), **kwargs)
+    return conductor.job_binary_get_all(context.ctx(),
+                                        regex_search=True, **kwargs)
 
 
 def get_job_binary(id):
@@ -241,7 +252,8 @@ def create_job_binary_internal(values):
 
 
 def get_job_binary_internals(**kwargs):
-    return conductor.job_binary_internal_get_all(context.ctx(), **kwargs)
+    return conductor.job_binary_internal_get_all(context.ctx(),
+                                                 regex_search=True, **kwargs)
 
 
 def get_job_binary_internal(id):

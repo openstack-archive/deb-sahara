@@ -22,6 +22,7 @@ from six.moves.urllib import parse as urlparse
 from sahara import conductor as c
 from sahara import context
 from sahara.plugins import base as plugin_base
+from sahara.service.health import verification_base
 from sahara.service import quotas
 from sahara.utils import cluster as c_u
 from sahara.utils import general as g
@@ -47,7 +48,8 @@ def setup_service_api(ops):
 # Cluster ops
 
 def get_clusters(**kwargs):
-    return conductor.cluster_get_all(context.ctx(), **kwargs)
+    return conductor.cluster_get_all(context.ctx(),
+                                     regex_search=True, **kwargs)
 
 
 def get_cluster(id, show_progress=False):
@@ -125,8 +127,8 @@ def _cluster_create(values, plugin):
     ctx = context.ctx()
     cluster = conductor.cluster_create(ctx, values)
     context.set_current_cluster_id(cluster.id)
-    sender.notify(ctx, cluster.id, cluster.name, "New",
-                  "create")
+    sender.status_notify(cluster.id, cluster.name, "New",
+                         "create")
     _add_ports_for_auto_sg(ctx, cluster, plugin)
 
     # validating cluster
@@ -165,18 +167,22 @@ def terminate_cluster(id):
         return
 
     OPS.terminate_cluster(id)
-    sender.notify(context.ctx(), cluster.id, cluster.name, cluster.status,
-                  "delete")
+    sender.status_notify(cluster.id, cluster.name, cluster.status,
+                         "delete")
 
 
 def update_cluster(id, values):
+    if verification_base.update_verification_required(values):
+        OPS.handle_verification(id, values)
+        return conductor.cluster_get(context.ctx(), id)
     return conductor.cluster_update(context.ctx(), id, values)
 
 
 # ClusterTemplate ops
 
 def get_cluster_templates(**kwargs):
-    return conductor.cluster_template_get_all(context.ctx(), **kwargs)
+    return conductor.cluster_template_get_all(context.ctx(),
+                                              regex_search=True, **kwargs)
 
 
 def get_cluster_template(id):
@@ -198,7 +204,8 @@ def update_cluster_template(id, values):
 # NodeGroupTemplate ops
 
 def get_node_group_templates(**kwargs):
-    return conductor.node_group_template_get_all(context.ctx(), **kwargs)
+    return conductor.node_group_template_get_all(context.ctx(),
+                                                 regex_search=True, **kwargs)
 
 
 def get_node_group_template(id):

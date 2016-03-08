@@ -71,8 +71,9 @@ def job_executions_cancel(job_execution_id):
 @rest.patch('/job-executions/<job_execution_id>')
 @acl.enforce("data-processing:job-executions:modify")
 @v.check_exists(api.get_job_execution, id='job_execution_id')
-@v.validate(
-    v_j_e_schema.JOB_EXEC_UPDATE_SCHEMA, v_j_e.check_job_execution_update)
+@v.validate(v_j_e_schema.JOB_EXEC_UPDATE_SCHEMA,
+            v_j_e.check_job_execution_update,
+            v_j_e.check_job_status_update)
 def job_executions_update(job_execution_id, data):
     return u.to_wrapped_dict(api.update_job_execution, job_execution_id, data)
 
@@ -121,7 +122,8 @@ def data_source_delete(data_source_id):
 @rest.put('/data-sources/<data_source_id>')
 @acl.enforce("data-processing:data-sources:modify")
 @v.check_exists(api.get_data_source, 'data_source_id')
-@v.validate(v_d_s_schema.DATA_SOURCE_UPDATE_SCHEMA)
+@v.validate(
+    v_d_s_schema.DATA_SOURCE_UPDATE_SCHEMA, v_d_s.check_data_source_update)
 def data_source_update(data_source_id, data):
     return u.to_wrapped_dict(api.data_source_update, data_source_id, data)
 

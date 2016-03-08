@@ -16,12 +16,14 @@
 import copy
 import uuid
 
+import mock
 import six
 from sqlalchemy import exc as sa_ex
 import testtools
 
 from sahara.conductor import manager
 from sahara import context
+from sahara.db.sqlalchemy import models as m
 from sahara import exceptions as ex
 from sahara.service.validations import cluster_template_schema as cl_schema
 from sahara.service.validations import node_group_template_schema as ngt_schema
@@ -163,32 +165,70 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
     def test_ngt_delete_default(self):
         ctx = context.ctx()
         vals = copy.copy(SAMPLE_NGT)
+        vals["name"] = "protected"
+        vals["is_protected"] = True
+        ngt_prot = self.api.node_group_template_create(ctx, vals)
+        ngt_prot_id = ngt_prot['id']
+
+        vals["name"] = "protected_default"
+        vals["is_protected"] = True
         vals["is_default"] = True
-        db_obj_ngt = self.api.node_group_template_create(ctx, vals)
-        _id = db_obj_ngt['id']
+        ngt_prot_def = self.api.node_group_template_create(ctx, vals)
+        ngt_prot_def_id = ngt_prot_def['id']
+
+        # We should not be able to delete ngt_prot until we remove
+        # the protected flag, even if we pass ignore_prot_on_def
+        with testtools.ExpectedException(ex.DeletionFailed):
+            self.api.node_group_template_destroy(ctx, ngt_prot_id)
 
         with testtools.ExpectedException(ex.DeletionFailed):
-            self.api.node_group_template_destroy(ctx, _id)
+            self.api.node_group_template_destroy(ctx, ngt_prot_id,
+                                                 ignore_prot_on_def=True)
 
-        self.api.node_group_template_destroy(ctx, _id, ignore_default=True)
+        update_values = {"is_protected": False}
+        self.api.node_group_template_update(ctx,
+                                            ngt_prot_id,
+                                            update_values)
+        self.api.node_group_template_destroy(ctx, ngt_prot_id)
 
         with testtools.ExpectedException(ex.NotFoundException):
-            self.api.node_group_template_destroy(ctx, _id)
+            self.api.node_group_template_destroy(ctx, ngt_prot_id)
+
+        # However, for the protected_default we should be able to
+        # override the protected check by passing ignore_prot_on_def
+        with testtools.ExpectedException(ex.DeletionFailed):
+            self.api.node_group_template_destroy(ctx, ngt_prot_def_id)
+
+        self.api.node_group_template_destroy(ctx, ngt_prot_def_id,
+                                             ignore_prot_on_def=True)
+
+        with testtools.ExpectedException(ex.NotFoundException):
+            self.api.node_group_template_destroy(ctx, ngt_prot_def_id)
 
     def test_ngt_search(self):
         ctx = context.ctx()
-        self.api.node_group_template_create(ctx, SAMPLE_NGT)
+        ngt = copy.deepcopy(SAMPLE_NGT)
+        ngt["name"] = "frederica"
+        ngt["plugin_name"] = "test plugin"
 
+        self.api.node_group_template_create(ctx, ngt)
         lst = self.api.node_group_template_get_all(ctx)
         self.assertEqual(1, len(lst))
 
-        kwargs = {'name': SAMPLE_NGT['name'],
-                  'plugin_name': SAMPLE_NGT['plugin_name']}
+        # Exact match
+        kwargs = {'name': ngt['name'],
+                  'plugin_name': ngt['plugin_name']}
         lst = self.api.node_group_template_get_all(ctx, **kwargs)
         self.assertEqual(1, len(lst))
 
         # Valid field but no matching value
-        kwargs = {'name': SAMPLE_NGT['name']+"foo"}
+        kwargs = {'name': ngt['name']+"foo"}
+        lst = self.api.node_group_template_get_all(ctx, **kwargs)
+        self.assertEqual(0, len(lst))
+
+        # Valid field with substrings
+        kwargs = {'name': "red",
+                  'plugin_name': "test"}
         lst = self.api.node_group_template_get_all(ctx, **kwargs)
         self.assertEqual(0, len(lst))
 
@@ -196,6 +236,27 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
         self.assertRaises(sa_ex.InvalidRequestError,
                           self.api.node_group_template_get_all,
                           ctx, **{'badfield': 'junk'})
+
+    @mock.patch('sahara.db.sqlalchemy.api.regex_filter')
+    def test_ngt_search_regex(self, regex_filter):
+
+        # do this so we can return the correct value
+        def _regex_filter(query, cls, regex_cols, search_opts):
+            return query, search_opts
+
+        regex_filter.side_effect = _regex_filter
+
+        ctx = context.ctx()
+        self.api.node_group_template_get_all(ctx)
+        self.assertEqual(0, regex_filter.call_count)
+
+        self.api.node_group_template_get_all(ctx,
+                                             regex_search=True, name="fox")
+        self.assertEqual(1, regex_filter.call_count)
+        args, kwargs = regex_filter.call_args
+        self.assertTrue(type(args[1] is m.NodeGroupTemplate))
+        self.assertEqual(args[2], ["name", "description", "plugin_name"])
+        self.assertEqual(args[3], {"name": "fox"})
 
     def test_ngt_update(self):
         ctx = context.ctx()
@@ -223,22 +284,51 @@ class NodeGroupTemplates(test_base.ConductorManagerTestCase):
     def test_ngt_update_default(self):
         ctx = context.ctx()
         vals = copy.copy(SAMPLE_NGT)
-        vals["is_default"] = True
-        ngt = self.api.node_group_template_create(ctx, vals)
-        ngt_id = ngt["id"]
+        vals["name"] = "protected"
+        vals["is_protected"] = True
+        ngt_prot = self.api.node_group_template_create(ctx, vals)
+        ngt_prot_id = ngt_prot["id"]
 
+        vals["name"] = "protected_default"
+        vals["is_protected"] = True
+        vals["is_default"] = True
+        ngt_prot_def = self.api.node_group_template_create(ctx, vals)
+        ngt_prot_def_id = ngt_prot_def["id"]
+
+        # We should not be able to update ngt_prot until we remove
+        # the is_protected flag, even if we pass ignore_prot_on_def
         UPDATE_NAME = "UpdatedSampleNGTName"
         update_values = {"name": UPDATE_NAME}
         with testtools.ExpectedException(ex.UpdateFailedException):
             self.api.node_group_template_update(ctx,
-                                                ngt_id,
+                                                ngt_prot_id,
                                                 update_values)
 
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.node_group_template_update(ctx,
+                                                ngt_prot_id,
+                                                update_values,
+                                                ignore_prot_on_def=True)
+        update_values["is_protected"] = False
         updated_ngt = self.api.node_group_template_update(ctx,
-                                                          ngt_id,
-                                                          update_values,
-                                                          ignore_default=True)
+                                                          ngt_prot_id,
+                                                          update_values)
         self.assertEqual(UPDATE_NAME, updated_ngt["name"])
+
+        # However, for the ngt_prot_def we should be able to
+        # override the is_protected check by passing ignore_prot_on_def
+        update_values = {"name": UPDATE_NAME+"default"}
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.node_group_template_update(ctx,
+                                                ngt_prot_def_id,
+                                                update_values)
+
+        updated_ngt = self.api.node_group_template_update(
+            ctx, ngt_prot_def_id, update_values, ignore_prot_on_def=True)
+
+        self.assertEqual(UPDATE_NAME+"default", updated_ngt["name"])
+        self.assertTrue(updated_ngt["is_protected"])
+        self.assertTrue(updated_ngt["is_default"])
 
     def test_ngt_update_with_nulls(self):
         ctx = context.ctx()
@@ -385,32 +475,70 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
     def test_clt_delete_default(self):
         ctx = context.ctx()
         vals = copy.copy(SAMPLE_CLT)
+        vals["name"] = "protected"
+        vals["is_protected"] = True
+        clt_prot = self.api.cluster_template_create(ctx, vals)
+        clt_prot_id = clt_prot['id']
+
+        vals["name"] = "protected_default"
+        vals["is_protected"] = True
         vals["is_default"] = True
-        db_obj_clt = self.api.cluster_template_create(ctx, vals)
-        _id = db_obj_clt['id']
+        clt_prot_def = self.api.cluster_template_create(ctx, vals)
+        clt_prot_def_id = clt_prot_def['id']
+
+        # We should not be able to delete clt_prot until we remove
+        # the is_protected flag, even if we pass ignore_prot_on_def
+        with testtools.ExpectedException(ex.DeletionFailed):
+            self.api.cluster_template_destroy(ctx, clt_prot_id)
 
         with testtools.ExpectedException(ex.DeletionFailed):
-            self.api.cluster_template_destroy(ctx, _id)
+            self.api.cluster_template_destroy(ctx, clt_prot_id,
+                                              ignore_prot_on_def=True)
 
-        self.api.cluster_template_destroy(ctx, _id, ignore_default=True)
+        update_values = {"is_protected": False}
+        self.api.cluster_template_update(ctx,
+                                         clt_prot_id,
+                                         update_values)
+        self.api.cluster_template_destroy(ctx, clt_prot_id)
 
         with testtools.ExpectedException(ex.NotFoundException):
-            self.api.cluster_template_destroy(ctx, _id)
+            self.api.cluster_template_destroy(ctx, clt_prot_id)
+
+        # However, for clt_prot_def we should be able to override
+        # the is_protected check by passing ignore_prot_on_def
+        with testtools.ExpectedException(ex.DeletionFailed):
+            self.api.cluster_template_destroy(ctx, clt_prot_def_id)
+
+        self.api.cluster_template_destroy(ctx, clt_prot_def_id,
+                                          ignore_prot_on_def=True)
+
+        with testtools.ExpectedException(ex.NotFoundException):
+            self.api.cluster_template_destroy(ctx, clt_prot_def_id)
 
     def test_clt_search(self):
         ctx = context.ctx()
-        self.api.cluster_template_create(ctx, SAMPLE_CLT)
+        clt = copy.deepcopy(SAMPLE_CLT)
+        clt["name"] = "frederica"
+        clt["plugin_name"] = "test_plugin"
 
+        self.api.cluster_template_create(ctx, clt)
         lst = self.api.cluster_template_get_all(ctx)
         self.assertEqual(1, len(lst))
 
-        kwargs = {'name': SAMPLE_CLT['name'],
-                  'plugin_name': SAMPLE_CLT['plugin_name']}
+        # Exact match
+        kwargs = {'name': clt['name'],
+                  'plugin_name': clt['plugin_name']}
         lst = self.api.cluster_template_get_all(ctx, **kwargs)
         self.assertEqual(1, len(lst))
 
         # Valid field but no matching value
-        kwargs = {'name': SAMPLE_CLT['name']+"foo"}
+        kwargs = {'name': clt['name']+"foo"}
+        lst = self.api.cluster_template_get_all(ctx, **kwargs)
+        self.assertEqual(0, len(lst))
+
+        # Valid field with substrings
+        kwargs = {'name': "red",
+                  'plugin_name': "test"}
         lst = self.api.cluster_template_get_all(ctx, **kwargs)
         self.assertEqual(0, len(lst))
 
@@ -418,6 +546,26 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
         self.assertRaises(sa_ex.InvalidRequestError,
                           self.api.cluster_template_get_all,
                           ctx, **{'badfield': 'junk'})
+
+    @mock.patch('sahara.db.sqlalchemy.api.regex_filter')
+    def test_clt_search_regex(self, regex_filter):
+
+        # do this so we can return the correct value
+        def _regex_filter(query, cls, regex_cols, search_opts):
+            return query, search_opts
+
+        regex_filter.side_effect = _regex_filter
+
+        ctx = context.ctx()
+        self.api.cluster_template_get_all(ctx)
+        self.assertEqual(0, regex_filter.call_count)
+
+        self.api.cluster_template_get_all(ctx, regex_search=True, name="fox")
+        self.assertEqual(1, regex_filter.call_count)
+        args, kwargs = regex_filter.call_args
+        self.assertTrue(type(args[1] is m.ClusterTemplate))
+        self.assertEqual(args[2], ["name", "description", "plugin_name"])
+        self.assertEqual(args[3], {"name": "fox"})
 
     def test_clt_update(self):
         ctx = context.ctx()
@@ -457,22 +605,52 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
     def test_clt_update_default(self):
         ctx = context.ctx()
         vals = copy.copy(SAMPLE_CLT)
-        vals["is_default"] = True
-        clt = self.api.cluster_template_create(ctx, vals)
-        clt_id = clt["id"]
+        vals["name"] = "protected"
+        vals["is_protected"] = True
+        clt_prot = self.api.cluster_template_create(ctx, vals)
+        clt_prot_id = clt_prot["id"]
 
+        vals["name"] = "protected_default"
+        vals["is_protected"] = True
+        vals["is_default"] = True
+        clt_prot_def = self.api.cluster_template_create(ctx, vals)
+        clt_prot_def_id = clt_prot_def["id"]
+
+        # We should not be able to update clt_prot until we remove
+        # the is_protected flag, even if we pass ignore_prot_on_def
         UPDATE_NAME = "UpdatedClusterTemplate"
         update_values = {"name": UPDATE_NAME}
         with testtools.ExpectedException(ex.UpdateFailedException):
             self.api.cluster_template_update(ctx,
-                                             clt_id,
+                                             clt_prot_id,
+                                             update_values)
+
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.cluster_template_update(ctx,
+                                             clt_prot_id,
+                                             update_values,
+                                             ignore_prot_on_def=True)
+        update_values["is_protected"] = False
+        updated_clt = self.api.cluster_template_update(ctx,
+                                                       clt_prot_id,
+                                                       update_values)
+        self.assertEqual(UPDATE_NAME, updated_clt["name"])
+
+        # However, for the clt_prot_def we should be able to
+        # override the is_protected check by passing ignore_prot_on_def
+        update_values = {"name": UPDATE_NAME+"default"}
+        with testtools.ExpectedException(ex.UpdateFailedException):
+            self.api.cluster_template_update(ctx,
+                                             clt_prot_def_id,
                                              update_values)
 
         updated_clt = self.api.cluster_template_update(ctx,
-                                                       clt_id,
+                                                       clt_prot_def_id,
                                                        update_values,
-                                                       ignore_default=True)
-        self.assertEqual(UPDATE_NAME, updated_clt["name"])
+                                                       ignore_prot_on_def=True)
+        self.assertEqual(UPDATE_NAME+"default", updated_clt["name"])
+        self.assertTrue(updated_clt["is_default"])
+        self.assertTrue(updated_clt["is_protected"])
 
     def test_clt_update_with_nulls(self):
         ctx = context.ctx()
@@ -548,3 +726,21 @@ class ClusterTemplates(test_base.ConductorManagerTestCase):
             except ex.DeletionFailed as e:
                 self.assert_created_in_another_tenant_exception(e)
                 raise e
+
+    def test_update_clt_on_ngt_update(self):
+        # Prove that cluster templates get updated with proper values
+        # after a referenced node group template is updated
+        ctx = context.ctx()
+        ngt = self.api.node_group_template_create(ctx, SAMPLE_NGT)
+        sample = copy.deepcopy(SAMPLE_CLT)
+        sample["node_groups"] = [
+            {"node_group_template_id": ngt['id'],
+             "count": 1}
+        ]
+        ct = self.api.cluster_template_create(ctx, sample)
+        UPDATE_FLAVOR = "41"
+        update_values = {"flavor_id": UPDATE_FLAVOR}
+        self.api.node_group_template_update(ctx, ngt["id"], update_values)
+        updated_ct = self.api.cluster_template_get(ctx, ct["id"])
+        self.assertEqual(UPDATE_FLAVOR,
+                         updated_ct["node_groups"][0]["flavor_id"])

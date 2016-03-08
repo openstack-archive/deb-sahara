@@ -26,12 +26,23 @@ import sahara.utils.xmlutils as xml
 
 
 @six.add_metaclass(abc.ABCMeta)
+class FileAttr(object):
+    def __init__(self, path, data, mode, owner):
+        self.path = path
+        self.data = data
+        self.mode = mode
+        self.owner = owner
+
+
+@six.add_metaclass(abc.ABCMeta)
 class BaseConfigurationFile(object):
     def __init__(self, file_name):
         self.f_name = file_name
         self._config_dict = dict()
         self._local_path = None
         self._remote_path = None
+        self.mode = None
+        self.owner = None
 
     @property
     def remote_path(self):
@@ -97,8 +108,9 @@ class RawFile(BaseConfigurationFile):
 
 
 class PropertiesFile(BaseConfigurationFile):
-    def __init__(self, file_name):
+    def __init__(self, file_name, separator='='):
         super(PropertiesFile, self).__init__(file_name)
+        self.separator = separator
 
     def parse(self, content):
         for line in content.splitlines():
@@ -107,12 +119,16 @@ class PropertiesFile(BaseConfigurationFile):
                 continue
             if prop[0] in ['#', '!']:
                 continue
-            name, value = prop.split("=")
+            name_value = prop.split(self.separator, 1)
+            name = name_value[0]
+            # check whether the value is empty
+            value = name_value[1] if (len(name_value) == 2) else ''
             self.add_property(name.strip(), value.strip())
 
     def render(self):
-        lines = ['%s=%s' % (k, v) for k, v in six.iteritems(self._config_dict)]
-        return "\n".join(lines)
+        lines = ['%s%s%s' % (k, self.separator, v) for k, v in
+                 six.iteritems(self._config_dict)]
+        return "\n".join(lines) + '\n'
 
 
 class TemplateFile(BaseConfigurationFile):

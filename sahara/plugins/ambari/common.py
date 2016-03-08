@@ -62,6 +62,7 @@ SQOOP = "Sqoop"
 STORM_UI_SERVER = "Storm UI Server"
 SUPERVISOR = "Supervisor"
 ZOOKEEPER_SERVER = "ZooKeeper"
+JOURNAL_NODE = "JournalNode"
 
 
 PROC_MAP = {
@@ -90,7 +91,8 @@ PROC_MAP = {
     SQOOP: ["SQOOP"],
     STORM_UI_SERVER: ["STORM_UI_SERVER"],
     SUPERVISOR: ["SUPERVISOR"],
-    ZOOKEEPER_SERVER: ["ZOOKEEPER_SERVER"]
+    ZOOKEEPER_SERVER: ["ZOOKEEPER_SERVER"],
+    JOURNAL_NODE: ["JOURNALNODE"]
 }
 
 CLIENT_MAP = {
@@ -133,3 +135,11 @@ def get_clients(cluster):
     clients = list(set(clients))
     clients.extend(ALL_LIST)
     return clients
+
+
+def instances_have_process(instances, process):
+    for i in instances:
+        if process in i.node_group.node_processes:
+            return True
+
+    return False

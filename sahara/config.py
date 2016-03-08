@@ -128,11 +128,11 @@ def list_opts():
 
     from sahara.conductor import api
     from sahara import main as sahara_main
+    from sahara.service import coordinator
     from sahara.service.edp import job_utils
     from sahara.service.heat import heat_engine
     from sahara.service.heat import templates
     from sahara.service import periodic
-    from sahara.service import sessions
     from sahara.swift import swift_helper
     from sahara.utils import cluster_progress_ops as cpo
     from sahara.utils.openstack import base
@@ -152,18 +152,17 @@ def list_opts():
                          db_opts,
                          plugins_base.opts,
                          topology_helper.opts,
-                         sender.notifier_opts,
                          keystone.opts,
                          remote.ssh_opts,
                          sahara_main.opts,
                          job_utils.opts,
                          periodic.periodic_opts,
+                         coordinator.coordinator_opts,
                          proxy.opts,
                          cpo.event_log_opts,
                          base.opts,
                          heat_engine.heat_engine_opts,
                          templates.heat_engine_opts,
-                         sessions.sessions_opts,
                          ssh_remote.ssh_config_options,
                          castellan.opts)),
         (poll_utils.timeouts.name,
@@ -187,7 +186,8 @@ def list_opts():
         (swift_helper.public_endpoint_cert_group.name,
          itertools.chain(swift_helper.opts)),
         (castellan.castellan_group.name,
-         itertools.chain(castellan.castellan_opts))
+         itertools.chain(castellan.castellan_opts)),
+        (sender.notifier_opts_group, sender.notifier_opts)
     ]
 
 

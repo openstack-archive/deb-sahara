@@ -25,11 +25,11 @@ from sahara.tests.unit import base
 class AmbariConfigsTestCase(base.SaharaTestCase):
     def setUp(self):
         super(AmbariConfigsTestCase, self).setUp()
-        configs.load_configs("2.2")
+        configs.load_configs("2.3")
         self.ng = mock.Mock()
         self.ng.node_configs = {}
         self.ng.cluster = mock.Mock()
-        self.ng.cluster.hadoop_version = "2.2"
+        self.ng.cluster.hadoop_version = "2.3"
         self.instance = mock.Mock()
         self.instance.node_group = self.ng
         self.instance.storage_paths = mock.Mock()
@@ -123,7 +123,6 @@ class AmbariConfigsTestCase(base.SaharaTestCase):
                     "oozie.service.AuthorizationService.security.enabled":
                     "false"
                 }
-
             }
         ]
         self.assertConfigEqual(expected, instance_configs)

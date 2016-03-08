@@ -17,6 +17,7 @@
 from oslo_serialization import jsonutils
 import six
 
+from sahara.i18n import _
 from sahara.plugins.ambari import common
 from sahara.plugins import provisioning
 from sahara.plugins import utils
@@ -79,6 +80,22 @@ CFG_PROCESS_MAP = {
 }
 
 
+SERVICES_TO_CONFIGS_MAP = None
+
+
+def get_service_to_configs_map():
+    global SERVICES_TO_CONFIGS_MAP
+    if SERVICES_TO_CONFIGS_MAP:
+        return SERVICES_TO_CONFIGS_MAP
+    data = {}
+    for (key, item) in six.iteritems(CFG_PROCESS_MAP):
+        if item not in data:
+            data[item] = []
+        data[item].append(key)
+    SERVICES_TO_CONFIGS_MAP = data
+    return SERVICES_TO_CONFIGS_MAP
+
+
 ng_confs = [
     "dfs.datanode.data.dir",
     "dtnode_heapsize",
@@ -125,6 +142,42 @@ def _get_param_scope(param):
         return "cluster"
 
 
+def _get_ha_params():
+    enable_namenode_ha = provisioning.Config(
+        name="NameNode HA",
+        applicable_target="general",
+        scope="cluster",
+        config_type="bool",
+        default_value=False,
+        is_optional=True,
+        description=_("Enable NameNode HA"),
+        priority=1)
+
+    enable_resourcemanager_ha = provisioning.Config(
+        name="ResourceManager HA",
+        applicable_target="general",
+        scope="cluster",
+        config_type="bool",
+        default_value=False,
+        is_optional=True,
+        description=_("Enable ResourceManager HA"),
+        priority=1)
+
+    enable_regionserver_ha = provisioning.Config(
+        name="HBase RegionServer HA",
+        applicable_target="general",
+        scope="cluster",
+        config_type="bool",
+        default_value=False,
+        is_optional=True,
+        description=_("Enable HBase RegionServer HA"),
+        priority=1)
+
+    return [enable_namenode_ha,
+            enable_resourcemanager_ha,
+            enable_regionserver_ha]
+
+
 def load_configs(version):
     if OBJ_CONFIGS.get(version):
         return OBJ_CONFIGS[version]
@@ -137,6 +190,8 @@ def load_configs(version):
             sahara_cfg.append(provisioning.Config(
                 k, _get_service_name(service), _get_param_scope(k),
                 default_value=v))
+
+    sahara_cfg.extend(_get_ha_params())
     OBJ_CONFIGS[version] = sahara_cfg
     return sahara_cfg
 
@@ -165,6 +220,9 @@ def _serialize_ambari_configs(configs):
 def _create_ambari_configs(sahara_configs, plugin_version):
     configs = {}
     for service, params in six.iteritems(sahara_configs):
+        if service == "general":
+            # General configs are designed for Sahara, not for the plugin
+            continue
         for k, v in six.iteritems(params):
             group = _get_config_group(service, k, plugin_version)
             configs.setdefault(group, {})
@@ -176,7 +234,7 @@ def _make_paths(dirs, suffix):
     return ",".join([d + suffix for d in dirs])
 
 
-def get_instance_params(inst):
+def get_instance_params_mapping(inst):
     configs = _create_ambari_configs(inst.node_group.node_configs,
                                      inst.node_group.cluster.hadoop_version)
     storage_paths = inst.storage_paths()
@@ -200,8 +258,11 @@ def get_instance_params(inst):
     configs.setdefault("oozie-site", {})
     configs["oozie-site"][
         "oozie.service.AuthorizationService.security.enabled"] = "false"
+    return configs
 
-    return _serialize_ambari_configs(configs)
+
+def get_instance_params(inst):
+    return _serialize_ambari_configs(get_instance_params_mapping(inst))
 
 
 def get_cluster_params(cluster):
@@ -216,3 +277,37 @@ def get_cluster_params(cluster):
         configs["admin-properties"]["db_root_password"] = (
             cluster.extra["ranger_db_password"])
     return _serialize_ambari_configs(configs)
+
+
+def get_config_group(instance):
+    params = get_instance_params_mapping(instance)
+    groups = []
+    for (service, targets) in six.iteritems(get_service_to_configs_map()):
+        current_group = {
+            'cluster_name': instance.cluster.name,
+            'group_name': "%s:%s" % (
+                instance.cluster.name, instance.instance_name),
+            'tag': service,
+            'description': "Config group for scaled "
+                           "node %s" % instance.instance_name,
+            'hosts': [
+                {
+                    'host_name': instance.fqdn()
+                }
+            ],
+            'desired_configs': []
+        }
+        at_least_one_added = False
+        for target in targets:
+            configs = params.get(target, {})
+            if configs:
+                current_group['desired_configs'].append({
+                    'type': target,
+                    'properties': configs,
+                    'tag': instance.instance_name
+                })
+                at_least_one_added = True
+        if at_least_one_added:
+            # Config Group without overridden data is not interesting
+            groups.append({'ConfigGroup': current_group})
+    return groups

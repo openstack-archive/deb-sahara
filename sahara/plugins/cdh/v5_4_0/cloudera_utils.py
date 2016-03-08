@@ -15,9 +15,9 @@
 
 from sahara.i18n import _
 from sahara.plugins.cdh import cloudera_utils as cu
-from sahara.plugins.cdh.v5_4_0 import config_helper as c_helper
+from sahara.plugins.cdh.v5_4_0 import config_helper
 from sahara.plugins.cdh.v5_4_0 import plugin_utils as pu
-from sahara.plugins.cdh.v5_4_0 import validation as v
+from sahara.plugins.cdh.v5_4_0 import validation
 from sahara.swift import swift_helper
 from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import configs as s_cfg
@@ -40,6 +40,8 @@ KS_INDEXER_SERVICE_TYPE = 'KS_INDEXER'
 IMPALA_SERVICE_TYPE = 'IMPALA'
 KMS_SERVICE_TYPE = 'KMS'
 
+c_helper = config_helper.ConfigHelperV540()
+
 
 class ClouderaUtilsV540(cu.ClouderaUtils):
     FLUME_SERVICE_NAME = 'flume01'
@@ -55,6 +57,7 @@ class ClouderaUtilsV540(cu.ClouderaUtils):
     def __init__(self):
         cu.ClouderaUtils.__init__(self)
         self.pu = pu.PluginUtilsV540()
+        self.validator = validation.ValidatorV540
 
     def get_service_by_role(self, role, cluster=None, instance=None):
         cm_cluster = None
@@ -97,11 +100,8 @@ class ClouderaUtilsV540(cu.ClouderaUtils):
     @cpo.event_wrapper(True, step=_("Create services"), param=('cluster', 1))
     def create_services(self, cluster):
         api = self.get_api_client(cluster)
-
-        fullversion = ('5.0.0' if cluster.hadoop_version == '5'
-                       else cluster.hadoop_version)
         cm_cluster = api.create_cluster(cluster.name,
-                                        fullVersion=fullversion)
+                                        fullVersion=cluster.hadoop_version)
 
         if len(self.pu.get_zookeepers(cluster)) > 0:
             cm_cluster.create_service(self.ZOOKEEPER_SERVICE_NAME,
@@ -153,7 +153,7 @@ class ClouderaUtilsV540(cu.ClouderaUtils):
         if len(self.pu.get_zookeepers(cluster)) > 0:
             zookeeper = cm_cluster.get_service(self.ZOOKEEPER_SERVICE_NAME)
             zookeeper.update_config(self._get_configs(ZOOKEEPER_SERVICE_TYPE,
-                                    cluster=cluster))
+                                                      cluster=cluster))
 
         hdfs = cm_cluster.get_service(self.HDFS_SERVICE_NAME)
         hdfs.update_config(self._get_configs(HDFS_SERVICE_TYPE,
@@ -228,15 +228,22 @@ class ClouderaUtilsV540(cu.ClouderaUtils):
 
         all_confs = {}
         if cluster:
-            zk_count = v._get_inst_count(cluster, 'ZOOKEEPER_SERVER')
-            hbm_count = v._get_inst_count(cluster, 'HBASE_MASTER')
-            snt_count = v._get_inst_count(cluster, 'SENTRY_SERVER')
-            ks_count = v._get_inst_count(cluster, 'KEY_VALUE_STORE_INDEXER')
-            kms_count = v._get_inst_count(cluster, 'KMS')
-            imp_count = v._get_inst_count(cluster, 'IMPALA_CATALOGSERVER')
-            hive_count = v._get_inst_count(cluster, 'HIVE_METASTORE')
-            slr_count = v._get_inst_count(cluster, 'SOLR_SERVER')
-            sqp_count = v._get_inst_count(cluster, 'SQOOP_SERVER')
+            zk_count = self.validator._get_inst_count(cluster,
+                                                      'ZOOKEEPER_SERVER')
+            hbm_count = self.validator._get_inst_count(cluster, 'HBASE_MASTER')
+            snt_count = self.validator._get_inst_count(cluster,
+                                                       'SENTRY_SERVER')
+            ks_count =\
+                self.validator._get_inst_count(cluster,
+                                               'KEY_VALUE_STORE_INDEXER')
+            kms_count = self.validator._get_inst_count(cluster, 'KMS')
+            imp_count =\
+                self.validator._get_inst_count(cluster,
+                                               'IMPALA_CATALOGSERVER')
+            hive_count = self.validator._get_inst_count(cluster,
+                                                        'HIVE_METASTORE')
+            slr_count = self.validator._get_inst_count(cluster, 'SOLR_SERVER')
+            sqp_count = self.validator._get_inst_count(cluster, 'SQOOP_SERVER')
             core_site_safety_valve = ''
             if self.pu.c_helper.is_swift_enabled(cluster):
                 configs = swift_helper.get_swift_configs()

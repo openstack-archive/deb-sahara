@@ -21,6 +21,7 @@ from sahara.plugins.ambari import common as p_common
 from sahara.plugins.ambari import configs
 from sahara.plugins.ambari import deploy
 from sahara.plugins.ambari import edp_engine
+from sahara.plugins.ambari import health
 from sahara.plugins.ambari import validation
 from sahara.plugins import provisioning as p
 from sahara.plugins import utils as plugin_utils
@@ -39,7 +40,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         return _("HDP plugin with Ambari")
 
     def get_versions(self):
-        return ["2.3", "2.2"]
+        return ["2.3"]
 
     def get_node_processes(self, hadoop_version):
         return {
@@ -49,7 +50,8 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
             p_common.HBASE_SERVICE: [p_common.HBASE_MASTER,
                                      p_common.HBASE_REGIONSERVER],
             p_common.HDFS_SERVICE: [p_common.DATANODE, p_common.NAMENODE,
-                                    p_common.SECONDARY_NAMENODE],
+                                    p_common.SECONDARY_NAMENODE,
+                                    p_common.JOURNAL_NODE],
             p_common.HIVE_SERVICE: [p_common.HIVE_METASTORE,
                                     p_common.HIVE_SERVER],
             p_common.KAFKA_SERVICE: [p_common.KAFKA_BROKER],
@@ -66,7 +68,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
             p_common.YARN_SERVICE: [
                 p_common.APP_TIMELINE_SERVER, p_common.HISTORYSERVER,
                 p_common.NODEMANAGER, p_common.RESOURCEMANAGER],
-            p_common.ZOOKEEPER_SERVICE: [p_common.ZOOKEEPER_SERVER]
+            p_common.ZOOKEEPER_SERVICE: [p_common.ZOOKEEPER_SERVER],
         }
 
     def get_configs(self, hadoop_version):
@@ -79,7 +81,8 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         deploy.wait_ambari_accessible(cluster)
         deploy.update_default_ambari_password(cluster)
         cluster = conductor.cluster_get(context.ctx(), cluster.id)
-        deploy.wait_host_registration(cluster)
+        deploy.wait_host_registration(cluster,
+                                      plugin_utils.get_instances(cluster))
         deploy.set_up_hdp_repos(cluster)
         deploy.create_blueprint(cluster)
 
@@ -100,17 +103,20 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
                 "Password": cluster.extra["ambari_password"]
             }
         }
-        namenode = plugin_utils.get_instance(cluster, p_common.NAMENODE)
-        if namenode:
-            info[p_common.NAMENODE] = {
-                "Web UI": "http://%s:50070" % namenode.management_ip
-            }
-        resourcemanager = plugin_utils.get_instance(cluster,
-                                                    p_common.RESOURCEMANAGER)
-        if resourcemanager:
-            info[p_common.RESOURCEMANAGER] = {
-                "Web UI": "http://%s:8088" % resourcemanager.management_ip
-            }
+        nns = plugin_utils.get_instances(cluster, p_common.NAMENODE)
+        info[p_common.NAMENODE] = {}
+        for idx, namenode in enumerate(nns):
+            info[p_common.NAMENODE][
+                "Web UI %s" % (idx + 1)] = (
+                "http://%s:50070" % namenode.management_ip)
+
+        rms = plugin_utils.get_instances(cluster, p_common.RESOURCEMANAGER)
+        info[p_common.RESOURCEMANAGER] = {}
+        for idx, resourcemanager in enumerate(rms):
+            info[p_common.RESOURCEMANAGER][
+                "Web UI %s" % (idx + 1)] = (
+                "http://%s:8088" % resourcemanager.management_ip)
+
         historyserver = plugin_utils.get_instance(cluster,
                                                   p_common.HISTORYSERVER)
         if historyserver:
@@ -164,16 +170,23 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         cluster = conductor.cluster_get(ctx, cluster.id)
 
     def validate(self, cluster):
-        validation.validate_creation(cluster.id)
+        validation.validate(cluster.id)
 
     def scale_cluster(self, cluster, instances):
-        pass
+        deploy.setup_agents(cluster, instances)
+        cluster = conductor.cluster_get(context.ctx(), cluster.id)
+        deploy.wait_host_registration(cluster, instances)
+        deploy.add_new_hosts(cluster, instances)
+        deploy.manage_config_groups(cluster, instances)
+        deploy.manage_host_components(cluster, instances)
+        swift_helper.install_ssl_certs(instances)
 
     def decommission_nodes(self, cluster, instances):
-        pass
+        deploy.decommission_hosts(cluster, instances)
+        deploy.remove_services_from_hosts(cluster, instances)
 
     def validate_scaling(self, cluster, existing, additional):
-        pass
+        validation.validate(cluster.id)
 
     def get_edp_engine(self, cluster, job_type):
         if job_type in edp_engine.EDPSparkEngine.get_supported_job_types():
@@ -227,3 +240,6 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         for service in node_group.node_processes:
             ports.extend(ports_map.get(service, []))
         return ports
+
+    def get_health_checks(self, cluster):
+        return health.get_health_checks(cluster)

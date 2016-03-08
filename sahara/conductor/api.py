@@ -68,12 +68,21 @@ class LocalApi(object):
             context, _get_id(cluster), show_progress)
 
     @r.wrap(r.ClusterResource)
-    def cluster_get_all(self, context, **kwargs):
+    def cluster_get_all(self, context, regex_search=False, **kwargs):
         """Get all clusters filtered by **kwargs.
 
-        e.g.  cluster_get_all(plugin_name='vanilla', hadoop_version='1.1')
+        :param context: The context, and associated authentication, to use with
+                        this operation
+
+        :param regex_search: If True, enable regex matching for filter
+                             values. See the user guide for more information
+                             on how regex matching is handled. If False,
+                             no regex matching is done.
+
+        :param kwargs: Specifies values for named fields by which
+                       to constrain the search
         """
-        return self._manager.cluster_get_all(context, **kwargs)
+        return self._manager.cluster_get_all(context, regex_search, **kwargs)
 
     @r.wrap(r.ClusterResource)
     def cluster_create(self, context, values):
@@ -164,13 +173,22 @@ class LocalApi(object):
                                                   _get_id(cluster_template))
 
     @r.wrap(r.ClusterTemplateResource)
-    def cluster_template_get_all(self, context, **kwargs):
+    def cluster_template_get_all(self, context, regex_search=False, **kwargs):
         """Get all cluster templates filtered by **kwargs.
 
-        e.g.  cluster_template_get_all(plugin_name='vanilla',
-                                       hadoop_version='1.1')
+        :param context: The context, and associated authentication, to use with
+                        this operation
+
+        :param regex_search: If True, enable regex matching for filter
+                             values. See the user guide for more information
+                             on how regex matching is handled. If False,
+                             no regex matching is done.
+
+        :param kwargs: Specifies values for named fields by which
+                       to constrain the search
         """
-        return self._manager.cluster_template_get_all(context, **kwargs)
+        return self._manager.cluster_template_get_all(context,
+                                                      regex_search, **kwargs)
 
     @r.wrap(r.ClusterTemplateResource)
     def cluster_template_create(self, context, values):
@@ -181,18 +199,18 @@ class LocalApi(object):
         return self._manager.cluster_template_create(context, values)
 
     def cluster_template_destroy(self, context, cluster_template,
-                                 ignore_default=False):
+                                 ignore_prot_on_def=False):
         """Destroy the cluster template or raise if it does not exist.
 
         :returns: None
         """
         self._manager.cluster_template_destroy(context,
                                                _get_id(cluster_template),
-                                               ignore_default)
+                                               ignore_prot_on_def)
 
     @r.wrap(r.ClusterTemplateResource)
     def cluster_template_update(self, context, id, cluster_template,
-                                ignore_default=False):
+                                ignore_prot_on_def=False):
         """Update the cluster template or raise if it does not exist.
 
         :returns: the updated cluster template
@@ -200,7 +218,7 @@ class LocalApi(object):
         return self._manager.cluster_template_update(context,
                                                      id,
                                                      cluster_template,
-                                                     ignore_default)
+                                                     ignore_prot_on_def)
 
     # Node Group Template ops
 
@@ -211,13 +229,23 @@ class LocalApi(object):
             context, _get_id(node_group_template))
 
     @r.wrap(r.NodeGroupTemplateResource)
-    def node_group_template_get_all(self, context, **kwargs):
+    def node_group_template_get_all(self,
+                                    context, regex_search=False, **kwargs):
         """Get all node group templates filtered by **kwargs.
 
-        e.g.  node_group_template_get_all(plugin_name='vanilla',
-                                          hadoop_version='1.1')
+        :param context: The context, and associated authentication, to use with
+                        this operation
+
+        :param regex_search: If True, enable regex matching for filter
+                             values. See the user guide for more information
+                             on how regex matching is handled. If False,
+                             no regex matching is done.
+
+        :param kwargs: Specifies values for named fields by which
+                       to constrain the search
         """
-        return self._manager.node_group_template_get_all(context, **kwargs)
+        return self._manager.node_group_template_get_all(
+            context, regex_search, **kwargs)
 
     @r.wrap(r.NodeGroupTemplateResource)
     def node_group_template_create(self, context, values):
@@ -228,24 +256,24 @@ class LocalApi(object):
         return self._manager.node_group_template_create(context, values)
 
     def node_group_template_destroy(self, context, node_group_template,
-                                    ignore_default=False):
+                                    ignore_prot_on_def=False):
         """Destroy the node group template or raise if it does not exist.
 
         :returns: None
         """
         self._manager.node_group_template_destroy(context,
                                                   _get_id(node_group_template),
-                                                  ignore_default)
+                                                  ignore_prot_on_def)
 
     @r.wrap(r.NodeGroupTemplateResource)
     def node_group_template_update(self, context, id, values,
-                                   ignore_default=False):
+                                   ignore_prot_on_def=False):
         """Update a node group template from the values dictionary.
 
         :returns: the updated node group template
         """
         return self._manager.node_group_template_update(context, id, values,
-                                                        ignore_default)
+                                                        ignore_prot_on_def)
 
     # Data Source ops
 
@@ -255,12 +283,22 @@ class LocalApi(object):
         return self._manager.data_source_get(context, _get_id(data_source))
 
     @r.wrap(r.DataSource)
-    def data_source_get_all(self, context, **kwargs):
+    def data_source_get_all(self, context, regex_search=False, **kwargs):
         """Get all Data Sources filtered by **kwargs.
 
-        e.g.  data_source_get_all(name='myfile', type='swift')
+        :param context: The context, and associated authentication, to use with
+                        this operation
+
+        :param regex_search: If True, enable regex matching for filter
+                             values. See the user guide for more information
+                             on how regex matching is handled. If False,
+                             no regex matching is done.
+
+        :param kwargs: Specifies values for named fields by which
+                       to constrain the search
         """
-        return self._manager.data_source_get_all(context, **kwargs)
+        return self._manager.data_source_get_all(context,
+                                                 regex_search, **kwargs)
 
     def data_source_count(self, context, **kwargs):
         """Count Data Sources filtered by **kwargs.
@@ -293,7 +331,7 @@ class LocalApi(object):
                                                _get_id(job_execution))
 
     @r.wrap(r.JobExecution)
-    def job_execution_get_all(self, context, **kwargs):
+    def job_execution_get_all(self, context, regex_search=False, **kwargs):
         """Get all JobExecutions filtered by **kwargs.
 
         kwargs key values may be the names of fields in a JobExecution
@@ -303,11 +341,19 @@ class LocalApi(object):
         'job.name' -- name of the Job referenced by the JobExecution
         'status' -- JobExecution['info']['status']
 
-        e.g. job_execution_get_all(cluster_id=12, input_id=123)
-             job_execution_get_all(**{'cluster.name': 'test',
-                                      'job.name': 'wordcount'})
+        :param context: The context, and associated authentication, to use with
+                        this operation
+
+        :param regex_search: If True, enable regex matching for filter
+                             values. See the user guide for more information
+                             on how regex matching is handled. If False,
+                             no regex matching is done.
+
+        :param kwargs: Specifies values for named fields by which
+                       to constrain the search
         """
-        return self._manager.job_execution_get_all(context, **kwargs)
+        return self._manager.job_execution_get_all(context,
+                                                   regex_search, **kwargs)
 
     def job_execution_count(self, context, **kwargs):
         """Count number of JobExecutions filtered by **kwargs.
@@ -340,12 +386,21 @@ class LocalApi(object):
         return self._manager.job_get(context, _get_id(job))
 
     @r.wrap(r.Job)
-    def job_get_all(self, context, **kwargs):
+    def job_get_all(self, context, regex_search=False, **kwargs):
         """Get all Jobs filtered by **kwargs.
 
-        e.g.  job_get_all(name='myjob', type='MapReduce')
+        :param context: The context, and associated authentication, to use with
+                        this operation
+
+        :param regex_search: If True, enable regex matching for filter
+                             values. See the user guide for more information
+                             on how regex matching is handled. If False,
+                             no regex matching is done.
+
+        :param kwargs: Specifies values for named fields by which
+                       to constrain the search
         """
-        return self._manager.job_get_all(context, **kwargs)
+        return self._manager.job_get_all(context, regex_search, **kwargs)
 
     @r.wrap(r.Job)
     def job_create(self, context, values):
@@ -389,12 +444,22 @@ class LocalApi(object):
     # JobBinary ops
 
     @r.wrap(r.JobBinary)
-    def job_binary_get_all(self, context, **kwargs):
+    def job_binary_get_all(self, context, regex_search=False, **kwargs):
         """Get all JobBinarys filtered by **kwargs.
 
-        e.g.  job_binary_get_all(name='wordcount.jar')
+        :param context: The context, and associated authentication, to use with
+                        this operation
+
+        :param regex_search: If True, enable regex matching for filter
+                             values. See the user guide for more information
+                             on how regex matching is handled. If False,
+                             no regex matching is done.
+
+        :param kwargs: Specifies values for named fields by which
+                       to constrain the search
         """
-        return self._manager.job_binary_get_all(context, **kwargs)
+        return self._manager.job_binary_get_all(context,
+                                                regex_search, **kwargs)
 
     @r.wrap(r.JobBinary)
     def job_binary_get(self, context, job_binary):
@@ -418,12 +483,23 @@ class LocalApi(object):
     # JobBinaryInternal ops
 
     @r.wrap(r.JobBinaryInternal)
-    def job_binary_internal_get_all(self, context, **kwargs):
+    def job_binary_internal_get_all(self, context,
+                                    regex_search=False, **kwargs):
         """Get all JobBinaryInternals filtered by **kwargs.
 
-        e.g.  cluster_get_all(name='wordcount.jar')
+        :param context: The context, and associated authentication, to use with
+                        this operation
+
+        :param regex_search: If True, enable regex matching for filter
+                             values. See the user guide for more information
+                             on how regex matching is handled. If False,
+                             no regex matching is done.
+
+        :param kwargs: Specifies values for named fields by which
+                       to constrain the search
         """
-        return self._manager.job_binary_internal_get_all(context, **kwargs)
+        return self._manager.job_binary_internal_get_all(
+            context, regex_search, **kwargs)
 
     @r.wrap(r.JobBinaryInternal)
     def job_binary_internal_get(self, context, job_binary_internal):
@@ -477,6 +553,47 @@ class LocalApi(object):
         """Assign new event to the specified provision step."""
         return self._manager.cluster_event_add(
             context, provision_step, values)
+
+    @r.wrap(r.ClusterVerificationResource)
+    def cluster_verification_add(self, context, cluster_id, values):
+        """Return created verification for the specified cluster."""
+        return self._manager.cluster_verification_add(
+            context, _get_id(cluster_id), values)
+
+    @r.wrap(r.ClusterVerificationResource)
+    def cluster_verification_get(self, context, verification_id):
+        """Return verification with the specified verification_id."""
+        return self._manager.cluster_verification_get(
+            context, _get_id(verification_id))
+
+    @r.wrap(r.ClusterVerificationResource)
+    def cluster_verification_update(self, context, verification_id, values):
+        """Return updated verification with the specified verification_id."""
+        return self._manager.cluster_verification_update(
+            context, _get_id(verification_id), values)
+
+    def cluster_verification_delete(self, context, verification_id):
+        """"Delete verification with the specified id."""
+        return self._manager.cluster_verification_delete(
+            context, _get_id(verification_id))
+
+    @r.wrap(r.ClusterHealthCheckResource)
+    def cluster_health_check_add(self, context, verification_id, values):
+        """Return created health check in the specified verification."""
+        return self._manager.cluster_health_check_add(
+            context, _get_id(verification_id), values)
+
+    @r.wrap(r.ClusterHealthCheckResource)
+    def cluster_health_check_get(self, context, health_check_id):
+        """Return health check with the specified health_check_id."""
+        return self._manager.cluster_health_check_get(
+            context, _get_id(health_check_id))
+
+    @r.wrap(r.ClusterHealthCheckResource)
+    def cluster_health_check_update(self, context, health_check_id, values):
+        """Return updated health check with the specified health_check_id."""
+        return self._manager.cluster_health_check_update(
+            context, _get_id(health_check_id), values)
 
 
 class RemoteApi(LocalApi):

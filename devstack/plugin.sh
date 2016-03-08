@@ -81,8 +81,8 @@ function configure_sahara {
     # Set configuration to send notifications
 
     if is_service_enabled ceilometer; then
-        iniset $SAHARA_CONF_FILE DEFAULT enable_notifications "true"
-        iniset $SAHARA_CONF_FILE DEFAULT notification_driver "messaging"
+        iniset $SAHARA_CONF_FILE oslo_messaging_notifications enable "true"
+        iniset $SAHARA_CONF_FILE oslo_messaging_notifications driver "messaging"
     fi
 
     iniset $SAHARA_CONF_FILE DEFAULT verbose True
@@ -142,6 +142,12 @@ function configure_sahara {
     if is_service_enabled tls-proxy; then
         # Set the service port for a proxy to take the original
         iniset $SAHARA_CONF_FILE DEFAULT port $SAHARA_SERVICE_PORT_INT
+    fi
+
+    if [ "$SAHARA_ENABLE_DISTRIBUTED_PERIODICS" == "True" ]; then
+        # Enable distributed periodic tasks
+        iniset $SAHARA_CONF_FILE DEFAULT periodic_coordinator_backend_url\
+            $SAHARA_PERIODIC_COORDINATOR_URL
     fi
 
     recreate_database sahara

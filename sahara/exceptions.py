@@ -33,7 +33,7 @@ class SaharaException(Exception):
     def __str__(self):
         return self.message
 
-    def __init__(self, message=None, code=None):
+    def __init__(self, message=None, code=None, inject_error_id=True):
         self.uuid = uuidutils.generate_uuid()
 
         if code:
@@ -41,9 +41,10 @@ class SaharaException(Exception):
         if message:
             self.message = message
 
-        # Add Error UUID to the message
-        self.message = (_('%(message)s\nError ID: %(id)s')
-                        % {'message': self.message, 'id': self.uuid})
+        if inject_error_id:
+            # Add Error UUID to the message if required
+            self.message = (_('%(message)s\nError ID: %(id)s')
+                            % {'message': self.message, 'id': self.uuid})
 
         super(SaharaException, self).__init__(
             '%s: %s' % (self.code, self.message))
@@ -145,6 +146,16 @@ class CreationFailed(SaharaException):
 class CancelingFailed(SaharaException):
     message = _("Operation was not canceled")
     code = "CANCELING_FAILED"
+
+
+class SuspendingFailed(SaharaException):
+    message = _("Operation was not suspended")
+    code = "SUSPENDING_FAILED"
+
+
+class InvalidJobStatus(SaharaException):
+    message = _("Invalid Job Status")
+    code = "INVALID_JOB_STATUS"
 
 
 class DeletionFailed(SaharaException):

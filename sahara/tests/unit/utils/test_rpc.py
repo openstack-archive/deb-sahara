@@ -30,12 +30,13 @@ class TestMessagingSetup(base.SaharaTestCase):
 
     def setUp(self):
         super(TestMessagingSetup, self).setUp()
-        self.override_config('enable_notifications', True)
+        self.override_config('enable', True,
+                             group='oslo_messaging_notifications')
 
     def _install(self):
         messaging.setup()
-        self.assertNotEqual(None, messaging.TRANSPORT)
-        self.assertNotEqual(None, messaging.NOTIFIER)
+        self.assertIsNotNone(messaging.TRANSPORT)
+        self.assertIsNotNone(messaging.NOTIFIER)
 
     def _remove_install(self):
         if messaging.TRANSPORT:

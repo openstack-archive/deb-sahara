@@ -47,8 +47,11 @@ def main():
     server.setup_common(possible_topdir, 'engine')
 
     server.setup_sahara_engine()
+    server.setup_sahara_api('distributed')
 
     ops_server = ops.OpsServer()
     launcher = server.get_process_launcher()
-    launcher.launch_service(ops_server.get_service())
+    service = ops_server.get_service()
+    launcher.launch_service(service)
+    service.start()
     launcher.wait()
