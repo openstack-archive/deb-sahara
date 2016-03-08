@@ -2,7 +2,7 @@ Source: sahara
 Section: net
 Priority: extra
 Maintainer: PKG OpenStack <openstack-devel@lists.alioth.debian.org>
-Uploaders: Thomas Goirand <zigo@debian.org>
+Uploaders: Thomas Goirand <zigo@debian.org>,
 Build-Depends: debhelper (>= 9),
                dh-python,
                dh-systemd,
@@ -36,6 +36,7 @@ Build-Depends-Indep: alembic (>= 0.8.0),
                      python-mysqldb,
                      python-neutronclient (>= 1:2.6.0),
                      python-novaclient (>= 2:2.29.0),
+                     python-os-testr (>= 0.4.1),
                      python-oslo.concurrency (>= 3.5.0),
                      python-oslo.config (>= 1:3.7.0),
                      python-oslo.context (>= 0.2.0),
@@ -57,13 +58,13 @@ Build-Depends-Indep: alembic (>= 0.8.0),
                      python-pymysql,
                      python-requests (>= 2.8.1),
                      python-rfc3986,
-                     python-saharaclient (>= 0.10.0),
+                     python-saharaclient (>= 0.13.0),
                      python-six (>= 1.9.0),
                      python-sphinxcontrib-httpdomain,
                      python-sqlalchemy (>= 1.0.10),
                      python-stevedore (>= 1.5.0),
                      python-swiftclient,
-                     python-tempest-lib (>= 0.13.0),
+                     python-tempest-lib (>= 0.14.0),
                      python-testresources,
                      python-testscenarios,
                      python-testtools (>= 1.4.0),
@@ -122,7 +123,7 @@ Depends: alembic (>= 0.8.0),
          sqlite3,
          ${misc:Depends},
          ${python:Depends},
-Recommends: python-ldap
+Recommends: python-ldap,
 Description: OpenStack data processing cluster as a service - library
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
@@ -139,9 +140,9 @@ Depends: adduser,
          python-sahara (= ${source:Version}),
          ${misc:Depends},
          ${python:Depends},
-Recommends: python-ldap
-Breaks: sahara (<< 2015.1.0-3~)
-Replaces: sahara (<< 2015.1.0-3~)
+Recommends: python-ldap,
+Breaks: sahara (<< 2015.1.0-3~),
+Replaces: sahara (<< 2015.1.0-3~),
 Description: OpenStack data processing cluster as a service - common files
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
@@ -186,8 +187,8 @@ Description: OpenStack data processing cluster as a service - Engine server
 Package: sahara
 Architecture: all
 Section: python
-Depends: sahara-engine (= ${source:Version}),
-         sahara-api (= ${source:Version}),
+Depends: sahara-api (= ${source:Version}),
+         sahara-engine (= ${source:Version}),
          ${misc:Depends},
          ${ostack-lsb-base},
          ${python:Depends},
@@ -201,7 +202,8 @@ Description: OpenStack data processing cluster as a service - API & Engine
 Package: sahara-doc
 Architecture: all
 Section: doc
-Depends: ${misc:Depends}, ${sphinxdoc:Depends}
+Depends: ${misc:Depends},
+         ${sphinxdoc:Depends},
 Description: OpenStack data processing cluster as a service - doc
  The Sahara project provides a simple means to provision a data-intensive
  application cluster (Hadoop or Spark) on top of OpenStack. It's the ex
