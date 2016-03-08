@@ -8,6 +8,7 @@ sahara (1:4.0.0~b3-1) experimental; urgency=medium
   * Fixed (build-)depends for this release.
   * Fixed namespaces for generating the config file.
   * Using testr directly to run unit tests.
+  * Standards-Version: 3.9.7 (no change).
 
  -- Thomas Goirand <zigo@debian.org>  Tue, 08 Mar 2016 14:06:54 +0100
 
