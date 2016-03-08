@@ -1,3 +1,9 @@
+sahara (1:4.0.0~b3-2) experimental; urgency=medium
+
+  * Better default config.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 08 Mar 2016 15:34:33 +0000
+
 sahara (1:4.0.0~b3-1) experimental; urgency=medium
 
   [ Ondřej Nový ]

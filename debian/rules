@@ -68,7 +68,9 @@ override_dh_install:
 		--namespace oslo.service.sslutils \
 		--namespace oslo.service.wsgi \
 		--output-file $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
-	sed -i 's|#connection=<None>|connection=sqlite:///var/lib/sahara/saharadb|' $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf
+	pkgos-fix-config-default $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf database connection sqlite:///var/lib/sahara/saharadb
+	pkgos-fix-config-default $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf oslo_concurrency lock_path /var/lock/sahara
+	pkgos-fix-config-default $(CURDIR)/debian/sahara-common/usr/share/sahara-common/sahara.conf keystone_authtoken auth_protocol http
 
 	mkdir -p $(CURDIR)/debian/sahara-common/etc/sahara
 	cp etc/sahara/compute.topology.sample $(CURDIR)/debian/sahara-common/etc/sahara/compute.topology
