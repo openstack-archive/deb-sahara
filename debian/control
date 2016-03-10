@@ -70,6 +70,7 @@ Build-Depends-Indep: alembic (>= 0.8.0),
                      python-testtools (>= 1.4.0),
                      python-tooz (>= 1.28.0),
                      python-webob,
+                     openssh-client,
                      subunit,
                      testrepository,
 Standards-Version: 3.9.7
