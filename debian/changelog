@@ -1,6 +1,6 @@
 sahara (1:4.0.0~b3-3) UNRELEASED; urgency=medium
 
-  * Added missing openssh-client build-depends-indep.
+  * Added missing openssh-client and git build-depends-indep.
 
  -- Thomas Goirand <zigo@debian.org>  Thu, 10 Mar 2016 16:16:19 +0100
 
