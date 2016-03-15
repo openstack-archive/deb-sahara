@@ -1,8 +1,9 @@
-sahara (1:4.0.0~b3-3) UNRELEASED; urgency=medium
+sahara (1:4.0.0~b3-3) experimental; urgency=medium
 
   * Added missing openssh-client and git build-depends-indep.
+  * Also install alembic migration missed by PBR.
 
- -- Thomas Goirand <zigo@debian.org>  Thu, 10 Mar 2016 16:16:19 +0100
+ -- Thomas Goirand <zigo@debian.org>  Tue, 15 Mar 2016 19:46:21 +0000
 
 sahara (1:4.0.0~b3-2) experimental; urgency=medium
 

@@ -50,6 +50,7 @@ override_dh_auto_build:
 
 override_dh_install:
 	python2.7 setup.py install --install-layout=deb --root $(CURDIR)/debian/tmp
+	cp -rfv sahara/db/migration/* $(CURDIR)/debian/tmp/usr/lib/python2.7/dist-packages/sahara/db/migration
 	dh_install -O--buildsystem=python_distutils --fail-missing
 
 	# Install the config files.
