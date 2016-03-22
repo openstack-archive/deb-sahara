@@ -32,6 +32,17 @@ LOG = logging.getLogger(__name__)
 SSH_PORT = 22
 INSTANCE_RESOURCE_NAME = "inst"
 SERVER_GROUP_PARAM_NAME = "servgroup"
+# TODO(vgridnev): Using insecure flag until correct way to pass certificate
+# will be invented
+WAIT_CONDITION_SCRIPT_TEMPLATE = '''
+while true; do
+    wc_notify --insecure --data-binary '{"status": "SUCCESS"}'
+    if [ $? -eq 0 ]; then
+        break
+    fi
+    sleep 10
+done
+'''
 
 heat_engine_opts = [
     cfg.BoolOpt(
@@ -318,22 +329,15 @@ class ClusterStack(object):
         if ng.auto_security_group:
             resources.update(self._serialize_auto_security_group(ng))
 
+        if ng.floating_ip_pool:
+            resources.update(self._serialize_nova_floating(ng))
+
         if CONF.use_neutron:
-            port_name = _get_port_name(ng)
-            resources.update(self._serialize_port(
-                port_name, self.cluster.neutron_management_network,
-                self._get_security_groups(ng)))
+            properties["networks"] = [{
+                "network": self.cluster.neutron_management_network}]
 
-            properties["networks"] = [{"port": {"get_resource": "port"}}]
-
-            if ng.floating_ip_pool:
-                resources.update(self._serialize_neutron_floating(ng))
-        else:
-            if ng.floating_ip_pool:
-                resources.update(self._serialize_nova_floating(ng))
-
-            if ng.security_groups or ng.auto_security_group:
-                properties["security_groups"] = self._get_security_groups(ng)
+        if ng.security_groups or ng.auto_security_group:
+            properties["security_groups"] = self._get_security_groups(ng)
 
         # Check if cluster contains user key-pair and include it to template.
         if self.cluster.user_keypair_id:
@@ -342,12 +346,10 @@ class ClusterStack(object):
         gen_userdata_func = self.node_groups_extra[ng.id]['gen_userdata_func']
         key_script = gen_userdata_func(ng, inst_name)
         if CONF.heat_enable_wait_condition:
-            wait_condition_script = (
-                "wc_notify --data-binary '{\"status\": \"SUCCESS\"}'")
             userdata = {
                 "str_replace": {
-                    "template": "\n".join(
-                        [key_script, wait_condition_script]),
+                    "template": "\n".join([
+                        key_script, WAIT_CONDITION_SCRIPT_TEMPLATE]),
                     "params": {
                         "wc_notify": {
                             "get_attr": [
@@ -398,33 +400,6 @@ class ClusterStack(object):
                 "properties": {
                     "timeout": self._get_wait_condition_timeout(ng),
                     "handle": {"get_resource": _get_wc_handle_name(ng.name)}
-                }
-            }
-        }
-
-    def _serialize_port(self, port_name, fixed_net_id, security_groups):
-        properties = {
-            "network_id": fixed_net_id,
-            "replacement_policy": "AUTO",
-            "name": port_name
-        }
-        if security_groups:
-            properties["security_groups"] = security_groups
-
-        return {
-            "port": {
-                "type": "OS::Neutron::Port",
-                "properties": properties,
-            }
-        }
-
-    def _serialize_neutron_floating(self, ng):
-        return {
-            "floating_ip": {
-                "type": "OS::Neutron::FloatingIP",
-                "properties": {
-                    "floating_network_id": ng.floating_ip_pool,
-                    "port_id": {"get_resource": "port"}
                 }
             }
         }
