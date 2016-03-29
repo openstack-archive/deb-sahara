@@ -1,3 +1,11 @@
+sahara (1:4.0.0~rc1-2) experimental; urgency=medium
+
+  * Add patch to install .json files as well.
+  * Removed manual cp of alembic migration files, since the above patch makes
+    it useless.
+
+ -- Thomas Goirand <zigo@debian.org>  Tue, 29 Mar 2016 09:38:36 +0200
+
 sahara (1:4.0.0~rc1-1) experimental; urgency=medium
 
   * New upstream release.

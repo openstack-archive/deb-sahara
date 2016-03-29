@@ -1,0 +1,9 @@
+Description: Install missing files
+Author: Thomas Goirand <zigo@debian.org>
+Forwarded: not-needed
+Last-Update: 2016-03-29
+
+--- /dev/null	2016-03-15 18:18:48.046095192 +0100
++++ b/MANIFEST.in	2016-03-29 09:35:39.451657403 +0200
+@@ -0,0 +1 @@
++recursive-include sahara *
