@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: sahara\n"
 "Report-Msgid-Bugs-To: sahara@packages.debian.org\n"
-"POT-Creation-Date: 2014-09-24 20:23+0800\n"
+"POT-Creation-Date: 2016-04-05 11:12+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -173,13 +173,13 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../sahara.templates:2001
+#: ../sahara-api.templates:2001
 msgid "Register Sahara in the Keystone endpoint catalog?"
 msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../sahara.templates:2001
+#: ../sahara-api.templates:2001
 msgid ""
 "Each OpenStack service (each API) should be registered in order to be "
 "accessible. This is done using \"keystone service-create\" and \"keystone "
@@ -188,55 +188,73 @@ msgstr ""
 
 #. Type: boolean
 #. Description
-#: ../sahara.templates:2001
+#: ../sahara-api.templates:2001
 msgid ""
 "Note that you will need to have an up and running Keystone server on which "
-"to connect using the Keystone authentication token."
+"to connect using a known admin project name, admin username and password. "
+"The admin auth token is not used anymore."
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../sahara.templates:3001
+#: ../sahara-api.templates:3001
 msgid "Keystone server IP address:"
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../sahara.templates:3001
+#: ../sahara-api.templates:3001
 msgid ""
 "Please enter the IP address of the Keystone server, so that sahara-api can "
 "contact Keystone to do the Sahara service and endpoint creation."
 msgstr ""
 
-#. Type: password
+#. Type: string
 #. Description
-#: ../sahara.templates:4001
-msgid "Keystone authentication token:"
-msgstr ""
-
-#. Type: password
-#. Description
-#: ../sahara.templates:4001
-msgid ""
-"To configure its endpoint in Keystone, sahara-api needs the Keystone "
-"authentication token."
+#: ../sahara-api.templates:4001
+msgid "Keystone admin name:"
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../sahara.templates:5001
+#. Type: string
+#. Description
+#. Type: password
+#. Description
+#: ../sahara-api.templates:4001 ../sahara-api.templates:5001
+#: ../sahara-api.templates:6001
+msgid ""
+"To register the service endpoint, this package needs to know the Admin "
+"login, name, project name, and password to the Keystone server."
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../sahara-api.templates:5001
+msgid "Keystone admin project name:"
+msgstr ""
+
+#. Type: password
+#. Description
+#: ../sahara-api.templates:6001
+msgid "Keystone admin password:"
+msgstr ""
+
+#. Type: string
+#. Description
+#: ../sahara-api.templates:7001
 msgid "Sahara endpoint IP address:"
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../sahara.templates:5001
+#: ../sahara-api.templates:7001
 msgid "Please enter the IP address that will be used to contact Sahara."
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../sahara.templates:5001
+#: ../sahara-api.templates:7001
 msgid ""
 "This IP address should be accessible from the clients that will use this "
 "service, so if you are installing a public cloud, this should be a public IP "
@@ -245,13 +263,13 @@ msgstr ""
 
 #. Type: string
 #. Description
-#: ../sahara.templates:6001
+#: ../sahara-api.templates:8001
 msgid "Name of the region to register:"
 msgstr ""
 
 #. Type: string
 #. Description
-#: ../sahara.templates:6001
+#: ../sahara-api.templates:8001
 msgid ""
 "OpenStack supports using availability zones, with each region representing a "
 "location. Please enter the zone that you wish to use when registering the "

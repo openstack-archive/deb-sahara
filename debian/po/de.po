@@ -1,27 +1,26 @@
-# Translation of sahara debconf templates to french. 
-# Copyright (C) 2013, French l10n team <debian-l10n-french@lists.debian.org>
+# German debconf translation of sahara.
 # This file is distributed under the same license as the sahara package.
-# Julien Patriarca <leatherface@debian.org>, 2013.
+# Copyright (C) 2014, Thomas Goirand <zigo@debian.org>.
+# Copyright (C) of this file 2016 Chris Leick <c.leick@vollbio.de>.
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: sahara\n"
+"Project-Id-Version: sahara 3.0.0-5\n"
 "Report-Msgid-Bugs-To: sahara@packages.debian.org\n"
 "POT-Creation-Date: 2016-04-05 11:12+0200\n"
-"PO-Revision-Date: 2015-05-12 15:34+0100\n"
-"Last-Translator: Julien Patriarca <leatherface@debian.org>\n"
-"Language-Team: FRENCH <debian-l10n-french@lists.debian.org>\n"
-"Language: fr\n"
+"PO-Revision-Date: 2016-03-27 17:11+0200\n"
+"Last-Translator: Chris Leick <c.leick@vollbio.de>\n"
+"Language-Team: German <debian-l10n-german@lists.debian.org>\n"
+"Language: de\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"X-Generator: Poedit 1.7.6\n"
 
 #. Type: boolean
 #. Description
 #: ../sahara-common.templates:2001
 msgid "Set up a database for Sahara?"
-msgstr "Faut-il paramétrer une base de données pour Sahara ?"
+msgstr "Datenbank für Sahara einrichten?"
 
 #. Type: boolean
 #. Description
@@ -30,8 +29,9 @@ msgid ""
 "No database has been set up for Sahara to use. Before continuing, you should "
 "make sure you have the following information:"
 msgstr ""
-"Aucune base de données n'a été paramétrée pour Sahara. Avant de poursuivre, "
-"vous devriez vous assurer d'avoir les informations suivantes :"
+"Für die Benutzung durch Sahara wurde keine Datenbank eingerichtet. Bevor Sie "
+"fortfahren, sollten Sie sicherstellen, dass Sie über die folgenden "
+"Informationen verfügen:"
 
 #. Type: boolean
 #. Description
@@ -43,11 +43,11 @@ msgid ""
 "   machine);\n"
 " * a username and password to access the database."
 msgstr ""
-" - Le type de base de données que vous souhaitez utiliser ;\n"
-" - le nom d'hôte du serveur de base de données (ce serveur\n"
-"   doit accepter les connexions TCP depuis cette machine) ;\n"
-" - un nom d'utilisateur et un mot de passe pour accéder à\n"
-"   cette base de données.     "
+" * den Typ der Datenbank, die Sie verwenden möchten\n"
+" * den Rechnernamen des Datenbankservers (dieser Server muss TCP-"
+"Verbindungen\n"
+"   von diesem Rechner erlauben)\n"
+" * einen Benutzernamen und ein Passwort, um auf die Datenbank zuzugreifen"
 
 #. Type: boolean
 #. Description
@@ -56,8 +56,8 @@ msgid ""
 "If some of these requirements are missing, do not choose this option and run "
 "with regular SQLite support."
 msgstr ""
-"Si certains de ces prérequis sont manquants, ignorez cette option et "
-"exécutez l'application avec le support SQLite normal."
+"Falls einige dieser Anforderungen nicht erfüllt sind, wählen Sie diese "
+"Option nicht und verwenden Sie stattdessen die normale Sqlite-Unterstützung."
 
 #. Type: boolean
 #. Description
@@ -66,14 +66,14 @@ msgid ""
 "You can change this setting later on by running \"dpkg-reconfigure -plow "
 "sahara-common\"."
 msgstr ""
-"Vous pouvez modifier ce réglage plus tard en lançant « dpkg-reconfigure -"
-"plow sahara-common »."
+"Sie können diese Einstellung später ändern, indem Sie »dpkg-reconfigure -"
+"plow sahara-common« ausführen."
 
 #. Type: string
 #. Description
 #: ../sahara-common.templates:3001
 msgid "Authentication server hostname:"
-msgstr "Nom d'hôte du serveur d'authentification :"
+msgstr "Rechnername des Authentifizierungsservers:"
 
 #. Type: string
 #. Description
@@ -82,8 +82,9 @@ msgid ""
 "Please specify the hostname of the authentication server. Typically this is "
 "also the hostname of the OpenStack Identity Service (Keystone)."
 msgstr ""
-"Veuillez indiquer le nom d'hôte du serveur d'authentification. En général, "
-"il s'agit du nom d'hôte du Service d'Identité OpenStack (Keystone)."
+"Bitte geben Sie den Rechnernamen des Authentifizierungsservers an. "
+"Typischerweise ist das gleichzeitig der Rechnername Ihres OpenStack-"
+"Identitätsdienstes (Keystone)."
 
 #. Type: string
 #. Description
@@ -96,7 +97,7 @@ msgstr ""
 #. proprietaire ("tenant")
 #: ../sahara-common.templates:4001
 msgid "Authentication server tenant name:"
-msgstr "Nom d'espace client du serveur d'authentification :"
+msgstr "Tenant-Name des Authentifizierungsservers:"
 
 #. Type: string
 #. Description
@@ -109,42 +110,41 @@ msgstr "Nom d'espace client du serveur d'authentification :"
 #. proprietaire ("tenant")
 #: ../sahara-common.templates:4001
 msgid "Please specify the authentication server tenant name."
-msgstr ""
-"Veuillez indiquer le nom d'espace client du serveur d'authentification."
+msgstr "Bitte geben Sie den Tenant-Namen des Authentifizierungsservers an."
 
 #. Type: string
 #. Description
 #: ../sahara-common.templates:5001
 msgid "Authentication server username:"
-msgstr "Nom d'utilisateur du serveur d'authentification :"
+msgstr "Benutzername auf dem Authentifizierungsserver:"
 
 #. Type: string
 #. Description
 #: ../sahara-common.templates:5001
 msgid "Please specify the username to use with the authentication server."
 msgstr ""
-"Veuillez indiquer le nom d'utilisateur à utiliser sur le serveur "
-"d'authentification."
+"Bitte geben Sie den Benutzernamen an, der für den Authentifizierungsserver "
+"benutzt wird."
 
 #. Type: password
 #. Description
 #: ../sahara-common.templates:6001
 msgid "Authentication server password:"
-msgstr "Mot de passe du serveur d'authentification :"
+msgstr "Passwort auf dem Authentifizierungsserver:"
 
 #. Type: password
 #. Description
 #: ../sahara-common.templates:6001
 msgid "Please specify the password to use with the authentication server."
 msgstr ""
-"Veuillez indiquer le mot de passe à utiliser sur le serveur "
-"d'authentification."
+"Bitte geben Sie das Passwort an, das für den Authentifizierungsserver "
+"benutzt wird."
 
 #. Type: string
 #. Description
 #: ../sahara-common.templates:7001
 msgid "IP address of your RabbitMQ host:"
-msgstr "Adresse IP de votre hôte RabbitMQ :"
+msgstr "IP-Adresse Ihres RabbitMQ-Rechners:"
 
 #. Type: string
 #. Description
@@ -158,48 +158,48 @@ msgid ""
 "In order to interoperate with other components of OpenStack, this package "
 "needs to connect to a central RabbitMQ server."
 msgstr ""
-"Afin de pouvoir interagir avec d'autres composants d'OpenStack, ce paquet "
-"doit se connecter à un serveur centralisé RabbitMQ."
+"Um mit weiteren Bestandteilen von OpenStack zusammenzuarbeiten, muss sich "
+"dieses Paket mit einem zentralen RabbitMQ-Server verbinden."
 
 #. Type: string
 #. Description
 #: ../sahara-common.templates:7001
 msgid "Please specify the IP address of that server."
-msgstr "Veuillez indiquer l'adresse IP de ce serveur."
+msgstr "Bitte geben Sie die IP-Adresse dieses Servers an."
 
 #. Type: string
 #. Description
 #: ../sahara-common.templates:8001
 msgid "Username for connection to the RabbitMQ server:"
-msgstr "Nom d'utilisateur pour la connexion au serveur RabbitMQ :"
+msgstr "Benutzername für die Verbindung mit dem RabbitMQ-Server:"
 
 #. Type: string
 #. Description
 #: ../sahara-common.templates:8001
 msgid "Please specify the username used to connect to the RabbitMQ server."
 msgstr ""
-"Veuillez indiquer le nom d'utilisateur à utiliser pour se connecter au "
-"serveur RabbitMQ."
+"Bitte geben Sie den Benutzernamen ein, der zum Verbinden mit dem RabbitMQ-"
+"Server verwendet wird."
 
 #. Type: password
 #. Description
 #: ../sahara-common.templates:9001
 msgid "Password for connection to the RabbitMQ server:"
-msgstr "Mot de passe pour la connexion au serveur RabbitMQ :"
+msgstr "Passwort für die Verbindung mit dem RabbitMQ-Server:"
 
 #. Type: password
 #. Description
 #: ../sahara-common.templates:9001
 msgid "Please specify the password used to connect to the RabbitMQ server."
 msgstr ""
-"Veuillez indiquer le mot de passe à utiliser pour se connecter au serveur "
-"RabbitMQ."
+"Bitte geben Sie das Passwort ein, das zum Verbinden mit dem RabbitMQ-Server "
+"verwendet wird."
 
 #. Type: boolean
 #. Description
 #: ../sahara-api.templates:2001
 msgid "Register Sahara in the Keystone endpoint catalog?"
-msgstr "Enregistrer Sahara dans le catalogue de points d'accès de Keystone ?"
+msgstr "Sahara im Keystone-Endpunktkatalog registrieren?"
 
 #. Type: boolean
 #. Description
@@ -209,9 +209,9 @@ msgid ""
 "accessible. This is done using \"keystone service-create\" and \"keystone "
 "endpoint-create\". This can be done automatically now."
 msgstr ""
-"Chaque service OpenStack (chaque API) doit être enregistré pour être "
-"accessible. Cela peut être fait en utilisant « keystone service-create » et "
-"« keystone endpoint-create ». Cela peut maintenant être fait automatiquement."
+"Jeder OpenStack-Dienst (jedes API) sollte registriert werden, damit darauf "
+"zugegriffen werden kann. Dies wird mittels »keystone service-create« und "
+"»keystone endpoint-create« erreicht und kann nun automatisch erledigt werden."
 
 #. Type: boolean
 #. Description
@@ -225,14 +225,15 @@ msgid ""
 "to connect using a known admin project name, admin username and password. "
 "The admin auth token is not used anymore."
 msgstr ""
-"Veuillez noter que vous aurez besoin d'avoir un serveur Keystone fonctionnel "
-"sur lequel se connecter pour utiliser le jeton d'authentification Keystone."
+"Beachten Sie, dass Sie einen gestarteten und laufenden Keystone-Server haben "
+"müssen, mit dem Sie sich anhand des Keystone-Authentifizierungs-Tokens "
+"verbinden können."
 
 #. Type: string
 #. Description
 #: ../sahara-api.templates:3001
 msgid "Keystone server IP address:"
-msgstr "Adresse IP du serveur Keystone :"
+msgstr "IP-Adresse des Keystone-Servers:"
 
 #. Type: string
 #. Description
@@ -241,9 +242,9 @@ msgid ""
 "Please enter the IP address of the Keystone server, so that sahara-api can "
 "contact Keystone to do the Sahara service and endpoint creation."
 msgstr ""
-"Veuillez indiquer l'adresse IP du serveur Keystone, pour que l'API de Sahara "
-"puisse contacter Keystone pour établir le service Sahara et créer le point "
-"d'accès."
+"Bitte geben Sie die IP-Adresse des Keystone-Servers an, so dass Sahara-API "
+"Keystone kontaktieren kann, um den Sahara-Dienst und den Endpunkt zu "
+"erstellen."
 
 #. Type: string
 #. Description
@@ -251,7 +252,7 @@ msgstr ""
 #, fuzzy
 #| msgid "Keystone authentication token:"
 msgid "Keystone admin name:"
-msgstr "Jeton d'authentification Keystone :"
+msgstr "Keystone-Authentifizierungs-Token:"
 
 #. Type: string
 #. Description
@@ -282,14 +283,15 @@ msgstr ""
 #. Description
 #: ../sahara-api.templates:7001
 msgid "Sahara endpoint IP address:"
-msgstr "Adresse IP du point d'accès Sahara :"
+msgstr "IP-Adresse des Sahara-Endpunkts:"
 
 #. Type: string
 #. Description
 #: ../sahara-api.templates:7001
 msgid "Please enter the IP address that will be used to contact Sahara."
 msgstr ""
-"Veuillez indiquer l'adresse IP qui sera utilisée pour contacter Sahara."
+"Bitte geben Sie die IP-Adresse ein, die zum Kontaktieren von Sahara benutzt "
+"wird."
 
 #. Type: string
 #. Description
@@ -299,15 +301,15 @@ msgid ""
 "service, so if you are installing a public cloud, this should be a public IP "
 "address."
 msgstr ""
-"L'adresse IP devra être accessible depuis les clients qui utiliseront ce "
-"service, donc si vous installez un nuage public ce devra être une adresse IP "
-"publique."
+"Auf diese IP-Adresse sollte von den Clients, die diesen Dienst verwenden, "
+"zugegriffen werden können, daher sollte sie, falls Sie eine öffentliche "
+"Cloud installieren, eine öffentliche IP-Adresse sein."
 
 #. Type: string
 #. Description
 #: ../sahara-api.templates:8001
 msgid "Name of the region to register:"
-msgstr "Nom de la région à enregistrer :"
+msgstr "Name der Region, die registriert wird:"
 
 #. Type: string
 #. Description
@@ -317,13 +319,13 @@ msgid ""
 "location. Please enter the zone that you wish to use when registering the "
 "endpoint."
 msgstr ""
-"OpenStack supporte l'utilisation de zones disponibles, avec chaque région "
-"représentant un lieu. Veuillez entrer une zone que vous souhaitez utiliser "
-"lors de l'enregistrement d'un point d'accès."
+"OpenStack unterstützt die Verwendung von Verfügbarkeitszonen, bei der jede "
+"Region einen Ort repräsentiert. Bitte geben Sie die Zone, die Sie benutzen "
+"möchten, bei der Registrierung des Endpunkts an."
 
 #~ msgid ""
 #~ "To configure its endpoint in Keystone, sahara-api needs the Keystone "
 #~ "authentication token."
 #~ msgstr ""
-#~ "Pour configurer son point d'accès dans Keystone, l'API de Sahara a besoin "
-#~ "du jeton d'authentification Keystone."
+#~ "Sahara-API benötigt das Keystone-Authentifizierungs-Token, um seinen "
+#~ "Endpunkt in Keystone zu konfigurieren."
