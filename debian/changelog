@@ -1,5 +1,6 @@
-sahara (1:4.0.0~rc1-4) unstable; urgency=medium
+sahara (1:4.0.0~rc2-1) unstable; urgency=medium
 
+  * New upstream release.
   * Uploading to unstable.
   * Added de.po debconf translation (Closes: #819689).
 
