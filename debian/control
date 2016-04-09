@@ -74,7 +74,7 @@ Build-Depends-Indep: alembic (>= 0.8.0),
                      openssh-client,
                      subunit,
                      testrepository,
-Standards-Version: 3.9.7
+Standards-Version: 3.9.8
 Homepage: https://github.com/openstack/sahara
 Vcs-Browser: https://anonscm.debian.org/cgit/openstack/sahara.git/
 Vcs-Git: https://anonscm.debian.org/git/openstack/sahara.git
