@@ -75,7 +75,7 @@ override_dh_install:
 	mkdir -p $(CURDIR)/debian/sahara-common/etc/sahara
 	cp etc/sahara/compute.topology.sample $(CURDIR)/debian/sahara-common/etc/sahara/compute.topology
 	cp etc/sahara/swift.topology.sample $(CURDIR)/debian/sahara-common/etc/sahara/swift.topology
-	set -e ; for i in policy.json rootwrap.conf rootwrap.d ; do \
+	set -e ; for i in api-paste.ini policy.json rootwrap.conf rootwrap.d ; do \
 		cp -rfv etc/sahara/$$i $(CURDIR)/debian/sahara-common/etc/sahara ; \
 	done
 
