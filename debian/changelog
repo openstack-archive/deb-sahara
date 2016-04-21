@@ -1,4 +1,4 @@
-sahara (1:4.0.0-3) UNRELEASED; urgency=medium
+sahara (1:4.0.0-2) UNRELEASED; urgency=medium
 
   [ Ondřej Nový ]
   * Standards-Version is 3.9.8 now (no change)
@@ -6,7 +6,10 @@ sahara (1:4.0.0-3) UNRELEASED; urgency=medium
   [ Corey Bryant ]
   * d/rules: Install api-paste.ini.
 
- -- Corey Bryant <corey.bryant@canonical.com>  Thu, 14 Apr 2016 08:59:36 -0400
+  [ Thomas Goirand ]
+  * Updated Portuguese translation for debconf messages (Closes: #821245).
+
+ -- Thomas Goirand <zigo@debian.org>  Fri, 22 Apr 2016 00:23:25 +0200
 
 sahara (1:4.0.0-1) unstable; urgency=medium
 
