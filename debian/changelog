@@ -8,6 +8,7 @@ sahara (1:4.0.0-2) UNRELEASED; urgency=medium
 
   [ Thomas Goirand ]
   * Updated Portuguese translation for debconf messages (Closes: #821245).
+  * Updated Dutch translation for debconf messages (Closes: #823258).
 
  -- Thomas Goirand <zigo@debian.org>  Fri, 22 Apr 2016 00:23:25 +0200
 
