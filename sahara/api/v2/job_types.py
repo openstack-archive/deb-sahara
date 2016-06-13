@@ -14,7 +14,7 @@
 # limitations under the License.
 
 from sahara.api import acl
-from sahara.service.edp import api
+from sahara.service.api.v2 import job_types as api
 import sahara.utils.api as u
 
 

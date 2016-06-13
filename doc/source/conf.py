@@ -18,6 +18,7 @@
 import os
 import subprocess
 import sys
+import warnings
 
 on_rtd = os.environ.get('READTHEDOCS', None) == 'True'
 
@@ -37,11 +38,11 @@ sys.path.append(os.path.abspath('../bin'))
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = ['sphinx.ext.autodoc', 'sphinx.ext.doctest', 'sphinx.ext.todo', 'sphinx.ext.coverage',
-              'sphinx.ext.viewcode', 'sphinxcontrib.httpdomain',
-              'oslo_config.sphinxconfiggen']
+              'sphinx.ext.viewcode', 'sphinxcontrib.httpdomain']
 
 if not on_rtd:
     extensions.append('oslosphinx')
+    extensions.append('oslo_config.sphinxconfiggen')
 
 config_generator_config_file = 'config-generator.conf'
 config_sample_basename = 'sahara'
@@ -150,8 +151,12 @@ html_static_path = ['_static']
 #html_last_updated_fmt = '%b %d, %Y'
 git_cmd = ["git", "log", "--pretty=format:'%ad, commit %h'", "--date=local",
            "-n1"]
-html_last_updated_fmt = subprocess.Popen(git_cmd,
-                                         stdout=subprocess.PIPE).communicate()[0]
+try:
+    html_last_updated_fmt = subprocess.Popen(
+        git_cmd, stdout=subprocess.PIPE).communicate()[0]
+except Exception:
+    warnings.warn('Cannot get last updated time from git repository. '
+                  'Not setting "html_last_updated_fmt".')
 
 # If true, SmartyPants will be used to convert quotes and dashes to
 # typographically correct entities.
