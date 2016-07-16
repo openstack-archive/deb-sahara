@@ -31,6 +31,7 @@ SESSION_TYPE_CINDER = 'cinder'
 SESSION_TYPE_KEYSTONE = 'keystone'
 SESSION_TYPE_NEUTRON = 'neutron'
 SESSION_TYPE_NOVA = 'nova'
+SESSION_TYPE_GLANCE = 'glance'
 SESSION_TYPE_INSECURE = 'insecure'
 
 
@@ -61,6 +62,7 @@ class SessionCache(object):
             SESSION_TYPE_KEYSTONE: self.get_keystone_session,
             SESSION_TYPE_NEUTRON: self.get_neutron_session,
             SESSION_TYPE_NOVA: self.get_nova_session,
+            SESSION_TYPE_GLANCE: self.get_glance_session,
             SESSION_TYPE_INSECURE: self.get_insecure_session,
         }
 
@@ -103,9 +105,9 @@ class SessionCache(object):
     def get_cinder_session(self):
         session = self._sessions.get(SESSION_TYPE_CINDER)
         if not session:
-            if not CONF.cinder.api_insecure and CONF.cinder.ca_file:
+            if not CONF.cinder.api_insecure:
                 session = keystone.Session(
-                    cert=CONF.cinder.ca_file, verify=True)
+                    verify=CONF.cinder.ca_file or True)
             else:
                 session = self.get_insecure_session()
             self._set_session(SESSION_TYPE_CINDER, session)
@@ -114,9 +116,9 @@ class SessionCache(object):
     def get_keystone_session(self):
         session = self._sessions.get(SESSION_TYPE_KEYSTONE)
         if not session:
-            if not CONF.keystone.api_insecure and CONF.keystone.ca_file:
+            if not CONF.keystone.api_insecure:
                 session = keystone.Session(
-                    cert=CONF.keystone.ca_file, verify=True)
+                    verify=CONF.keystone.ca_file or True)
             else:
                 session = self.get_insecure_session()
             self._set_session(SESSION_TYPE_KEYSTONE, session)
@@ -125,9 +127,9 @@ class SessionCache(object):
     def get_neutron_session(self):
         session = self._sessions.get(SESSION_TYPE_NEUTRON)
         if not session:
-            if not CONF.neutron.api_insecure and CONF.neutron.ca_file:
+            if not CONF.neutron.api_insecure:
                 session = keystone.Session(
-                    cert=CONF.neutron.ca_file, verify=True)
+                    verify=CONF.neutron.ca_file or True)
             else:
                 session = self.get_insecure_session()
             self._set_session(SESSION_TYPE_NEUTRON, session)
@@ -136,12 +138,22 @@ class SessionCache(object):
     def get_nova_session(self):
         session = self._sessions.get(SESSION_TYPE_NOVA)
         if not session:
-            if not CONF.nova.api_insecure and CONF.nova.ca_file:
+            if not CONF.nova.api_insecure:
                 session = keystone.Session(
-                    cert=CONF.nova.ca_file, verify=True)
+                    verify=CONF.nova.ca_file or True)
             else:
                 session = self.get_insecure_session()
             self._set_session(SESSION_TYPE_NOVA, session)
+        return session
+
+    def get_glance_session(self):
+        session = self._sessions.get(SESSION_TYPE_GLANCE)
+        if not session:
+            if not CONF.glance.api_insecure:
+                session = keystone.Session(verify=CONF.glance.ca_file or True)
+            else:
+                session = self.get_insecure_session()
+            self._set_session(SESSION_TYPE_GLANCE, session)
         return session
 
     def token_for_auth(self, auth):

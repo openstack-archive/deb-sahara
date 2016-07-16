@@ -37,10 +37,12 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         return "HDP Plugin"
 
     def get_description(self):
-        return _("HDP plugin with Ambari")
+        return _("The Ambari Sahara plugin provides the ability to launch "
+                 "clusters with Hortonworks Data Platform (HDP) on OpenStack "
+                 "using Apache Ambari")
 
     def get_versions(self):
-        return ["2.3"]
+        return ["2.3", "2.4"]
 
     def get_node_processes(self, hadoop_version):
         return {
@@ -92,6 +94,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         cluster_instances = plugin_utils.get_instances(cluster)
         swift_helper.install_ssl_certs(cluster_instances)
         deploy.add_hadoop_swift_jar(cluster_instances)
+        deploy.prepare_hive(cluster)
 
     def _set_cluster_info(self, cluster):
         ambari_ip = plugin_utils.get_instance(
@@ -188,6 +191,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         deploy.decommission_hosts(cluster, instances)
         deploy.remove_services_from_hosts(cluster, instances)
         deploy.restart_nns_and_rms(cluster)
+        deploy.cleanup_config_groups(cluster, instances)
 
     def validate_scaling(self, cluster, existing, additional):
         validation.validate(cluster.id)

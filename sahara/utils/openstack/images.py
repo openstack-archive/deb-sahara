@@ -13,21 +13,65 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from novaclient.v2 import images
+import functools
+
 import six
 
+from sahara.conductor import resource
 from sahara import exceptions as exc
+from sahara.utils.openstack import glance
 
 
 PROP_DESCR = '_sahara_description'
 PROP_USERNAME = '_sahara_username'
 PROP_TAG = '_sahara_tag_'
+PROP_ALL_TAGS = '_all_tags'
 
 
-def _iter_tags(meta):
-    for key in meta:
-        if key.startswith(PROP_TAG) and meta[key]:
-            yield key[len(PROP_TAG):]
+def image_manager():
+    return SaharaImageManager()
+
+
+def wrap_entity(func):
+    @functools.wraps(func)
+    def handle(*args, **kwargs):
+        res = func(*args, **kwargs)
+        if isinstance(res, list):
+            images = []
+            for image in res:
+                _transform_image_props(image)
+                images.append(resource.ImageResource(image))
+            return images
+        else:
+            _transform_image_props(res)
+            return resource.ImageResource(res)
+    return handle
+
+
+def _get_all_tags(image_props):
+    tags = []
+    for key, value in image_props.iteritems():
+        if key.startswith(PROP_TAG) and value:
+            tags.append(key)
+    return tags
+
+
+def _get_meta_prop(image_props, prop, default=None):
+    if PROP_ALL_TAGS == prop:
+        return _get_all_tags(image_props)
+    return image_props.get(prop, default)
+
+
+def _parse_tags(image_props):
+    tags = _get_meta_prop(image_props, PROP_ALL_TAGS)
+    return [t.replace(PROP_TAG, "") for t in tags]
+
+
+def _transform_image_props(image):
+    image['username'] = _get_meta_prop(image, PROP_USERNAME, "")
+    image['description'] = _get_meta_prop(image, PROP_DESCR, "")
+    image['tags'] = _parse_tags(image)
+    return image
 
 
 def _ensure_tags(tags):
@@ -36,84 +80,75 @@ def _ensure_tags(tags):
     return [tags] if isinstance(tags, six.string_types) else tags
 
 
-class SaharaImage(images.Image):
-    def __init__(self, manager, info, **kwargs):
-        info['description'] = info.get('metadata', {}).get(PROP_DESCR)
-        info['username'] = info.get('metadata', {}).get(PROP_USERNAME)
-        info['tags'] = [tag for tag in _iter_tags(info.get('metadata', {}))]
-        super(SaharaImage, self).__init__(manager, info, **kwargs)
+class SaharaImageManager(object):
+    """SaharaImageManager
 
-    def tag(self, tags):
-        self.manager.tag(self, tags)
-
-    def untag(self, tags):
-        self.manager.untag(self, tags)
-
-    def set_description(self, username, description=None):
-        self.manager.set_description(self, username, description)
-
-    def unset_description(self):
-        self.manager.unset_description(self)
-
-    @property
-    def dict(self):
-        return self.to_dict()
-
-    @property
-    def wrapped_dict(self):
-        return {'image': self.dict}
-
-    def to_dict(self):
-        result = self._info.copy()
-        if 'links' in result:
-            del result['links']
-        return result
-
-
-class SaharaImageManager(images.ImageManager):
-    """Manage :class:`SaharaImage` resources.
-
-    This is an extended version of nova client's ImageManager with support of
-    additional description and image tags stored in images' meta.
+    This class is intermediate layer between sahara and glanceclient.v2.images.
+    It provides additional sahara properties for image such as description,
+    image tags and image username.
     """
-    resource_class = SaharaImage
+    def __init__(self):
+        self.client = glance.client().images
 
-    def set_description(self, image, username, description=None):
+    @wrap_entity
+    def get(self, image_id):
+        image = self.client.get(image_id)
+        return image
+
+    @wrap_entity
+    def find(self, **kwargs):
+        images = self.client.list(**kwargs)
+        num_matches = len(images)
+        if num_matches == 0:
+            raise exc.NotFoundException(kwargs, "No images matching %s.")
+        elif num_matches > 1:
+            raise exc.NoUniqueMatchException(response=images, query=kwargs)
+        else:
+            return images[0]
+
+    @wrap_entity
+    def list(self):
+        return list(self.client.list())
+
+    def set_meta(self, image_id, meta):
+        self.client.update(image_id, remove_props=None, **meta)
+
+    def delete_meta(self, image_id, meta_list):
+        self.client.update(image_id, remove_props=meta_list)
+
+    def set_image_info(self, image_id, username, description=None):
         """Sets human-readable information for image.
 
         For example:
-
-            Ubuntu 13.04 x64 with Java 1.7u21 and Apache Hadoop 1.1.1, ubuntu
+            Ubuntu 15 x64 with Java 1.7 and Apache Hadoop 2.1, ubuntu
         """
         meta = {PROP_USERNAME: username}
         if description:
             meta[PROP_DESCR] = description
-        self.set_meta(image, meta)
+        self.set_meta(image_id, meta)
 
-    def unset_description(self, image):
+    def unset_image_info(self, image_id):
         """Unsets all Sahara-related information.
 
         It removes username, description and tags from the specified image.
         """
-        image = self.get(image)
+        image = self.get(image_id)
         meta = [PROP_TAG + tag for tag in image.tags]
         if image.description is not None:
             meta += [PROP_DESCR]
         if image.username is not None:
             meta += [PROP_USERNAME]
-        self.delete_meta(image, meta)
+        self.delete_meta(image_id, meta)
 
-    def tag(self, image, tags):
+    def tag(self, image_id, tags):
         """Adds tags to the specified image."""
         tags = _ensure_tags(tags)
+        self.set_meta(image_id, {PROP_TAG + tag: 'True' for tag in tags})
 
-        self.set_meta(image, {PROP_TAG + tag: 'True' for tag in tags})
-
-    def untag(self, image, tags):
+    def untag(self, image_id, tags):
         """Removes tags from the specified image."""
         tags = _ensure_tags(tags)
-
-        self.delete_meta(image, [PROP_TAG + tag for tag in tags])
+        self.delete_meta(image_id, [PROP_TAG + tag for tag in tags])
 
     def list_by_tags(self, tags):
         """Returns images having all of the specified tags."""
@@ -122,16 +157,16 @@ class SaharaImageManager(images.ImageManager):
 
     def list_registered(self, name=None, tags=None):
         tags = _ensure_tags(tags)
-        images = [i for i in self.list()
-                  if i.username and set(tags).issubset(i.tags)]
+        images_list = [i for i in self.list()
+                       if i.username and set(tags).issubset(i.tags)]
         if name:
-            return [i for i in images if i.name == name]
+            return [i for i in images_list if i.name == name]
         else:
-            return images
+            return images_list
 
-    def get_registered_image(self, image):
-        img = self.get(image)
+    def get_registered_image(self, image_id):
+        img = self.get(image_id)
         if img.username:
             return img
         else:
-            raise exc.ImageNotRegistered(image)
+            raise exc.ImageNotRegistered(image_id)

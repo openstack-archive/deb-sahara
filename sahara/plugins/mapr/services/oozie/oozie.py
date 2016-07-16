@@ -42,7 +42,8 @@ class Oozie(s.Service):
         self._node_processes = [OOZIE]
         self._cluster_defaults = ['oozie-default.json']
         self._validation_rules = [vu.exactly(1, OOZIE)]
-        self._ui_info = [('Oozie', OOZIE, 'http://%s:11000/oozie')]
+        self._ui_info = [('Oozie', OOZIE,
+                          {s.SERVICE_UI: 'http://%s:11000/oozie'})]
 
     def libext_path(self):
         return '/opt/mapr/oozie/oozie-%s/oozie-server/lib/' % self.version
@@ -83,6 +84,13 @@ class Oozie(s.Service):
     def _set_owner(self, remote):
         remote.execute_command('chown -R mapr:mapr /opt/mapr/oozie',
                                run_as_root=True)
+
+    def install(self, cluster_context, instances):
+        # oozie requires executed configure.sh
+        pass
+
+    def post_configure(self, cluster_context, instances):
+        super(Oozie, self).install(cluster_context, instances)
 
     def post_install(self, cluster_context, instances):
         oozie_inst = cluster_context.get_instance(OOZIE)

@@ -207,13 +207,22 @@ def plugins_get_version(plugin_name, version):
     return u.render(api.get_plugin(plugin_name, version).wrapped_dict)
 
 
+@rest.patch('/plugins/<plugin_name>')
+@acl.enforce("data-processing:plugins:patch")
+@v.check_exists(api.get_plugin, plugin_name='plugin_name')
+@v.validate(v_p.plugin_update_validation_jsonschema(), v_p.check_plugin_update)
+def plugins_update(plugin_name, data):
+    return u.render(api.update_plugin(plugin_name, data).wrapped_dict)
+
+
 @rest.post_file('/plugins/<plugin_name>/<version>/convert-config/<name>')
 @acl.enforce("data-processing:plugins:convert_config")
 @v.check_exists(api.get_plugin, plugin_name='plugin_name', version='version')
-@v.validate(v_p.CONVERT_TO_TEMPLATE_SCHEMA, v_p.check_convert_to_template)
+@v.validate(None, v_p.check_convert_to_template)
 def plugins_convert_to_cluster_template(plugin_name, version, name, data):
-    return u.to_wrapped_dict(
-        api.convert_to_cluster_template, plugin_name, version, name, data)
+    # There is no plugins that supports converting to cluster template
+    # The last plugin with support of that is no longer supported
+    pass
 
 
 # Image Registry ops
@@ -230,7 +239,7 @@ def images_list():
 @acl.enforce("data-processing:images:get")
 @v.check_exists(api.get_image, id='image_id')
 def images_get(image_id):
-    return u.render(api.get_registered_image(id=image_id).wrapped_dict)
+    return u.render(api.get_registered_image(image_id=image_id).wrapped_dict)
 
 
 @rest.post('/images/<image_id>')

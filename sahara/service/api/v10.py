@@ -17,7 +17,6 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 import six
-from six.moves.urllib import parse as urlparse
 
 from sahara import conductor as c
 from sahara import context
@@ -29,7 +28,7 @@ from sahara.utils import cluster as c_u
 from sahara.utils import general as g
 from sahara.utils.notification import sender
 from sahara.utils.openstack import base as b
-from sahara.utils.openstack import nova
+from sahara.utils.openstack import images as sahara_images
 
 
 conductor = c.API
@@ -223,28 +222,11 @@ def get_plugins():
 
 
 def get_plugin(plugin_name, version=None):
-    plugin = plugin_base.PLUGINS.get_plugin(plugin_name)
-    if plugin:
-        res = plugin.as_resource()
-        if version:
-            if version in plugin.get_versions():
-                configs = plugin.get_all_configs(version)
-                res._info['configs'] = [c.dict for c in configs]
-                processes = plugin.get_node_processes(version)
-                res._info['node_processes'] = processes
-                required_image_tags = plugin.get_required_image_tags(version)
-                res._info['required_image_tags'] = required_image_tags
-            else:
-                return None
-        return res
+    return plugin_base.PLUGINS.serialize_plugin(plugin_name, version)
 
 
-def convert_to_cluster_template(plugin_name, version, template_name,
-                                config_file):
-    plugin = plugin_base.PLUGINS.get_plugin(plugin_name)
-    return plugin.convert(config_file, plugin_name, version,
-                          urlparse.unquote(template_name),
-                          conductor.cluster_template_create)
+def update_plugin(plugin_name, values):
+    return plugin_base.PLUGINS.update_plugin(plugin_name, values)
 
 
 def construct_ngs_for_scaling(cluster, additional_node_groups):
@@ -262,41 +244,43 @@ def construct_ngs_for_scaling(cluster, additional_node_groups):
 
 def get_images(name, tags):
     return b.execute_with_retries(
-        nova.client().images.list_registered, name, tags)
+        sahara_images.image_manager().list_registered, name, tags)
 
 
 def get_image(**kwargs):
     if len(kwargs) == 1 and 'id' in kwargs:
-        return b.execute_with_retries(nova.client().images.get, kwargs['id'])
+        return b.execute_with_retries(
+            sahara_images.image_manager().get, kwargs['id'])
     else:
-        return b.execute_with_retries(nova.client().images.find, **kwargs)
+        return b.execute_with_retries(
+            sahara_images.image_manager().find, **kwargs)
 
 
-def get_registered_image(id):
+def get_registered_image(image_id):
     return b.execute_with_retries(
-        nova.client().images.get_registered_image, id)
+        sahara_images.image_manager().get_registered_image, image_id)
 
 
 def register_image(image_id, username, description=None):
-    client = nova.client()
+    manager = sahara_images.image_manager()
     b.execute_with_retries(
-        client.images.set_description, image_id, username, description)
-    return b.execute_with_retries(client.images.get, image_id)
+        manager.set_image_info, image_id, username, description)
+    return b.execute_with_retries(manager.get, image_id)
 
 
 def unregister_image(image_id):
-    client = nova.client()
-    b.execute_with_retries(client.images.unset_description, image_id)
-    return b.execute_with_retries(client.images.get, image_id)
+    manager = sahara_images.image_manager()
+    b.execute_with_retries(manager.unset_image_info, image_id)
+    return b.execute_with_retries(manager.get, image_id)
 
 
 def add_image_tags(image_id, tags):
-    client = nova.client()
-    b.execute_with_retries(client.images.tag, image_id, tags)
-    return b.execute_with_retries(client.images.get, image_id)
+    manager = sahara_images.image_manager()
+    b.execute_with_retries(manager.tag, image_id, tags)
+    return b.execute_with_retries(manager.get, image_id)
 
 
 def remove_image_tags(image_id, tags):
-    client = nova.client()
-    b.execute_with_retries(client.images.untag, image_id, tags)
-    return b.execute_with_retries(client.images.get, image_id)
+    manager = sahara_images.image_manager()
+    b.execute_with_retries(manager.untag, image_id, tags)
+    return b.execute_with_retries(manager.get, image_id)

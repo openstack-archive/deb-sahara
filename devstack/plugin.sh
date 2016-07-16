@@ -94,7 +94,7 @@ function configure_sahara {
 
     if is_service_enabled neutron; then
         iniset $SAHARA_CONF_FILE DEFAULT use_neutron true
-
+        iniset $SAHARA_CONF_FILE neutron endpoint_type $SAHARA_ENDPOINT_TYPE
         if is_ssl_enabled_service "neutron" \
             || is_service_enabled tls-proxy; then
             iniset $SAHARA_CONF_FILE neutron ca_file $SSL_BUNDLE_FILE
@@ -106,22 +106,32 @@ function configure_sahara {
     if is_ssl_enabled_service "heat" || is_service_enabled tls-proxy; then
         iniset $SAHARA_CONF_FILE heat ca_file $SSL_BUNDLE_FILE
     fi
+    iniset $SAHARA_CONF_FILE heat endpoint_type $SAHARA_ENDPOINT_TYPE
 
     if is_ssl_enabled_service "cinder" || is_service_enabled tls-proxy; then
         iniset $SAHARA_CONF_FILE cinder ca_file $SSL_BUNDLE_FILE
     fi
+    iniset $SAHARA_CONF_FILE cinder endpoint_type $SAHARA_ENDPOINT_TYPE
 
     if is_ssl_enabled_service "nova" || is_service_enabled tls-proxy; then
         iniset $SAHARA_CONF_FILE nova ca_file $SSL_BUNDLE_FILE
     fi
+    iniset $SAHARA_CONF_FILE nova endpoint_type $SAHARA_ENDPOINT_TYPE
 
     if is_ssl_enabled_service "swift" || is_service_enabled tls-proxy; then
         iniset $SAHARA_CONF_FILE swift ca_file $SSL_BUNDLE_FILE
     fi
+    iniset $SAHARA_CONF_FILE swift endpoint_type $SAHARA_ENDPOINT_TYPE
 
     if is_ssl_enabled_service "key" || is_service_enabled tls-proxy; then
         iniset $SAHARA_CONF_FILE keystone ca_file $SSL_BUNDLE_FILE
     fi
+    iniset $SAHARA_CONF_FILE keystone endpoint_type $SAHARA_ENDPOINT_TYPE
+
+    if is_ssl_enabled_service "glance" || is_service_enabled tls-proxy; then
+        iniset $SAHARA_CONF_FILE glance ca_file $SSL_BUNDLE_FILE
+    fi
+    iniset $SAHARA_CONF_FILE glance endpoint_type $SAHARA_ENDPOINT_TYPE
 
     # Register SSL certificates if provided
     if is_ssl_enabled_service sahara; then
@@ -147,6 +157,7 @@ function configure_sahara {
         # Enable distributed periodic tasks
         iniset $SAHARA_CONF_FILE DEFAULT periodic_coordinator_backend_url\
             $SAHARA_PERIODIC_COORDINATOR_URL
+        sudo pip install tooz[zookeeper]
     fi
 
     recreate_database sahara
