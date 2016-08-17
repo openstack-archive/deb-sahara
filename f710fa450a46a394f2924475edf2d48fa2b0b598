@@ -1,0 +1,12 @@
+Verified+1: Sahara Hadoop Cluster CI <elastic-hadoop-ci@mirantis.com>
+Code-Review+2: Sergey Lukjanov <slukjanov@mirantis.com>
+Code-Review+2: Adam Gandelman <adamg@ubuntu.com>
+Code-Review+1: Michael McCune <msm@redhat.com>
+Workflow+1: Adam Gandelman <adamg@ubuntu.com>
+Code-Review+1: Andrew Lazarev <alazarev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 27 Nov 2014 03:43:08 +0000
+Reviewed-on: https://review.openstack.org/137469
+Project: openstack/deb-sahara
+Branch: refs/heads/stable/juno

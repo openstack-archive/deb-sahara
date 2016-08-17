@@ -1,0 +1,19 @@
+Code-Review+1: Sergey Reshetnyak <sreshetniak@mirantis.com>
+Code-Review+1: Michael McCune <msm@redhat.com>
+Code-Review+2: Sergey Lukjanov <slukjanov@mirantis.com>
+Code-Review+1: Andrey Pavlov <apavlov@mirantis.com>
+Code-Review+1: Andrew Lazarev <alazarev@mirantis.com>
+Code-Review+1: Trevor McKay <tmckay@redhat.com>
+Code-Review+1: Alexander Ignatov <aignatov@mirantis.com>
+Code-Review+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Code-Review+1: Chad Roberts <croberts@redhat.com>
+Code-Review+1: Dave Walker <email@daviey.com>
+Code-Review+2: Adam Gandelman <adamg@ubuntu.com>
+Workflow+1: Adam Gandelman <adamg@ubuntu.com>
+Code-Review+1: Shilla Saebi <shilla.saebi@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Sun, 23 Nov 2014 02:01:08 +0000
+Reviewed-on: https://review.openstack.org/131423
+Project: openstack/deb-sahara
+Branch: refs/heads/stable/juno
