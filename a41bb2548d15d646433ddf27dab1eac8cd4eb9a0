@@ -1,0 +1,9 @@
+Code-Review+2: Elise Gafford <egafford@redhat.com>
+Code-Review+2: Vitaly Gridnev <vgridnev@mirantis.com>
+Workflow+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 20 Jul 2016 15:46:38 +0000
+Reviewed-on: https://review.openstack.org/344839
+Project: openstack/deb-sahara
+Branch: refs/heads/stable/mitaka
