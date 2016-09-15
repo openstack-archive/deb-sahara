@@ -1,0 +1,9 @@
+Code-Review+2: Sergey Reshetnyak <sreshetniak@mirantis.com>
+Code-Review+2: Elise Gafford <egafford@redhat.com>
+Workflow+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 14 Sep 2016 23:52:56 +0000
+Reviewed-on: https://review.openstack.org/368716
+Project: openstack/deb-sahara
+Branch: refs/heads/master
