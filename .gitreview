@@ -1,4 +1,5 @@
 [gerrit]
 host=review.openstack.org
 port=29418
-project=openstack/sahara.git
+project=openstack/deb-sahara.git
+defaultbranch=debian/newton
