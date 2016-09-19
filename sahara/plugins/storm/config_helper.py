@@ -14,7 +14,6 @@
 # limitations under the License.
 
 from oslo_config import cfg
-from oslo_log import log as logging
 
 from sahara import conductor as c
 from sahara import exceptions as ex
@@ -22,7 +21,6 @@ from sahara.i18n import _
 
 
 conductor = c.API
-LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
 
@@ -47,6 +45,7 @@ def generate_storm_config(master_hostname, zk_hostnames, version):
     if version == '1.0.1':
         host_cfg = 'nimbus.seeds'
         master_value = [master_hostname.encode('ascii', 'ignore')]
+
     else:
         host_cfg = 'nimbus.host'
         master_value = master_hostname.encode('ascii', 'ignore')
@@ -62,7 +61,22 @@ def generate_storm_config(master_hostname, zk_hostnames, version):
         "storm.local.dir": "/app/storm"
     }
 
+    # Since pyleus is built using previous versions os Storm we need this
+    # option to allow the cluster to be compatible with pyleus topologies as
+    #  well as with topologies built using older versions of Storm
+    if version == '1.0.1':
+        cfg['client.jartransformer.class'] = (
+            "org.apache.storm.hack.StormShadeTransformer")
+
     return cfg
+
+
+def generate_pyleus_config():
+    separator = "\n"
+    conf = ("[storm]",
+            "storm_cmd_path: /usr/local/storm/bin/storm")
+
+    return separator.join(conf)
 
 
 def generate_slave_supervisor_conf():

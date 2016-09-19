@@ -154,7 +154,7 @@ with the ``plugin show`` command. For example:
 
 .. sourcecode:: console
 
-    $ openstack dataprocessing plugin show vanilla --version <plugin_version>
+    $ openstack dataprocessing plugin show vanilla --plugin-version <plugin_version>
     +---------------------+-----------------------------------------------------------------------------------------------------------------------+
     | Field               | Value                                                                                                                 |
     +---------------------+-----------------------------------------------------------------------------------------------------------------------+
@@ -183,7 +183,7 @@ Create a master node group template with the command:
 
     $ openstack dataprocessing node group template create \
         --name vanilla-default-master --plugin vanilla \
-        --version <plugin_version> --processes namenode resourcemanager \
+        --plugin-version <plugin_version> --processes namenode resourcemanager \
         --flavor 2 --auto-security-group --floating-ip-pool <pool-id>
     +---------------------+--------------------------------------+
     | Field               | Value                                |
@@ -212,7 +212,7 @@ Create a worker node group template with the command:
 
     $ openstack dataprocessing node group template create \
         --name vanilla-default-worker --plugin vanilla \
-        --version <plugin_version> --processes datanode nodemanager \
+        --plugin-version <plugin_version> --processes datanode nodemanager \
         --flavor 2 --auto-security-group --floating-ip-pool <pool-id>
     +---------------------+--------------------------------------+
     | Field               | Value                                |

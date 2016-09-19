@@ -23,6 +23,7 @@ from sahara.i18n import _LW
 from sahara.plugins import utils
 from sahara.plugins.vanilla.hadoop2 import config_helper as c_helper
 from sahara.plugins.vanilla.hadoop2 import oozie_helper as o_helper
+from sahara.plugins.vanilla.hadoop2 import utils as u
 from sahara.plugins.vanilla import utils as vu
 from sahara.service.castellan import utils as key_manager
 from sahara.swift import swift_helper as swift
@@ -144,7 +145,7 @@ def _get_hadoop_configs(pctx, instance):
 
         oozie_cfg = o_helper.get_oozie_required_xml_configs(HADOOP_CONF_DIR)
         if c_helper.is_mysql_enabled(pctx, cluster):
-            oozie_cfg.update(o_helper.get_oozie_mysql_configs())
+            oozie_cfg.update(o_helper.get_oozie_mysql_configs(cluster))
 
         confs['JobFlow'] = oozie_cfg
 
@@ -162,6 +163,8 @@ def _get_hadoop_configs(pctx, instance):
 
     hive_hostname = vu.get_instance_hostname(vu.get_hiveserver(cluster))
     if hive_hostname:
+        hive_pass = u.get_hive_password(cluster)
+
         hive_cfg = {
             'hive.warehouse.subdir.inherit.perms': True,
             'javax.jdo.option.ConnectionURL':
@@ -175,7 +178,7 @@ def _get_hadoop_configs(pctx, instance):
                 'javax.jdo.option.ConnectionDriverName':
                 'com.mysql.jdbc.Driver',
                 'javax.jdo.option.ConnectionUserName': 'hive',
-                'javax.jdo.option.ConnectionPassword': 'pass',
+                'javax.jdo.option.ConnectionPassword': hive_pass,
                 'datanucleus.autoCreateSchema': 'false',
                 'datanucleus.fixedDatastore': 'true',
                 'hive.metastore.uris': 'thrift://%s:9083' % hive_hostname,

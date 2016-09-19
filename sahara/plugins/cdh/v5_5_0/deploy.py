@@ -15,6 +15,7 @@
 
 from sahara.i18n import _
 from sahara.plugins.cdh import commands as cmd
+from sahara.plugins.cdh import deploy as common_deploy
 from sahara.plugins.cdh.v5_5_0 import cloudera_utils as cu
 from sahara.plugins import utils as gu
 from sahara.service.edp import hdfs_helper as h
@@ -46,6 +47,8 @@ PACKAGES = [
     'impala-state-store',
     'impala-catalog',
     'impala-shell',
+    'kafka',
+    'kafka-server'
     'keytrustee-keyprovider',
     'oozie',
     'oracle-j2sdk1.7',
@@ -105,30 +108,45 @@ def scale_cluster(cluster, instances):
     CU.await_agents(cluster, instances)
     CU.configure_instances(instances, cluster)
     CU.update_configs(instances)
+    common_deploy.prepare_scaling_kerberized_cluster(cluster, CU)
+
     CU.pu.configure_swift(cluster, instances)
-    CU.refresh_datanodes(cluster)
     _start_roles(cluster, instances)
+
+    CU.refresh_datanodes(cluster)
+    CU.refresh_yarn_nodes(cluster)
+    CU.restart_stale_services(cluster)
 
 
 def decommission_cluster(cluster, instances):
     dns = []
+    dns_to_delete = []
     nms = []
+    nms_to_delete = []
     for i in instances:
         if 'HDFS_DATANODE' in i.node_group.node_processes:
             dns.append(CU.pu.get_role_name(i, 'DATANODE'))
+            dns_to_delete.append(
+                CU.pu.get_role_name(i, 'HDFS_GATEWAY'))
+
         if 'YARN_NODEMANAGER' in i.node_group.node_processes:
             nms.append(CU.pu.get_role_name(i, 'NODEMANAGER'))
+            nms_to_delete.append(
+                CU.pu.get_role_name(i, 'YARN_GATEWAY'))
 
     if dns:
-        CU.decommission_nodes(cluster, 'DATANODE', dns)
+        CU.decommission_nodes(
+            cluster, 'DATANODE', dns, dns_to_delete)
 
     if nms:
-        CU.decommission_nodes(cluster, 'NODEMANAGER', nms)
+        CU.decommission_nodes(
+            cluster, 'NODEMANAGER', nms, nms_to_delete)
 
     CU.delete_instances(cluster, instances)
 
     CU.refresh_datanodes(cluster)
     CU.refresh_yarn_nodes(cluster)
+    CU.restart_stale_services(cluster)
 
 
 @cpo.event_wrapper(True, step=_("Prepare cluster"), param=('cluster', 0))
@@ -178,6 +196,8 @@ def start_cluster(cluster):
         CU.update_role_config(CU.pu.get_stdb_rm(cluster), 'YARN_STANDBYRM')
 
     _finish_cluster_starting(cluster)
+
+    common_deploy.setup_kerberos_for_cluster(cluster, CU)
 
 
 def get_open_ports(node_group):

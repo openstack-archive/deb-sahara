@@ -13,17 +13,21 @@
 # under the License.
 
 
+from oslo_log import log as logging
 from oslo_serialization import jsonutils as json
 import six
 
 import sahara.exceptions as e
 from sahara.i18n import _
 import sahara.plugins.exceptions as ex
+from sahara.plugins.mapr.util import commands as cmd
 from sahara.plugins.mapr.util import event_log as el
 from sahara.plugins.mapr.util import general as g
 from sahara.plugins.mapr.util import service_utils as su
 import sahara.plugins.provisioning as p
 from sahara.utils import files as files
+
+LOG = logging.getLogger(__name__)
 
 SERVICE_UI = 'Web UI'
 
@@ -80,6 +84,9 @@ class Service(object):
         return self._ui_info
 
     def install(self, cluster_context, instances):
+        service_instances = cluster_context.filter_instances(instances,
+                                                             service=self)
+
         @el.provision_step(_("Install %s service") % self.ui_name,
                            cluster_context_reference=0, instances_reference=1)
         def _install(_context, _instances):
@@ -87,7 +94,7 @@ class Service(object):
                                    self._install_packages_on_instance,
                                    _context)
 
-        _install(cluster_context, instances)
+        _install(cluster_context, service_instances)
 
     @el.provision_event(instance_reference=1)
     def _install_packages_on_instance(self, instance, cluster_context):
@@ -107,6 +114,13 @@ class Service(object):
         result += [(np.package, self.version) for np in node_processes]
 
         return result
+
+    def _set_service_dir_owner(self, cluster_context, instances):
+        service_instances = cluster_context.filter_instances(instances,
+                                                             service=self)
+        LOG.debug("Changing %s service dir owner" % self.ui_name)
+        for instance in service_instances:
+            cmd.chown(instance, 'mapr:mapr', self.service_dir(cluster_context))
 
     def post_install(self, cluster_context, instances):
         pass
