@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import os
 
 from oslo_config import cfg
@@ -57,6 +58,14 @@ class SparkProvider(p.ProvisioningPluginBase):
     def get_description(self):
         return _("This plugin provides an ability to launch Spark on Hadoop "
                  "CDH cluster without any management consoles.")
+
+    def get_labels(self):
+        default = {'enabled': {'status': True}, 'stable': {'status': True}}
+        result = {'plugin_labels': copy.deepcopy(default)}
+        result['version_labels'] = {
+            version: copy.deepcopy(default) for version in self.get_versions()
+        }
+        return result
 
     def get_versions(self):
         return ['1.6.0', '1.3.1']
@@ -389,7 +398,7 @@ class SparkProvider(p.ProvisioningPluginBase):
                 'HDFS', 'dfs.http.address', cluster)
             port = address[address.rfind(':') + 1:]
             info['HDFS'] = {
-                'Web UI': 'http://%s:%s' % (nn.management_ip, port)
+                'Web UI': 'http://%s:%s' % (nn.get_ip_or_dns_name(), port)
             }
             info['HDFS']['NameNode'] = 'hdfs://%s:8020' % nn.hostname()
 
@@ -398,7 +407,8 @@ class SparkProvider(p.ProvisioningPluginBase):
                 'Spark', 'Master webui port', cluster)
             if port is not None:
                 info['Spark'] = {
-                    'Web UI': 'http://%s:%s' % (sp_master.management_ip, port)
+                    'Web UI': 'http://%s:%s' % (
+                        sp_master.get_ip_or_dns_name(), port)
                 }
         ctx = context.ctx()
         conductor.cluster_update(ctx, cluster, {'info': info})

@@ -24,6 +24,7 @@ from sahara.plugins.cdh.client import api_client
 from sahara.plugins.cdh.client import services
 from sahara.plugins.cdh import db_helper
 from sahara.plugins import exceptions as ex
+from sahara.plugins import kerberos
 from sahara.utils import cluster_progress_ops as cpo
 from sahara.utils import poll_utils
 
@@ -70,13 +71,14 @@ class ClouderaUtils(object):
                                       password=self.CM_DEFAULT_PASSWD,
                                       version=self.CM_API_VERSION)
 
-    def get_api_client(self, cluster):
+    def get_api_client(self, cluster, api_version=None):
         manager_ip = self.pu.get_manager(cluster).management_ip
         cm_password = db_helper.get_cm_password(cluster)
+        version = self.CM_API_VERSION if not api_version else api_version
         return api_client.ApiResource(manager_ip,
                                       username=self.CM_DEFAULT_USERNAME,
                                       password=cm_password,
-                                      version=self.CM_API_VERSION)
+                                      version=version)
 
     def update_cloudera_password(self, cluster):
         api = self.get_api_client_by_default_password(cluster)
@@ -89,9 +91,17 @@ class ClouderaUtils(object):
         return api.get_cluster(cluster.name)
 
     @cloudera_cmd
-    def start_instances(self, cluster):
+    def start_cloudera_cluster(self, cluster):
         cm_cluster = self.get_cloudera_cluster(cluster)
         yield cm_cluster.start()
+
+    @cloudera_cmd
+    def stop_cloudera_cluster(self, cluster):
+        cm_cluster = self.get_cloudera_cluster(cluster)
+        yield cm_cluster.stop()
+
+    def start_instances(self, cluster):
+        self.start_cloudera_cluster(cluster)
 
     @cpo.event_wrapper(True, step=_("Delete instances"), param=('cluster', 1))
     def delete_instances(self, cluster, instances):
@@ -106,10 +116,14 @@ class ClouderaUtils(object):
 
     @cpo.event_wrapper(
         True, step=_("Decommission nodes"), param=('cluster', 1))
-    def decommission_nodes(self, cluster, process, role_names):
+    def decommission_nodes(self, cluster, process,
+                           decommission_roles, roles_to_delete=None):
         service = self.get_service_by_role(process, cluster)
-        service.decommission(*role_names).wait()
-        for role_name in role_names:
+        service.decommission(*decommission_roles).wait()
+        # not all roles should be decommissioned
+        if roles_to_delete:
+            decommission_roles.extend(roles_to_delete)
+        for role_name in decommission_roles:
             service.delete_role(role_name)
 
     @cpo.event_wrapper(
@@ -130,6 +144,15 @@ class ClouderaUtils(object):
         for nd in nds:
             for st in service.refresh(nd):
                 yield st
+
+    @cpo.event_wrapper(
+        True, step=_("Restart stale services"), param=('cluster', 1))
+    @cloudera_cmd
+    def restart_stale_services(self, cluster):
+        cm_cluster = self.get_cloudera_cluster(cluster)
+        yield cm_cluster.restart(
+            restart_only_stale_services=True,
+            redeploy_client_configuration=True)
 
     @cpo.event_wrapper(True, step=_("Deploy configs"), param=('cluster', 1))
     @cloudera_cmd
@@ -155,16 +178,24 @@ class ClouderaUtils(object):
             yield service.deploy_client_config(self.pu.get_role_name(instance,
                                                                      process))
 
-    @cloudera_cmd
-    def restart_mgmt_service(self, cluster):
+    def get_mgmt_service(self, cluster):
         api = self.get_api_client(cluster)
         cm = api.get_cloudera_manager()
         mgmt_service = cm.get_service()
-        yield mgmt_service.restart()
+        return mgmt_service
+
+    @cloudera_cmd
+    def restart_mgmt_service(self, cluster):
+        service = self.get_mgmt_service(cluster)
+        yield service.restart()
 
     @cloudera_cmd
     def start_service(self, service):
         yield service.start()
+
+    @cloudera_cmd
+    def stop_service(self, service):
+        yield service.stop()
 
     @cloudera_cmd
     def start_roles(self, service, *role_names):
@@ -309,11 +340,48 @@ class ClouderaUtils(object):
                     self._get_configs(role_type, instance=instance))
         self.restart_service(process, instance)
 
+    @cloudera_cmd
+    def import_admin_credentials(self, cm, username, password):
+        yield cm.import_admin_credentials(username, password)
+
+    @cloudera_cmd
+    def configure_for_kerberos(self, cluster):
+        api = self.get_api_client(cluster, api_version=11)
+        cluster = api.get_cluster(cluster.name)
+        yield cluster.configure_for_kerberos()
+
+    def push_kerberos_configs(self, cluster):
+        manager = self.pu.get_manager(cluster)
+        kdc_host = kerberos.get_kdc_host(cluster, manager)
+        security_realm = kerberos.get_realm_name(cluster)
+        username = "%s@%s" % (kerberos.get_admin_principal(cluster),
+                              kerberos.get_realm_name(cluster))
+        password = kerberos.get_server_password(cluster)
+
+        api = self.get_api_client(cluster)
+        cm = api.get_cloudera_manager()
+        cm.update_config({'SECURITY_REALM': security_realm,
+                          'KDC_HOST': kdc_host})
+
+        self.import_admin_credentials(cm, username, password)
+        self.configure_for_kerberos(cluster)
+        self.deploy_configs(cluster)
+
+    def full_cluster_stop(self, cluster):
+        self.stop_cloudera_cluster(cluster)
+        mgmt = self.get_mgmt_service(cluster)
+        self.stop_service(mgmt)
+
+    def full_cluster_start(self, cluster):
+        self.start_cloudera_cluster(cluster)
+        mgmt = self.get_mgmt_service(cluster)
+        self.start_service(mgmt)
+
     def get_cloudera_manager_info(self, cluster):
         mng = self.pu.get_manager(cluster)
         info = {
             'Cloudera Manager': {
-                'Web UI': 'http://%s:7180' % mng.management_ip,
+                'Web UI': 'http://%s:7180' % mng.get_ip_or_dns_name(),
                 'Username': 'admin',
                 'Password': db_helper.get_cm_password(cluster)
             }

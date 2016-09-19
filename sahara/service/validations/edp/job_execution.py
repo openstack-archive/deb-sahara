@@ -26,9 +26,12 @@ from sahara.i18n import _
 from sahara.plugins import base as plugin_base
 from sahara.service.edp import job_utils as j_u
 from sahara.service.validations import acl
+from sahara.service.validations import base as val_base
 import sahara.service.validations.edp.base as b
 import sahara.service.validations.edp.job_interface as j_i
 from sahara.utils import cluster as c_u
+from sahara.utils import edp
+
 
 conductor = c.API
 
@@ -46,6 +49,21 @@ def check_main_class_present(data, job):
     if not _is_main_class_present(data):
         raise ex.InvalidDataException(
             _('%s job must specify edp.java.main_class') % job.type)
+
+
+def _is_topology_name_present(data):
+    if data:
+        val = data.get(
+            'job_configs', {}).get(
+            'configs', {}).get('topology_name', None)
+        return val and isinstance(val, six.string_types)
+    return False
+
+
+def check_topology_name_present(data, job):
+    if not _is_main_class_present(data):
+        raise ex.InvalidDataException(
+            _('%s job must specify topology_name') % job.type)
 
 
 def _streaming_present(data):
@@ -91,6 +109,7 @@ def check_job_execution(data, job_id):
         raise ex.InvalidReferenceException(
             _("Cluster with id '%s' doesn't exist") % data['cluster_id'])
 
+    val_base.check_plugin_labels(cluster.plugin_name, cluster.hadoop_version)
     job = conductor.job_get(ctx, job_id)
 
     plugin = plugin_base.PLUGINS.get_plugin(cluster.plugin_name)
@@ -158,16 +177,18 @@ def check_job_status_update(job_execution_id, data):
     job_execution = conductor.job_execution_get(ctx, job_execution_id)
     # check we are updating status
     if 'info' in data:
-        if 'status' in data['info']:
-            if len(data) != 1:
-                raise ex.InvalidJobStatus(_("Invalid status parameter"))
+        if len(data) != 1:
+            raise ex.InvalidJobStatus(_("Invalid status parameter"))
     cluster = conductor.cluster_get(ctx, job_execution.cluster_id)
-    engine = j_u.get_plugin(cluster).get_edp_engine(
-        cluster, conductor.job_get(ctx, job_execution_id).type)
     if cluster is None or cluster.status != c_u.CLUSTER_STATUS_ACTIVE:
         raise ex.InvalidDataException(
             _("Suspending operation can not be performed on an inactive or "
               "non-existent cluster"))
-    if not (engine.does_engine_implement('suspend_job')):
-        raise ex.InvalidReferenceException(
-            _("Engine doesn't support suspending job feature"))
+    job_id = conductor.job_execution_get(ctx, job_execution_id).job_id
+    job_type = conductor.job_get(ctx, job_id).type
+    engine = j_u.get_plugin(cluster).get_edp_engine(cluster, job_type)
+    if 'info' in data:
+        if data.info['status'] == edp.JOB_ACTION_SUSPEND:
+            if not engine.does_engine_implement('suspend_job'):
+                raise ex.InvalidReferenceException(
+                    _("Engine doesn't support suspending job feature"))

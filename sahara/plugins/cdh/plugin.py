@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
+
 from sahara.i18n import _
 from sahara.plugins.cdh import versionfactory as vhf
 from sahara.plugins import provisioning as p
@@ -29,6 +31,20 @@ class CDHPluginProvider(p.ProvisioningPluginBase):
         return _('The Cloudera Sahara plugin provides the ability to '
                  'launch the Cloudera distribution of Apache Hadoop '
                  '(CDH) with Cloudera Manager management console.')
+
+    def get_labels(self):
+        default = {'enabled': {'status': True}, 'stable': {'status': True}}
+        result = {'plugin_labels': copy.deepcopy(default)}
+        deprecated = {'enabled': {'status': True},
+                      'deprecated': {'status': True}}
+        result['version_labels'] = {
+            '5.7.0': copy.deepcopy(default),
+            '5.5.0': copy.deepcopy(default),
+            '5.4.0': copy.deepcopy(deprecated),
+            '5.3.0': copy.deepcopy(deprecated),
+            '5': copy.deepcopy(deprecated),
+        }
+        return result
 
     def _get_version_handler(self, hadoop_version):
         return self.version_factory.get_version_handler(hadoop_version)
