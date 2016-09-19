@@ -36,20 +36,24 @@ class BaseTestClusterTemplate(base.SaharaWithDbTestCase):
         ng1 = tu.make_ng_dict('master', 42, ['namenode'], 1,
                               floating_ip_pool=floating_ip_pool, image_id=None,
                               volumes_per_node=0, volumes_size=0, id="1",
-                              image_username='root', volume_type=None)
+                              image_username='root', volume_type=None,
+                              auto_security_group=True)
         ng2 = tu.make_ng_dict('worker', 42, ['datanode'], 1,
                               floating_ip_pool=floating_ip_pool, image_id=None,
                               volumes_per_node=2, volumes_size=10, id="2",
-                              image_username='root', volume_type=volume_type)
+                              image_username='root', volume_type=volume_type,
+                              auto_security_group=True)
         return ng1, ng2
 
-    def _make_cluster(self, mng_network, ng1, ng2, anti_affinity=None):
+    def _make_cluster(self, mng_network, ng1, ng2, anti_affinity=None,
+                      domain_name=None):
         return tu.create_cluster("cluster", "tenant1", "general",
                                  "2.6.0", [ng1, ng2],
                                  user_keypair_id='user_key',
                                  neutron_management_network=mng_network,
                                  default_image_id='1', image_id=None,
-                                 anti_affinity=anti_affinity or [])
+                                 anti_affinity=anti_affinity or [],
+                                 domain_name=domain_name)
 
 
 class TestClusterTemplate(BaseTestClusterTemplate):
@@ -87,6 +91,7 @@ class TestClusterTemplate(BaseTestClusterTemplate):
     def test_get_security_groups(self):
         ng1, ng2 = self._make_node_groups('floating')
         ng1['security_groups'] = ['1', '2']
+        ng1['auto_security_group'] = False
         ng2['security_groups'] = ['3', '4']
         ng2['auto_security_group'] = True
         cluster = self._make_cluster('private_net', ng1, ng2)
@@ -171,6 +176,113 @@ class TestClusterTemplate(BaseTestClusterTemplate):
             }
         }}
         actual = self._generate_auto_security_group_template(False)
+        self.assertEqual(expected, actual)
+
+    @mock.patch("sahara.conductor.objects.Cluster.use_designate_feature")
+    def test_serialize_designate_records(self, mock_use_designate):
+        ng1, ng2 = self._make_node_groups('floating')
+        cluster = self._make_cluster('private_net', ng1, ng2,
+                                     domain_name='domain.org.')
+
+        mock_use_designate.return_value = False
+        heat_template = self._make_heat_template(cluster, ng1, ng2)
+        expected = {}
+        actual = heat_template._serialize_designate_records()
+        self.assertEqual(expected, actual)
+
+        mock_use_designate.return_value = True
+        heat_template = self._make_heat_template(cluster, ng1, ng2)
+        expected = {
+            'internal_designate_record': {
+                'properties': {
+                    'domain': 'domain.org.',
+                    'name': {
+                        'list_join': [
+                            '.',
+                            [{'get_attr': ['inst', 'name']}, 'domain.org.']]
+                    },
+                    'data': {'get_attr': ['inst', 'networks', 'private', 0]},
+                    'type': 'A'
+                },
+                'type': 'OS::Designate::Record'
+            },
+            'external_designate_record': {
+                'properties': {
+                    'domain': 'domain.org.',
+                    'name': {
+                        'list_join': [
+                            '.',
+                            [{'get_attr': ['inst', 'name']}, 'domain.org.']]
+                    },
+                    'data': {'get_attr': ['floating_ip', 'ip']},
+                    'type': 'A'
+                },
+                'type': 'OS::Designate::Record'
+            }
+        }
+        actual = heat_template._serialize_designate_records()
+        self.assertEqual(expected, actual)
+
+    @mock.patch("sahara.conductor.objects.Cluster.use_designate_feature")
+    def test_serialize_designate_reversed_records(self, mock_use_designate):
+
+        def _generate_reversed_ip(ip):
+            return {
+                'list_join': [
+                    '.',
+                    [
+                        {'str_split': ['.', ip, 3]},
+                        {'str_split': ['.', ip, 2]},
+                        {'str_split': ['.', ip, 1]},
+                        {'str_split': ['.', ip, 0]},
+                        'in-addr.arpa.'
+                    ]
+                ]
+            }
+
+        ng1, ng2 = self._make_node_groups('floating')
+        cluster = self._make_cluster('private_net', ng1, ng2,
+                                     domain_name='domain.org.')
+
+        mock_use_designate.return_value = False
+        heat_template = self._make_heat_template(cluster, ng1, ng2)
+        expected = {}
+        actual = heat_template._serialize_designate_reverse_records()
+        self.assertEqual(expected, actual)
+
+        mock_use_designate.return_value = True
+        heat_template = self._make_heat_template(cluster, ng1, ng2)
+        expected = {
+            'internal_designate_reverse_record': {
+                'properties': {
+                    'domain': 'in-addr.arpa.',
+                    'name': _generate_reversed_ip(
+                        {'get_attr': ['inst', 'networks', 'private', 0]}),
+                    'data': {
+                        'list_join': [
+                            '.',
+                            [{'get_attr': ['inst', 'name']}, 'domain.org.']]
+                    },
+                    'type': 'PTR'
+                },
+                'type': 'OS::Designate::Record'
+            },
+            'external_designate_reverse_record': {
+                'properties': {
+                    'domain': 'in-addr.arpa.',
+                    'name': _generate_reversed_ip(
+                        {'get_attr': ['floating_ip', 'ip']}),
+                    'data': {
+                        'list_join': [
+                            '.',
+                            [{'get_attr': ['inst', 'name']}, 'domain.org.']]
+                    },
+                    'type': 'PTR'
+                },
+                'type': 'OS::Designate::Record'
+            }
+        }
+        actual = heat_template._serialize_designate_reverse_records()
         self.assertEqual(expected, actual)
 
 

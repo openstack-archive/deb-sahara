@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo_log import log as logging
 import six
 
 from sahara.api import acl
@@ -31,8 +30,6 @@ from sahara.service.validations import plugins as v_p
 import sahara.utils.api as u
 
 
-LOG = logging.getLogger(__name__)
-
 rest = u.Rest('v10', __name__)
 
 
@@ -40,9 +37,12 @@ rest = u.Rest('v10', __name__)
 
 @rest.get('/clusters')
 @acl.enforce("data-processing:clusters:get_all")
+@v.check_exists(api.get_cluster, 'marker')
+@v.validate(None, v.validate_pagination_limit,
+            v.validate_sorting_clusters)
 def clusters_list():
-    return u.render(clusters=[c.to_dict() for c in api.get_clusters(
-        **u.get_request_args().to_dict())])
+    result = api.get_clusters(**u.get_request_args().to_dict())
+    return u.render(res=result, name='clusters')
 
 
 @rest.post('/clusters')
@@ -99,10 +99,14 @@ def clusters_delete(cluster_id):
 
 @rest.get('/cluster-templates')
 @acl.enforce("data-processing:cluster-templates:get_all")
+@v.check_exists(api.get_cluster_template, 'marker')
+@v.validate(None, v.validate_pagination_limit,
+            v.validate_sorting_cluster_templates)
 def cluster_templates_list():
-    return u.render(
-        cluster_templates=[t.to_dict() for t in api.get_cluster_templates(
-            **u.get_request_args().to_dict())])
+    result = api.get_cluster_templates(
+        **u.get_request_args().to_dict())
+
+    return u.render(res=result, name='cluster_templates')
 
 
 @rest.post('/cluster-templates')
@@ -143,11 +147,13 @@ def cluster_templates_delete(cluster_template_id):
 
 @rest.get('/node-group-templates')
 @acl.enforce("data-processing:node-group-templates:get_all")
+@v.check_exists(api.get_node_group_template, 'marker')
+@v.validate(None, v.validate_pagination_limit,
+            v.validate_sorting_node_group_templates)
 def node_group_templates_list():
-    return u.render(
-        node_group_templates=[t.to_dict()
-                              for t in api.get_node_group_templates(
-                              **u.get_request_args().to_dict())])
+    result = api.get_node_group_templates(
+        **u.get_request_args().to_dict())
+    return u.render(res=result, name='node_group_templates')
 
 
 @rest.post('/node-group-templates')

@@ -110,8 +110,10 @@ class PluginManager(object):
                 _("Plugins couldn't be loaded: %s") %
                 ", ".join(requested_plugins - loaded_plugins))
 
-    def get_plugins(self):
-        return [self.plugins[plugin] for plugin in CONF.plugins]
+    def get_plugins(self, serialized=False):
+        if serialized:
+            return [self.serialize_plugin(name) for name in CONF.plugins]
+        return [self.get_plugin(name) for name in CONF.plugins]
 
     def get_plugin(self, plugin_name):
         return self.plugins.get(plugin_name)
@@ -148,6 +150,10 @@ class PluginManager(object):
 
     def get_plugin_update_validation_jsonschema(self):
         return self.label_handler.get_plugin_update_validation_jsonschema()
+
+    def validate_plugin_labels(self, plugin, version):
+        self.label_handler.validate_plugin_labels(plugin, version)
+
 
 PLUGINS = None
 

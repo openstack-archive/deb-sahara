@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from oslo_config import cfg
 from oslo_log import log as logging
 import six
 import yaml
@@ -34,7 +33,6 @@ from sahara.utils import remote
 
 conductor = conductor.API
 LOG = logging.getLogger(__name__)
-CONF = cfg.CONF
 
 
 class StormProvider(p.ProvisioningPluginBase):
@@ -103,22 +101,27 @@ class StormProvider(p.ProvisioningPluginBase):
         self._set_cluster_info(cluster)
 
     def get_edp_engine(self, cluster, job_type):
-        if job_type in edp_engine.EdpEngine.get_supported_job_types():
-            return edp_engine.EdpEngine(cluster)
-
+        if job_type in edp_engine.EdpStormEngine.get_supported_job_types():
+            return edp_engine.EdpStormEngine(cluster)
+        if job_type in edp_engine.EdpPyleusEngine.get_supported_job_types():
+            return edp_engine.EdpPyleusEngine(cluster)
         return None
 
     def get_edp_job_types(self, versions=None):
         res = {}
         for vers in self.get_versions():
             if not versions or vers in versions:
-                if edp_engine.EdpEngine.edp_supported(vers):
-                    res[vers] = edp_engine.EdpEngine.get_supported_job_types()
+                storm_engine = edp_engine.EdpStormEngine
+                pyleus_engine = edp_engine.EdpPyleusEngine
+                res[vers] = (storm_engine.get_supported_job_types() +
+                             pyleus_engine.get_supported_job_types())
         return res
 
     def get_edp_config_hints(self, job_type, version):
-        if edp_engine.EdpEngine.edp_supported(version):
-            return edp_engine.EdpEngine.get_possible_job_config(job_type)
+        if edp_engine.EdpStormEngine.edp_supported(version):
+            return edp_engine.EdpStormEngine.get_possible_job_config(job_type)
+        if edp_engine.EdpPyleusEngine.edp_supported(version):
+            return edp_engine.EdpPyleusEngine.get_possible_job_config(job_type)
         return {}
 
     def get_open_ports(self, node_group):
@@ -155,13 +158,15 @@ class StormProvider(p.ProvisioningPluginBase):
         supervisor_conf = c_helper.generate_slave_supervisor_conf()
         nimbus_ui_conf = c_helper.generate_master_supervisor_conf()
         zk_conf = c_helper.generate_zookeeper_conf()
+        pyleus_conf = c_helper.generate_pyleus_config()
 
         for ng in cluster.node_groups:
             extra[ng.id] = {
                 'st_instances': config,
                 'slave_sv_conf': supervisor_conf,
                 'master_sv_conf': nimbus_ui_conf,
-                'zk_conf': zk_conf
+                'zk_conf': zk_conf,
+                'pyleus_conf': pyleus_conf
             }
 
         return extra
@@ -260,6 +265,9 @@ class StormProvider(p.ProvisioningPluginBase):
         files_supervisor_master = {
             '/etc/supervisor/supervisord.conf': ng_extra['master_sv_conf']
         }
+        file_pyleus_conf = {
+            '/home/ubuntu/.pyleus.conf': ng_extra['pyleus_conf']
+        }
 
         with remote.get_remote(instance) as r:
             node_processes = instance.node_group.node_processes
@@ -268,6 +276,7 @@ class StormProvider(p.ProvisioningPluginBase):
                 self._push_zk_configs(r, files_zk)
             if 'nimbus' in node_processes:
                 self._push_supervisor_configs(r, files_supervisor_master)
+                self._push_supervisor_configs(r, file_pyleus_conf)
             if 'supervisor' in node_processes:
                 self._push_supervisor_configs(r, files_supervisor)
 
@@ -287,7 +296,7 @@ class StormProvider(p.ProvisioningPluginBase):
             r.write_files_to(files_storm)
 
         if need_zookeeper_update:
-            zk_path = '/opt/zookeeper/zookeeper-3.4.6/conf/zoo.cfg'
+            zk_path = '/opt/zookeeper/zookeeper/conf/zoo.cfg'
             files_zookeeper = {zk_path: ng_extra['zk_conf']}
             self._push_zk_configs(r, files_zookeeper)
 
@@ -299,7 +308,8 @@ class StormProvider(p.ProvisioningPluginBase):
             port = "8080"
 
             info['Strom'] = {
-                'Web UI': 'http://%s:%s' % (st_master.management_ip, port)
+                'Web UI': 'http://%s:%s' % (
+                    st_master.get_ip_or_dns_name(), port)
             }
         ctx = context.ctx()
         conductor.cluster_update(ctx, cluster, {'info': info})
