@@ -184,7 +184,6 @@ class TestClusterContext(b.SaharaTestCase):
         self.assertEqual('1.1', version)
 
     def test_get_cluster_services(self):
-        pass
         ctx = self._get_context()
         actual_services = ctx.get_cluster_services()
         actual_services_names = map(lambda s: s.ui_name, actual_services)
@@ -195,8 +194,8 @@ class TestClusterContext(b.SaharaTestCase):
             oozie.Oozie().ui_name,
             swift.Swift().ui_name,
         ]
-        self.assertListEqual(sorted(actual_services_names),
-                             sorted(expected_services_names))
+        self.assertEqual(sorted(actual_services_names),
+                         sorted(expected_services_names))
 
     def test_get_service(self):
         ctx = self._get_context()

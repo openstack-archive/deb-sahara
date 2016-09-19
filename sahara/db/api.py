@@ -34,7 +34,8 @@ interface.
 from oslo_config import cfg
 from oslo_db import api as db_api
 from oslo_db import options
-from oslo_log import log as logging
+
+from sahara.utils import types
 
 CONF = cfg.CONF
 
@@ -45,7 +46,6 @@ _BACKEND_MAPPING = {
 }
 
 IMPL = db_api.DBAPI.from_config(CONF, backend_mapping=_BACKEND_MAPPING)
-LOG = logging.getLogger(__name__)
 
 
 def setup_db():
@@ -93,10 +93,11 @@ def not_equal(*values):
 def to_dict(func):
     def decorator(*args, **kwargs):
         res = func(*args, **kwargs)
-
+        if isinstance(res, types.Page):
+            return types.Page([item.to_dict() for item in res],
+                              res.prev, res.next)
         if isinstance(res, list):
             return [item.to_dict() for item in res]
-
         if res:
             return res.to_dict()
         else:

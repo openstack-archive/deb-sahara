@@ -22,6 +22,29 @@ from sahara.db.sqlalchemy import models as m
 import sahara.tests.unit.base as base
 
 
+class TestPaginationUtils(testtools.TestCase):
+
+    def test_get_prev_and_next_objects(self):
+
+        query = [mock.MagicMock(id=i) for i in range(100)]
+
+        res = api._get_prev_and_next_objects(query, 5, None)
+        self.assertEqual((None, 4), res)
+
+        res = api._get_prev_and_next_objects(query, None, None)
+        self.assertEqual((None, None), res)
+
+        res = api._get_prev_and_next_objects(query, 5, mock.MagicMock(id=42))
+        self.assertEqual((37, 47), res)
+
+        res = api._get_prev_and_next_objects(query, 5, mock.MagicMock(id=4))
+        self.assertEqual((None, 9), res)
+
+    def test_parse_sorting_args(self):
+        self.assertEqual(("name", "desc"), api._parse_sorting_args("-name"))
+        self.assertEqual(("name", "asc"), api._parse_sorting_args("name"))
+
+
 class TestRegex(testtools.TestCase):
 
     def test_get_regex_op(self):

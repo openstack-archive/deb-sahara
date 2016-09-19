@@ -16,7 +16,7 @@
 import mock
 import six
 
-from sahara.plugins.cdh.v5.edp_engine import EdpOozieEngine
+from sahara.plugins.cdh.v5 import edp_engine
 from sahara.plugins.cdh.v5 import versionhandler
 from sahara.tests.unit import base
 
@@ -81,7 +81,9 @@ class VersionHandlerTestCase(base.SaharaTestCase):
     @mock.patch(plugin_utils_path + "get_hue")
     def test_set_cluster_info(self, get_hue, get_cloudera_manager_info,
                               ctx, cluster_update):
-        get_hue.return_value.management_ip = "1.2.3.4"
+        hue = mock.Mock()
+        hue.get_ip_or_dns_name.return_value = "1.2.3.4"
+        get_hue.return_value = hue
         cluster = mock.Mock()
         self.vh._set_cluster_info(cluster)
         info = {'info': {'Hue Dashboard': {'Web UI': 'http://1.2.3.4:8888'}}}
@@ -92,7 +94,7 @@ class VersionHandlerTestCase(base.SaharaTestCase):
         cluster = mock.Mock()
         job_type = 'Java'
         ret = self.vh.get_edp_engine(cluster, job_type)
-        self.assertIsInstance(ret, EdpOozieEngine)
+        self.assertIsInstance(ret, edp_engine.EdpOozieEngine)
 
         job_type = 'unsupported'
         ret = self.vh.get_edp_engine(cluster, job_type)
@@ -100,7 +102,8 @@ class VersionHandlerTestCase(base.SaharaTestCase):
 
     def test_get_edp_job_types(self):
         ret = self.vh.get_edp_job_types()
-        self.assertEqual(EdpOozieEngine.get_supported_job_types(), ret)
+        self.assertEqual(edp_engine.EdpOozieEngine.get_supported_job_types(),
+                         ret)
 
     @mock.patch(plugin_path +
                 "edp_engine.EdpOozieEngine.get_possible_job_config",

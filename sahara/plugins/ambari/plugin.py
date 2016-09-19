@@ -23,6 +23,7 @@ from sahara.plugins.ambari import deploy
 from sahara.plugins.ambari import edp_engine
 from sahara.plugins.ambari import health
 from sahara.plugins.ambari import validation
+from sahara.plugins import kerberos
 from sahara.plugins import provisioning as p
 from sahara.plugins import utils as plugin_utils
 from sahara.swift import swift_helper
@@ -71,10 +72,13 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
                 p_common.APP_TIMELINE_SERVER, p_common.HISTORYSERVER,
                 p_common.NODEMANAGER, p_common.RESOURCEMANAGER],
             p_common.ZOOKEEPER_SERVICE: [p_common.ZOOKEEPER_SERVER],
+            'Kerberos': [],
         }
 
     def get_configs(self, hadoop_version):
-        return configs.load_configs(hadoop_version)
+        cfgs = kerberos.get_config_list()
+        cfgs.extend(configs.load_configs(hadoop_version))
+        return cfgs
 
     def configure_cluster(self, cluster):
         deploy.disable_repos(cluster)
@@ -85,6 +89,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         cluster = conductor.cluster_get(context.ctx(), cluster.id)
         deploy.wait_host_registration(cluster,
                                       plugin_utils.get_instances(cluster))
+        deploy.prepare_kerberos(cluster)
         deploy.set_up_hdp_repos(cluster)
         deploy.create_blueprint(cluster)
 
@@ -98,7 +103,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
 
     def _set_cluster_info(self, cluster):
         ambari_ip = plugin_utils.get_instance(
-            cluster, p_common.AMBARI_SERVER).management_ip
+            cluster, p_common.AMBARI_SERVER).get_ip_or_dns_name()
         ambari_port = "8080"
         info = {
             p_common.AMBARI_SERVER: {
@@ -113,53 +118,54 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         for idx, namenode in enumerate(nns):
             info[p_common.NAMENODE][
                 "Web UI %s" % (idx + 1)] = (
-                "http://%s:50070" % namenode.management_ip)
+                "http://%s:50070" % namenode.get_ip_or_dns_name())
 
         rms = plugin_utils.get_instances(cluster, p_common.RESOURCEMANAGER)
         info[p_common.RESOURCEMANAGER] = {}
         for idx, resourcemanager in enumerate(rms):
             info[p_common.RESOURCEMANAGER][
                 "Web UI %s" % (idx + 1)] = (
-                "http://%s:8088" % resourcemanager.management_ip)
+                "http://%s:8088" % resourcemanager.get_ip_or_dns_name())
 
         historyserver = plugin_utils.get_instance(cluster,
                                                   p_common.HISTORYSERVER)
         if historyserver:
             info[p_common.HISTORYSERVER] = {
-                "Web UI": "http://%s:19888" % historyserver.management_ip
+                "Web UI": "http://%s:19888" %
+                          historyserver.get_ip_or_dns_name()
             }
         atlserver = plugin_utils.get_instance(cluster,
                                               p_common.APP_TIMELINE_SERVER)
         if atlserver:
             info[p_common.APP_TIMELINE_SERVER] = {
-                "Web UI": "http://%s:8188" % atlserver.management_ip
+                "Web UI": "http://%s:8188" % atlserver.get_ip_or_dns_name()
             }
         oozie = plugin_utils.get_instance(cluster, p_common.OOZIE_SERVER)
         if oozie:
             info[p_common.OOZIE_SERVER] = {
-                "Web UI": "http://%s:11000/oozie" % oozie.management_ip
+                "Web UI": "http://%s:11000/oozie" % oozie.get_ip_or_dns_name()
             }
         hbase_master = plugin_utils.get_instance(cluster,
                                                  p_common.HBASE_MASTER)
         if hbase_master:
             info[p_common.HBASE_MASTER] = {
-                "Web UI": "http://%s:60010" % hbase_master.management_ip
+                "Web UI": "http://%s:60010" % hbase_master.get_ip_or_dns_name()
             }
         falcon = plugin_utils.get_instance(cluster, p_common.FALCON_SERVER)
         if falcon:
             info[p_common.FALCON_SERVER] = {
-                "Web UI": "http://%s:15000" % falcon.management_ip
+                "Web UI": "http://%s:15000" % falcon.get_ip_or_dns_name()
             }
         storm_ui = plugin_utils.get_instance(cluster, p_common.STORM_UI_SERVER)
         if storm_ui:
             info[p_common.STORM_UI_SERVER] = {
-                "Web UI": "http://%s:8744" % storm_ui.management_ip
+                "Web UI": "http://%s:8744" % storm_ui.get_ip_or_dns_name()
             }
         ranger_admin = plugin_utils.get_instance(cluster,
                                                  p_common.RANGER_ADMIN)
         if ranger_admin:
             info[p_common.RANGER_ADMIN] = {
-                "Web UI": "http://%s:6080" % ranger_admin.management_ip,
+                "Web UI": "http://%s:6080" % ranger_admin.get_ip_or_dns_name(),
                 "Username": "admin",
                 "Password": "admin"
             }
@@ -167,7 +173,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
                                              p_common.SPARK_JOBHISTORYSERVER)
         if spark_hs:
             info[p_common.SPARK_JOBHISTORYSERVER] = {
-                "Web UI": "http://%s:18080" % spark_hs.management_ip
+                "Web UI": "http://%s:18080" % spark_hs.get_ip_or_dns_name()
             }
         info.update(cluster.info.to_dict())
         ctx = context.ctx()
@@ -178,6 +184,7 @@ class AmbariPluginProvider(p.ProvisioningPluginBase):
         validation.validate(cluster.id)
 
     def scale_cluster(self, cluster, instances):
+        deploy.prepare_kerberos(cluster, instances)
         deploy.setup_agents(cluster, instances)
         cluster = conductor.cluster_get(context.ctx(), cluster.id)
         deploy.wait_host_registration(cluster, instances)

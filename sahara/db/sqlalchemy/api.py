@@ -22,6 +22,7 @@ import threading
 from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_db.sqlalchemy import session as db_session
+from oslo_db.sqlalchemy import utils
 from oslo_log import log as logging
 import six
 import sqlalchemy as sa
@@ -31,6 +32,7 @@ from sahara import exceptions as ex
 from sahara.i18n import _
 from sahara.i18n import _LW
 from sahara.service.validations import acl as validate
+from sahara.utils import types
 
 
 LOG = logging.getLogger(__name__)
@@ -60,6 +62,42 @@ def get_engine():
 def get_session(**kwargs):
     facade = _create_facade_lazily()
     return facade.get_session(**kwargs)
+
+
+def _parse_sorting_args(sort_by):
+    if sort_by is None:
+        sort_by = "id"
+    if sort_by[0] == "-":
+        return sort_by[1:], "desc"
+    return sort_by, "asc"
+
+
+def _get_prev_and_next_objects(objects, limit, marker, order=None):
+    if order == 'desc':
+        objects.reverse()
+    position = None
+    if limit is None:
+        return None, None
+    if marker:
+        for pos, obj in enumerate(objects):
+            if obj.id == marker.id:
+                position = pos
+                break
+        if position - limit >= 0:
+            prev_marker = objects[position - limit].id
+        else:
+            prev_marker = None
+        if position + limit < len(objects):
+            next_marker = objects[position + limit].id
+        else:
+            next_marker = None
+    else:
+        if limit < len(objects):
+            next_marker = objects[limit - 1].id
+        else:
+            next_marker = None
+        prev_marker = None
+    return prev_marker, next_marker
 
 
 def cleanup():
@@ -252,15 +290,28 @@ def cluster_get(context, cluster_id):
     return _cluster_get(context, get_session(), cluster_id)
 
 
-def cluster_get_all(context, regex_search=False, **kwargs):
+def cluster_get_all(context, regex_search=False,
+                    limit=None, marker=None, sort_by=None, **kwargs):
 
+    sort_by, order = _parse_sorting_args(sort_by)
     regex_cols = ['name', 'description', 'plugin_name']
 
     query = model_query(m.Cluster, context)
     if regex_search:
         query, kwargs = regex_filter(query,
                                      m.Cluster, regex_cols, kwargs)
-    return query.filter_by(**kwargs).all()
+
+    limit = int(limit) if limit else None
+    marker = cluster_get(context, marker)
+
+    prev_marker, next_marker = _get_prev_and_next_objects(
+        query.filter_by(**kwargs).order_by(sort_by).all(),
+        limit, marker, order=order)
+
+    result = utils.paginate_query(query.filter_by(**kwargs), m.Cluster,
+                                  limit, [sort_by], marker, order)
+
+    return types.Page(result, prev_marker, next_marker)
 
 
 def cluster_create(context, values):
@@ -452,15 +503,29 @@ def cluster_template_get(context, cluster_template_id):
     return _cluster_template_get(context, get_session(), cluster_template_id)
 
 
-def cluster_template_get_all(context, regex_search=False, **kwargs):
+def cluster_template_get_all(context, regex_search=False,
+                             marker=None, limit=None, sort_by=None, **kwargs):
 
     regex_cols = ['name', 'description', 'plugin_name']
-
+    sort_by, order = _parse_sorting_args(sort_by)
     query = model_query(m.ClusterTemplate, context)
     if regex_search:
         query, kwargs = regex_filter(query,
                                      m.ClusterTemplate, regex_cols, kwargs)
-    return query.filter_by(**kwargs).all()
+
+    limit = int(limit) if limit else None
+
+    marker = cluster_template_get(context, marker)
+
+    prev_marker, next_marker = _get_prev_and_next_objects(
+        query.filter_by(**kwargs).order_by(sort_by).all(),
+        limit, marker, order=order)
+
+    result = utils.paginate_query(query.filter_by(**kwargs),
+                                  m.ClusterTemplate,
+                                  limit, [sort_by], marker, order)
+
+    return types.Page(result, prev_marker, next_marker)
 
 
 def cluster_template_create(context, values):
@@ -574,15 +639,27 @@ def node_group_template_get(context, node_group_template_id):
                                     node_group_template_id)
 
 
-def node_group_template_get_all(context, regex_search=False, **kwargs):
-
+def node_group_template_get_all(context, regex_search=False, marker=None,
+                                limit=None, sort_by=None, **kwargs):
+    sort_by, order = _parse_sorting_args(sort_by)
     regex_cols = ['name', 'description', 'plugin_name']
-
+    limit = int(limit) if limit else None
     query = model_query(m.NodeGroupTemplate, context)
     if regex_search:
         query, kwargs = regex_filter(query,
                                      m.NodeGroupTemplate, regex_cols, kwargs)
-    return query.filter_by(**kwargs).all()
+
+    marker = node_group_template_get(context, marker)
+
+    prev_marker, next_marker = _get_prev_and_next_objects(
+        query.filter_by(**kwargs).order_by(sort_by).all(),
+        limit, marker, order=order)
+
+    result = utils.paginate_query(
+        query.filter_by(**kwargs), m.NodeGroupTemplate,
+        limit, [sort_by], marker, order)
+
+    return types.Page(result, prev_marker, next_marker)
 
 
 def node_group_template_create(context, values):
@@ -712,15 +789,29 @@ def data_source_count(context, **kwargs):
     return query.filter_by(**kwargs).count()
 
 
-def data_source_get_all(context, regex_search=False, **kwargs):
+def data_source_get_all(context, regex_search=False,
+                        limit=None, marker=None, sort_by=None, **kwargs):
 
     regex_cols = ['name', 'description', 'url']
+
+    sort_by, order = _parse_sorting_args(sort_by)
 
     query = model_query(m.DataSource, context)
     if regex_search:
         query, kwargs = regex_filter(query,
                                      m.DataSource, regex_cols, kwargs)
-    return query.filter_by(**kwargs).all()
+
+    limit = int(limit) if limit else None
+    marker = data_source_get(context, marker)
+
+    prev_marker, next_marker = _get_prev_and_next_objects(
+        query.filter_by(**kwargs).order_by(sort_by).all(),
+        limit, marker, order=order)
+
+    result = utils.paginate_query(query.filter_by(**kwargs), m.DataSource,
+                                  limit, [sort_by], marker, order)
+
+    return types.Page(result, prev_marker, next_marker)
 
 
 def data_source_create(context, values):
@@ -790,7 +881,8 @@ def job_execution_get(context, job_execution_id):
     return _job_execution_get(context, get_session(), job_execution_id)
 
 
-def job_execution_get_all(context, regex_search=False, **kwargs):
+def job_execution_get_all(context, regex_search=False,
+                          limit=None, marker=None, sort_by=None, **kwargs):
     """Get all JobExecutions filtered by **kwargs.
 
     kwargs key values may be the names of fields in a JobExecution
@@ -804,6 +896,8 @@ def job_execution_get_all(context, regex_search=False, **kwargs):
          job_execution_get_all(**{'cluster.name': 'test',
                                   'job.name': 'wordcount'})
     """
+
+    sort_by, order = _parse_sorting_args(sort_by)
 
     regex_cols = ['job.name', 'cluster.name']
 
@@ -844,7 +938,10 @@ def job_execution_get_all(context, regex_search=False, **kwargs):
                                               m.Job, ['name'], search_opts)
         query = query.filter_by(**search_opts)
 
-    res = query.all()
+    res = query.order_by(sort_by).all()
+
+    if order == 'desc':
+        res.reverse()
 
     # 'info' is a JsonDictType which is stored as a string.
     # It would be possible to search for the substring containing
@@ -853,11 +950,28 @@ def job_execution_get_all(context, regex_search=False, **kwargs):
     # In the case of Oozie jobs, for example, other fields (actions)
     # also contain 'status'. Therefore we can't filter on it reliably
     # by a substring search in the query.
+
     if 'status' in externals:
         status = externals['status'].lower()
         res = [je for je in res if (
             je['info'] and je['info'].get('status', '').lower() == status)]
-    return res
+
+    res_page = res
+    if marker:
+        n = None
+        for i, je in enumerate(res):
+            if je['id'] == marker:
+                n = i
+        if n:
+            res_page = res[n:]
+    if limit:
+        limit = int(limit)
+        res_page = res_page[:limit] if limit < len(res_page) else res_page
+
+    marker = job_execution_get(context, marker)
+    prev_marker, next_marker = _get_prev_and_next_objects(
+        res, limit, marker)
+    return types.Page(res_page, prev_marker, next_marker)
 
 
 def job_execution_count(context, **kwargs):
@@ -960,15 +1074,27 @@ def job_get(context, job_id):
     return _job_get(context, get_session(), job_id)
 
 
-def job_get_all(context, regex_search=False, **kwargs):
+def job_get_all(context, regex_search=False,
+                limit=None, marker=None, sort_by=None, **kwargs):
 
     regex_cols = ['name', 'description']
-
+    sort_by, order = _parse_sorting_args(sort_by)
     query = model_query(m.Job, context)
     if regex_search:
         query, kwargs = regex_filter(query,
                                      m.Job, regex_cols, kwargs)
-    return query.filter_by(**kwargs).all()
+
+    limit = int(limit) if limit else None
+    marker = job_get(context, marker)
+
+    prev_marker, next_marker = _get_prev_and_next_objects(
+        query.filter_by(**kwargs).order_by(sort_by).all(),
+        limit, marker, order=order)
+
+    result = utils.paginate_query(query.filter_by(**kwargs),
+                                  m.Job, limit, [sort_by], marker, order)
+
+    return types.Page(result, prev_marker, next_marker)
 
 
 def _append_job_binaries(context, session, from_list, to_list):
@@ -1066,14 +1192,29 @@ def _job_binary_get(context, session, job_binary_id):
     return query.filter_by(id=job_binary_id).first()
 
 
-def job_binary_get_all(context, regex_search=False, **kwargs):
+def job_binary_get_all(context, regex_search=False,
+                       limit=None, marker=None, sort_by=None, **kwargs):
+
+    sort_by, order = _parse_sorting_args(sort_by)
 
     regex_cols = ['name', 'description', 'url']
     query = model_query(m.JobBinary, context)
     if regex_search:
         query, kwargs = regex_filter(query,
                                      m.JobBinary, regex_cols, kwargs)
-    return query.filter_by(**kwargs).all()
+
+    limit = int(limit) if limit else None
+    marker = job_binary_get(context, marker)
+
+    prev_marker, next_marker = _get_prev_and_next_objects(
+        query.filter_by(**kwargs).order_by(sort_by).all(),
+        limit, marker, order=order)
+
+    result = utils.paginate_query(query.filter_by(**kwargs),
+                                  m.JobBinary,
+                                  limit, [sort_by], marker, order)
+
+    return types.Page(result, prev_marker, next_marker)
 
 
 def job_binary_get(context, job_binary_id):
@@ -1181,11 +1322,13 @@ def _job_binary_internal_get(context, session, job_binary_internal_id):
     return query.filter_by(id=job_binary_internal_id).first()
 
 
-def job_binary_internal_get_all(context, regex_search=False, **kwargs):
+def job_binary_internal_get_all(context, regex_search=False, limit=None,
+                                marker=None, sort_by=None, **kwargs):
     """Returns JobBinaryInternal objects that do not contain a data field
 
     The data column uses deferred loading.
     """
+    sort_by, order = _parse_sorting_args(sort_by)
 
     regex_cols = ['name']
 
@@ -1193,7 +1336,19 @@ def job_binary_internal_get_all(context, regex_search=False, **kwargs):
     if regex_search:
         query, kwargs = regex_filter(query,
                                      m.JobBinaryInternal, regex_cols, kwargs)
-    return query.filter_by(**kwargs).all()
+
+    limit = int(limit) if limit else None
+    marker = job_binary_internal_get(context, marker)
+
+    prev_marker, next_marker = _get_prev_and_next_objects(
+        query.filter_by(**kwargs).order_by(sort_by).all(),
+        limit, marker, order=order)
+
+    result = utils.paginate_query(query.filter_by(**kwargs),
+                                  m.JobBinaryInternal, limit,
+                                  [sort_by], marker, order)
+
+    return types.Page(result, prev_marker, next_marker)
 
 
 def job_binary_internal_get(context, job_binary_internal_id):

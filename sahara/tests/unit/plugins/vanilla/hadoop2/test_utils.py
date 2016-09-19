@@ -64,3 +64,78 @@ class UtilsTestCase(base.SaharaTestCase):
         inst.remote.return_value = inst_remote
 
         return inst
+
+    @mock.patch('sahara.conductor.API.cluster_get')
+    @mock.patch('sahara.service.castellan.utils.get_secret')
+    @mock.patch('sahara.service.castellan.utils.store_secret')
+    @mock.patch('sahara.plugins.vanilla.utils')
+    @mock.patch('sahara.conductor.API.cluster_update')
+    def test_oozie_password(self, cluster_update, vu,
+                            store_secret, get_secret, conductor):
+        cluster = mock.MagicMock()
+        cluster.extra = mock.MagicMock()
+        cluster.extra.to_dict.return_value = {"oozie_pass_id": "31415926"}
+
+        conductor.return_value = cluster
+
+        get_secret.return_value = "oozie_pass"
+        result = u.get_oozie_password(cluster)
+
+        get_secret.assert_called_once_with("31415926")
+        vu.generate_random_password.assert_not_called()
+        self.assertEqual('oozie_pass', result)
+
+        cluster.extra.to_dict.return_value = {}
+
+        store_secret.return_value = 'oozie_pass'
+        result = u.get_oozie_password(cluster)
+        self.assertEqual('oozie_pass', result)
+
+    @mock.patch('sahara.service.castellan.utils.delete_secret')
+    def test_delete_oozie_password(self, delete_secret):
+        cluster = mock.MagicMock()
+        cluster.extra.to_dict = mock.MagicMock()
+
+        cluster.extra.to_dict.return_value = {}
+        u.delete_oozie_password(cluster)
+        delete_secret.assert_not_called()
+
+        cluster.extra.to_dict.return_value = {"oozie_pass_id": "31415926"}
+        u.delete_oozie_password(cluster)
+        delete_secret.assert_called_once_with("31415926")
+
+    @mock.patch('sahara.conductor.API.cluster_get')
+    @mock.patch('sahara.service.castellan.utils.get_secret')
+    @mock.patch('sahara.service.castellan.utils.store_secret')
+    @mock.patch('sahara.conductor.API.cluster_update')
+    def test_get_hive_password(self, cluster_update,
+                               store_secret, get_secret, conductor):
+        cluster = mock.MagicMock()
+        cluster.extra.to_dict.return_value = {"hive_pass_id": "31415926"}
+
+        conductor.return_value = cluster
+
+        get_secret.return_value = "hive_pass"
+        result = u.get_hive_password(cluster)
+
+        get_secret.assert_called_once_with("31415926")
+        self.assertEqual('hive_pass', result)
+
+        cluster.extra.to_dict.return_value = {}
+
+        store_secret.return_value = 'hive_pass'
+        result = u.get_hive_password(cluster)
+        self.assertEqual('hive_pass', result)
+
+    @mock.patch('sahara.service.castellan.utils.delete_secret')
+    def test_delete_hive_password(self, delete_secret):
+        cluster = mock.MagicMock()
+
+        cluster.extra.to_dict.return_value = {}
+        u.delete_hive_password(cluster)
+        delete_secret.assert_not_called()
+
+        cluster.extra.to_dict.return_value = {"hive_pass_id": "31415926"}
+
+        u.delete_hive_password(cluster)
+        delete_secret.assert_called_once_with("31415926")
