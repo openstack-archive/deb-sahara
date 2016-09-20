@@ -1,0 +1,11 @@
+Code-Review+2: Nikita Konovalov <nkonovalov@mirantis.com>
+Code-Review+1: Michael Ionkin <mionkin@mirantis.com>
+Code-Review+2: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Code-Review+2: Elise Gafford <egafford@redhat.com>
+Workflow+1: Elise Gafford <egafford@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Mon, 19 Sep 2016 20:59:10 +0000
+Reviewed-on: https://review.openstack.org/370863
+Project: openstack/deb-sahara
+Branch: refs/heads/master
