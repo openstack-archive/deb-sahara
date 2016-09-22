@@ -1,0 +1,10 @@
+Code-Review+2: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Code-Review+1: Grigoriy Rozhkov <groghkov@maprtech.com>
+Code-Review+2: Vitaly Gridnev <vgridnev@mirantis.com>
+Workflow+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 21 Sep 2016 10:02:50 +0000
+Reviewed-on: https://review.openstack.org/371478
+Project: openstack/deb-sahara
+Branch: refs/heads/master
