@@ -25,6 +25,9 @@ Request
 .. rest_parameters:: parameters.yaml
 
    - tenant_id: url_tenant_id
+   - limit: limit
+   - marker: marker
+   - sort_by: sort_by_clusters
 
 
 
@@ -33,6 +36,9 @@ Response Parameters
 
 .. rest_parameters:: parameters.yaml
 
+   - markers: markers
+   - prev: prev
+   - next: next
    - count: count
    - info: info
    - cluster_template_id: cluster_template_id
@@ -44,11 +50,13 @@ Response Parameters
    - management_public_key: management_public_key
    - status_description: status_description
    - trust_id: trust_id
+   - domain_name: domain_name
 
 
 
 Response Example
 ----------------
+.. rest_method:: GET /v1.1/{tenant_id}/clusters
 
 .. literalinclude:: samples/clusters/clusters-list-response.json
    :language: javascript
@@ -97,6 +105,7 @@ Response Parameters
    - management_public_key: management_public_key
    - status_description: status_description
    - trust_id: trust_id
+   - domain_name: domain_name
 
 
 
@@ -168,6 +177,7 @@ Response Parameters
    - management_public_key: management_public_key
    - status_description: status_description
    - trust_id: trust_id
+   - domain_name: domain_name
 
 
 
@@ -244,7 +254,7 @@ Response Parameters
    - management_public_key: management_public_key
    - status_description: status_description
    - trust_id: trust_id
-
+   - domain_name: domain_name
 
 
 
@@ -290,7 +300,7 @@ Response Parameters
    - management_public_key: management_public_key
    - status_description: status_description
    - trust_id: trust_id
-
+   - domain_name: domain_name
 
 
 

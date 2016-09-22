@@ -1,2 +1,4 @@
 python-sahara: shell-script-fails-syntax-check usr/lib/python2.7/dist-packages/sahara/plugins/resources/krb-client-init.sh.template
 python-sahara: shell-script-fails-syntax-check usr/lib/python2.7/dist-packages/sahara/plugins/resources/mit-kdc-server-init.sh.template
+python-sahara: shell-script-fails-syntax-check usr/lib/python2.7/dist-packages/sahara/plugins/resources/create-principal-keytab
+python-sahara: shell-script-fails-syntax-check usr/lib/python2.7/dist-packages/sahara/plugins/resources/cron-script

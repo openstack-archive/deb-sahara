@@ -27,6 +27,9 @@ Request
 .. rest_parameters:: parameters.yaml
 
    - tenant_id: url_tenant_id
+   - limit: limit
+   - marker: marker
+   - sort_by: sort_by_job_binary
 
 
 
@@ -35,6 +38,9 @@ Response Parameters
 
 .. rest_parameters:: parameters.yaml
 
+   - markers: markers
+   - prev: prev
+   - next: next
    - description: description
    - url: url
    - tenant_id: tenant_id
@@ -50,6 +56,7 @@ Response Parameters
 
 Response Example
 ----------------
+.. rest_method:: GET /v1.1/{tenant_id}/job-binaries?sort_by=created_at
 
 .. literalinclude:: samples/job-binaries/list-response.json
    :language: javascript
@@ -105,7 +112,7 @@ Response Parameters
 Show job binary details
 =======================
 
-.. rest_method::  GET /v1.1/{tenant_id}/job-binaries
+.. rest_method::  GET /v1.1/{tenant_id}/job-binaries/{job_binary_id}
 
 Shows details for a job binary.
 
@@ -152,7 +159,7 @@ Response Example
 Delete job binary
 =================
 
-.. rest_method::  DELETE /v1.1/{tenant_id}/job-binaries
+.. rest_method::  DELETE /v1.1/{tenant_id}/job-binaries/{job_binary_id}
 
 Deletes a job binary.
 
@@ -175,7 +182,7 @@ Request
 Update job binary
 =================
 
-.. rest_method::  PUT /v1.1/{tenant_id}/job-binaries
+.. rest_method::  PUT /v1.1/{tenant_id}/job-binaries/{job_binary_id}
 
 Updates a job binary.
 

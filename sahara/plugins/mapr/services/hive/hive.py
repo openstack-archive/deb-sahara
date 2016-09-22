@@ -18,6 +18,7 @@ from oslo_log import log as logging
 import sahara.plugins.mapr.domain.configuration_file as bcf
 import sahara.plugins.mapr.domain.node_process as np
 import sahara.plugins.mapr.domain.service as s
+import sahara.plugins.mapr.services.sentry.sentry as sentry
 import sahara.plugins.mapr.util.validation_utils as vu
 import sahara.utils.files as files
 
@@ -57,47 +58,65 @@ class Hive(s.Service):
             hive_site.fetch(instance)
         hive_site.parse(files.get_file_text(hive_default))
         hive_site.add_properties(self._get_hive_site_props(cluster_context))
-        hue_version = cluster_context.get_chosen_service_version('Hue')
-        if self.require_no_sasl(hue_version):
-            hive_site.add_property('hive.server2.authentication', 'NOSASL')
+        sentry_host = cluster_context.get_instance(sentry.SENTRY)
+        if sentry_host:
+            sentry_mode = cluster_context._get_cluster_config_value(
+                sentry.Sentry().SENTRY_STORAGE_MODE)
+            ui_name = sentry.Sentry().ui_name
+            sentry_version = cluster_context.get_chosen_service_version(
+                ui_name)
+            sentry_service = cluster_context. \
+                _find_service_instance(ui_name, sentry_version)
+            if sentry_service.supports(self, sentry_mode):
+                sentry_default = 'plugins/mapr/services/hive/resources/' \
+                                 'sentry-default.xml'
+                sentry_db = \
+                    'plugins/mapr/services/hive/resources/sentry-db.xml'
+                hive_site.parse(files.get_file_text(sentry_default))
+                hive_site.add_property('hive.sentry.conf.url',
+                                       'file://%s/sentry-site.xml' %
+                                       sentry_service.conf_dir(
+                                           cluster_context))
+                if sentry_mode == sentry.DB_STORAGE_SENTRY_MODE:
+                    hive_site.parse(files.get_file_text(sentry_db))
 
         return [hive_site]
 
-    def require_no_sasl(self, version):
-        return version not in ['3.9.0']
-
-    def _get_hive_site_props(self, context):
+    def _get_hive_site_props(self, cluster_context):
         # Import here to resolve circular dependency
         from sahara.plugins.mapr.services.mysql import mysql
 
-        zookeepers = context.get_zookeeper_nodes_ip()
+        zookeepers = cluster_context.get_zookeeper_nodes_ip()
         metastore_specs = mysql.MySQL.METASTORE_SPECS
 
         return {
             'javax.jdo.option.ConnectionDriverName': mysql.MySQL.DRIVER_CLASS,
-            'javax.jdo.option.ConnectionURL': self._get_jdbc_uri(context),
+            'javax.jdo.option.ConnectionURL': self._get_jdbc_uri(
+                cluster_context),
             'javax.jdo.option.ConnectionUserName': metastore_specs.user,
             'javax.jdo.option.ConnectionPassword': metastore_specs.password,
-            'hive.metastore.uris': self._get_metastore_uri(context),
+            'hive.metastore.uris': self._get_metastore_uri(cluster_context),
             'hive.zookeeper.quorum': zookeepers,
             'hbase.zookeeper.quorum': zookeepers,
         }
 
-    def _get_jdbc_uri(self, context):
+    def _get_jdbc_uri(self, cluster_context):
         # Import here to resolve circular dependency
         from sahara.plugins.mapr.services.mysql import mysql
 
         jdbc_uri = ('jdbc:mysql://%(db_host)s:%(db_port)s/%(db_name)s?'
                     'createDatabaseIfNotExist=true')
         jdbc_args = {
-            'db_host': mysql.MySQL.get_db_instance(context).internal_ip,
+            'db_host': mysql.MySQL.get_db_instance(
+                cluster_context).internal_ip,
             'db_port': mysql.MySQL.MYSQL_SERVER_PORT,
             'db_name': mysql.MySQL.METASTORE_SPECS.db_name,
         }
         return jdbc_uri % jdbc_args
 
-    def _get_metastore_uri(self, context):
-        return 'thrift://%s:9083' % context.get_instance_ip(HIVE_METASTORE)
+    def _get_metastore_uri(self, cluster_context):
+        return 'thrift://%s:9083' % cluster_context.get_instance_ip(
+            HIVE_METASTORE)
 
     def post_start(self, cluster_context, instances):
         # Import here to resolve circular dependency
@@ -115,6 +134,26 @@ class Hive(s.Service):
         with cldb_node.remote() as r:
             LOG.debug("Creating Hive warehouse dir")
             r.execute_command(cmd % args, raise_when_error=False)
+        self._create_sentry_role(cluster_context)
+
+    def _create_sentry_role(self, cluster_context):
+        instance = cluster_context.get_instance(HIVE_METASTORE)
+        sentry_host = cluster_context.get_instance(sentry.SENTRY)
+        if sentry_host:
+            sentry_mode = cluster_context._get_cluster_config_value(
+                sentry.Sentry().SENTRY_STORAGE_MODE)
+            ui_name = sentry.Sentry().ui_name
+            sentry_version = cluster_context.get_chosen_service_version(
+                ui_name)
+            sentry_service = cluster_context. \
+                _find_service_instance(ui_name, sentry_version)
+            if sentry_service.supports(self, sentry_mode):
+                cmd = 'sudo -u mapr hive -e "create role admin_role;' \
+                      'grant all on server HS2 to role admin_role;' \
+                      'grant role admin_role to group mapr;"'
+                with instance.remote() as r:
+                    LOG.debug("Creating hive role for sentry")
+                    r.execute_command(cmd, raise_when_error=False)
 
 
 class HiveV013(Hive):
