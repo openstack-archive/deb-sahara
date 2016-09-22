@@ -1,4 +1,4 @@
-sahara (1:5.0.0~b3-1) experimental; urgency=medium
+sahara (1:5.0.0~rc1-1) experimental; urgency=medium
 
   * New upstream release.
   * Fixed (build-)depends for this release.

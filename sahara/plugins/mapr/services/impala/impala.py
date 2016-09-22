@@ -16,8 +16,10 @@
 import sahara.plugins.mapr.domain.configuration_file as bcf
 import sahara.plugins.mapr.domain.node_process as np
 import sahara.plugins.mapr.domain.service as s
+import sahara.plugins.mapr.services.hbase.hbase as hbase
 import sahara.plugins.mapr.services.hive.hive as hive
-import sahara.plugins.mapr.util.maprfs_helper as mfs
+import sahara.plugins.mapr.services.sentry.sentry as sentry
+import sahara.plugins.mapr.util.general as g
 import sahara.plugins.mapr.util.validation_utils as vu
 import sahara.utils.files as files
 
@@ -52,30 +54,26 @@ class Impala(s.Service):
             IMPALA_STATE_STORE,
         ]
 
-    def _get_impala_env_props(self, context):
+    def _get_impala_env_props(self, cluster_context):
         return {}
 
     def post_start(self, cluster_context, instances):
-        self._copy_hive_site(cluster_context)
+        self._copy_hive_site(cluster_context, instances)
 
-    def _copy_hive_site(self, cluster_context):
+    def _copy_hive_site(self, cluster_context, instances):
         hive_site_path = self._hive(cluster_context).conf_dir(
             cluster_context) + "/hive-site.xml"
         path = self.conf_dir(cluster_context) + "/hive-site.xml"
-        with cluster_context.get_instance(hive.HIVE_METASTORE).remote() as r1:
-            for instance in cluster_context.get_instances(IMPALA_SERVER):
-                with instance.remote() as r2:
-                    mfs.exchange(r1, r2, hive_site_path, path, 'mapr')
-            with cluster_context.get_instance(IMPALA_CATALOG).remote() as r3:
-                mfs.exchange(r1, r3, hive_site_path, path, 'mapr')
-            with cluster_context.get_instance(
-                    IMPALA_STATE_STORE).remote() as r4:
-                mfs.exchange(r1, r4, hive_site_path, path, 'mapr')
+        hive_instance = cluster_context.get_instance(hive.HIVE_METASTORE)
+        impalas = cluster_context.filter_instances(instances, service=self)
+        for instance in impalas:
+            g.copy_file(hive_site_path, hive_instance, path, instance,
+                        run_as='root', owner='mapr')
 
     # hive service instance
-    def _hive(self, context):
-        hive_version = context.get_chosen_service_version('Hive')
-        return context._find_service_instance('Hive', hive_version)
+    def _hive(self, cluster_context):
+        hive_version = cluster_context.get_chosen_service_version('Hive')
+        return cluster_context._find_service_instance('Hive', hive_version)
 
     def get_config_files(self, cluster_context, configs, instance=None):
         defaults = 'plugins/mapr/services/impala/resources/impala-env.sh.j2'
@@ -86,7 +84,22 @@ class Impala(s.Service):
             impala_env.fetch(instance)
         impala_env.parse(files.get_file_text(defaults))
         impala_env.add_properties(self._get_impala_env_props(cluster_context))
-
+        sentry_host = cluster_context.get_instance(sentry.SENTRY)
+        if sentry_host:
+            sentry_mode = cluster_context._get_cluster_config_value(
+                sentry.Sentry().SENTRY_STORAGE_MODE)
+            ui_name = sentry.Sentry().ui_name
+            sentry_version = cluster_context.get_chosen_service_version(
+                ui_name)
+            sentry_service = cluster_context. \
+                _find_service_instance(ui_name, sentry_version)
+            if sentry_service.supports(self, sentry_mode):
+                impala_env.add_properties({
+                    'sentry_home': sentry_service.home_dir(cluster_context),
+                    'sentry_db': sentry_mode == sentry.DB_STORAGE_SENTRY_MODE,
+                    'sentry_policy_file': 'maprfs://'
+                                          + sentry_service.GLOBAL_POLICY_FILE,
+                })
         return [impala_env]
 
     def post_install(self, cluster_context, instances):
@@ -108,11 +121,12 @@ class ImpalaV141(Impala):
             vu.at_least(1, IMPALA_SERVER),
         ]
 
-    def _get_impala_env_props(self, context):
+    def _get_impala_env_props(self, cluster_context):
         return {
             'impala_version': self.version,
-            'statestore_host': context.get_instance_ip(IMPALA_STATE_STORE),
-            'catalog_host': context.get_instance_ip(IMPALA_CATALOG),
+            'statestore_host': cluster_context.get_instance_ip(
+                IMPALA_STATE_STORE),
+            'catalog_host': cluster_context.get_instance_ip(IMPALA_CATALOG),
         }
 
 
@@ -132,11 +146,12 @@ class ImpalaV220(Impala):
             vu.required_os('centos', self)
         ]
 
-    def _get_impala_env_props(self, context):
+    def _get_impala_env_props(self, cluster_context):
         return {
             'impala_version': self.version,
-            'statestore_host': context.get_instance_ip(IMPALA_STATE_STORE),
-            'catalog_host': context.get_instance_ip(IMPALA_CATALOG),
+            'statestore_host': cluster_context.get_instance_ip(
+                IMPALA_STATE_STORE),
+            'catalog_host': cluster_context.get_instance_ip(IMPALA_CATALOG),
         }
 
     def _get_packages(self, cluster_context, node_processes):
@@ -149,3 +164,29 @@ class ImpalaV220(Impala):
         result += [('mapr-hbase', hbase_version)]
 
         return result
+
+
+class ImpalaV250(Impala):
+    def __init__(self):
+        super(ImpalaV250, self).__init__()
+        self._version = '2.5.0'
+        self._dependencies = [
+            ('mapr-hive', hive.HiveV12().version),
+            ('mapr-impala', self.version),
+            ('mapr-hbase', hbase.HBaseV111().version)
+        ]
+        self._validation_rules = [
+            vu.depends_on(hive.HiveV12(), self),
+            vu.exactly(1, IMPALA_STATE_STORE),
+            vu.exactly(1, IMPALA_CATALOG),
+            vu.at_least(1, IMPALA_SERVER),
+            vu.required_os('centos', self)
+        ]
+
+    def _get_impala_env_props(self, cluster_context):
+        return {
+            'impala_version': self.version,
+            'statestore_host': cluster_context.get_instance_ip(
+                IMPALA_STATE_STORE),
+            'catalog_host': cluster_context.get_instance_ip(IMPALA_CATALOG),
+        }

@@ -74,6 +74,7 @@
                 }
             ],
             "neutron_management_network": "b1610452-2933-46b0-bf31-660cfa5621bd",
+            "domain_name": null,
             "hadoop_version": "2.7.1",
             "use_autoconfig": true,
             "description": null,
@@ -125,10 +126,15 @@
                 }
             ],
             "neutron_management_network": null,
+            "domain_name": null,
             "hadoop_version": "2.7.1",
             "use_autoconfig": true,
             "description": "",
             "is_protected": false
         }
-    ]
+    ],
+    "markers": {
+        "prev": null,
+        "next": "2c76e0d3-56cd-4d28-bb4f-4808e538c7b9"
+    }
 }

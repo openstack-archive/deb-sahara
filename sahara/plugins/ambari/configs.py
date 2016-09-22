@@ -121,6 +121,14 @@ hdp_repo_cfg = provisioning.Config(
     "HDP repo URL", "general", "cluster", priority=1, default_value="")
 hdp_utils_repo_cfg = provisioning.Config(
     "HDP-UTILS repo URL", "general", "cluster", priority=1, default_value="")
+autoconfigs_strategy = provisioning.Config(
+    "Auto-configuration strategy", 'general', 'cluster', priority=1,
+    config_type='dropdown',
+    default_value='NEVER_APPLY',
+    config_values=[(v, v) for v in [
+        'NEVER_APPLY', 'ALWAYS_APPLY', 'ONLY_STACK_DEFAULTS_APPLY',
+    ]],
+)
 
 
 def _get_service_name(service):
@@ -184,7 +192,8 @@ def load_configs(version):
     cfg_path = "plugins/ambari/resources/configs-%s.json" % version
     vanilla_cfg = jsonutils.loads(files.get_file_text(cfg_path))
     CONFIGS[version] = vanilla_cfg
-    sahara_cfg = [hdp_repo_cfg, hdp_utils_repo_cfg, use_base_repos_cfg]
+    sahara_cfg = [hdp_repo_cfg, hdp_utils_repo_cfg, use_base_repos_cfg,
+                  autoconfigs_strategy]
     for service, confs in vanilla_cfg.items():
         for k, v in confs.items():
             sahara_cfg.append(provisioning.Config(
@@ -211,6 +220,10 @@ def get_hdp_repo_url(cluster):
 
 def get_hdp_utils_repo_url(cluster):
     return _get_config_value(cluster, hdp_utils_repo_cfg)
+
+
+def get_auto_configuration_strategy(cluster):
+    return _get_config_value(cluster, autoconfigs_strategy)
 
 
 def _serialize_ambari_configs(configs):
