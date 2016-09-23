@@ -1,0 +1,10 @@
+Code-Review+1: Alexander Ignatov <aignatov@mirantis.com>
+Code-Review+2: Elise Gafford <egafford@redhat.com>
+Code-Review+2: Vitaly Gridnev <vgridnev@mirantis.com>
+Workflow+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 22 Sep 2016 18:39:30 +0000
+Reviewed-on: https://review.openstack.org/370747
+Project: openstack/deb-sahara
+Branch: refs/heads/master
