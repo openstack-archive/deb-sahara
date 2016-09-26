@@ -75,8 +75,8 @@ Build-Depends-Indep: alembic (>= 0.8.4),
                      subunit,
                      testrepository,
 Standards-Version: 3.9.8
-Vcs-Browser: https://git.openstack.org/cgit/openstack/deb-sahara
-Vcs-Git: https://git.openstack.org/openstack/deb-sahara
+Vcs-Browser: https://git.openstack.org/cgit/openstack/deb-sahara?h=debian%2Fnewton
+Vcs-Git: https://git.openstack.org/openstack/deb-sahara -b debian/newton
 Homepage: https://github.com/openstack/sahara
 
 Package: python-sahara
