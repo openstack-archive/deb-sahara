@@ -7,6 +7,8 @@ sahara (1:5.0.0~rc1-2) UNRELEASED; urgency=medium
   [ Thomas Goirand ]
   * Build-Depends on openstack-pkg-tools >= 53~.
   * Fixed oslotest EPOCH.
+  * Debconf translation:
+    - it (Closes: #839527).
 
  -- Ondřej Nový <onovy@debian.org>  Mon, 26 Sep 2016 19:17:52 +0200
 
