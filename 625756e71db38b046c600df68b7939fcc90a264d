@@ -1,0 +1,10 @@
+Code-Review+1: Michael Lelyakin <mlelyakin@mirantis.com>
+Code-Review+1: venkatamahesh <Venkata.Kotha@infinite.com>
+Code-Review+2: Vitaly Gridnev <gridnevvvit@gmail.com>
+Workflow+1: Vitaly Gridnev <gridnevvvit@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 13 Oct 2016 14:20:31 +0000
+Reviewed-on: https://review.openstack.org/377289
+Project: openstack/deb-sahara
+Branch: refs/heads/master
