@@ -1,0 +1,8 @@
+Code-Review+2: Vitaly Gridnev <vgridnev@mirantis.com>
+Workflow+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Fri, 28 Oct 2016 21:03:06 +0000
+Reviewed-on: https://review.openstack.org/391163
+Project: openstack/deb-sahara
+Branch: refs/heads/master
