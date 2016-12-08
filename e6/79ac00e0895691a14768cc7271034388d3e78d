@@ -1,0 +1,9 @@
+Code-Review+1: Daniel Gonzalez Nothnagel <daniel@gonzalez-nothnagel.de>
+Code-Review+2: Vitaly Gridnev <vgridnev@mirantis.com>
+Workflow+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 06 Dec 2016 09:18:33 +0000
+Reviewed-on: https://review.openstack.org/407288
+Project: openstack/deb-sahara
+Branch: refs/heads/master
