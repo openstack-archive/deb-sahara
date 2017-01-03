@@ -1,0 +1,15 @@
+Verified-1: Sahara Hadoop Cluster CI <elastic-hadoop-ci@mirantis.com>
+Code-Review+1: Daniel Gonzalez Nothnagel <daniel@gonzalez-nothnagel.de>
+Code-Review+2: Vitaly Gridnev <vgridnev@mirantis.com>
+Code-Review+1: Marianne Linhares Monteiro <mariannelinharesm@gmail.com>
+Code-Review+2: Nikita Konovalov <nkonovalov@mirantis.com>
+Code-Review+2: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Code-Review+1: Evgeny Sikachev <esikachev@mirantis.com>
+Code-Review+1: Shu Yingya <yingya.shu@easystack.cn>
+Workflow+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 22 Dec 2016 09:31:05 +0000
+Reviewed-on: https://review.openstack.org/409628
+Project: openstack/deb-sahara
+Branch: refs/heads/master
