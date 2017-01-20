@@ -1,2 +1,3 @@
 install-missing-files.patch
 fix-requirements.txt.patch
+allow_newer_sqlalchemy.patch
