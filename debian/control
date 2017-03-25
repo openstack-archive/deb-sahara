@@ -159,6 +159,7 @@ Architecture: all
 Section: python
 Depends: adduser,
          dbconfig-common,
+         net-tools,
          python-openstackclient,
          q-text-as-data,
          sahara-common (= ${source:Version}),
