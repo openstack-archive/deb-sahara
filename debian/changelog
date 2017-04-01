@@ -1,9 +1,9 @@
 sahara (1:5.0.0-3) unstable; urgency=medium
 
   * Team upload.
-  * Add missing dependency net-tools (Closes: #858711).
+  * Bump build dependency on openstack-pkg-tools (Closes: #858711).
 
- -- David Rabel <david.rabel@noresoft.com>  Sat, 25 Mar 2017 13:30:26 +0100
+ -- David Rabel <david.rabel@noresoft.com>  Sat, 01 Apr 2017 12:11:59 +0200
 
 sahara (1:5.0.0-2) unstable; urgency=medium
 
