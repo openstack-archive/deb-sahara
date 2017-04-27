@@ -1,0 +1,11 @@
+Code-Review+2: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Code-Review+1: Marianne Linhares Monteiro <mariannelinharesm@gmail.com>
+Code-Review+1: huyujie <huyujie@awcloud.com>
+Code-Review+1: sven mark <masw@awcloud.com>
+Workflow+1: Vitaly Gridnev <vgridnev@mirantis.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Thu, 27 Apr 2017 19:51:23 +0000
+Reviewed-on: https://review.openstack.org/443155
+Project: openstack/deb-sahara
+Branch: refs/heads/master
