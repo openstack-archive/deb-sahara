@@ -1,0 +1,8 @@
+Code-Review+2: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Workflow+1: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Tue, 13 Jun 2017 20:06:18 +0000
+Reviewed-on: https://review.openstack.org/473846
+Project: openstack/deb-sahara
+Branch: refs/heads/master
