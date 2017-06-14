@@ -1,0 +1,9 @@
+Code-Review+1: Shu Yingya <yingya.shu@easystack.cn>
+Code-Review+2: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Workflow+1: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 14 Jun 2017 12:19:26 +0000
+Reviewed-on: https://review.openstack.org/473781
+Project: openstack/deb-sahara
+Branch: refs/heads/master
