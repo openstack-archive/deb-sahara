@@ -1,0 +1,11 @@
+Code-Review+2: Telles Mota Vidal Nóbrega <tenobreg@redhat.com>
+Code-Review+1: Jeremy Freudberg <jeremyfreudberg@gmail.com>
+Code-Review+1: Luigi Toscano <ltoscano@redhat.com>
+Code-Review+2: Vitaly Gridnev <gridnevvvit@gmail.com>
+Workflow+1: Vitaly Gridnev <gridnevvvit@gmail.com>
+Verified+2: Jenkins
+Submitted-by: Jenkins
+Submitted-at: Wed, 05 Jul 2017 17:49:37 +0000
+Reviewed-on: https://review.openstack.org/479642
+Project: openstack/deb-sahara
+Branch: refs/heads/master
